@@ -1,0 +1,25 @@
+{
+  "name": "@shadowedge/rpa",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RPA 工作流 DSL、执行引擎与调度器",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@shadowedge/core": "workspace:*",
+    "@shadowedge/kernel": "workspace:*"
+  }
+}

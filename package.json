@@ -1,0 +1,32 @@
+{
+  "name": "shadowedge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ShadowEdge — 反检测指纹浏览器与跨境电商多账号运营平台",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -b packages/core packages/crypto packages/fingerprint packages/proxy packages/kernel packages/rpa packages/sync packages/sdk apps/server",
+    "dev": "pnpm --parallel -r dev",
+    "dev:desktop": "pnpm --filter @shadowedge/desktop dev",
+    "dev:server": "pnpm --filter @shadowedge/server dev",
+    "typecheck": "pnpm build && tsc --noEmit -p apps/desktop/tsconfig.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rimraf \"{apps,packages}/*/dist\" \"{apps,packages}/*/*.tsbuildinfo\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "@eslint/js": "^9.17.0"
+  }
+}

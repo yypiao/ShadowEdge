@@ -1,0 +1,24 @@
+{
+  "name": "@shadowedge/proxy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "代理池、健康探测、出口地理一致性与链式代理",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@shadowedge/core": "workspace:*"
+  }
+}
