@@ -1,0 +1,45 @@
+{
+  "tag": "run1",
+  "fingerprint": {
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0",
+    "webdriver": false,
+    "platform": "Linux x86_64",
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "hardwareConcurrency": 10,
+    "deviceMemory": null,
+    "maxTouchPoints": 0,
+    "vendor": "",
+    "screen": {
+      "width": 1440,
+      "height": 900,
+      "availWidth": 1440,
+      "availHeight": 873,
+      "colorDepth": 24,
+      "pixelRatio": 2
+    },
+    "timezone": "Asia/Singapore",
+    "tzOffset": -480,
+    "chromeObj": "undefined",
+    "permissions": "prompt",
+    "plugins": 5,
+    "mimeTypes": 2,
+    "webgl": {
+      "vendor": "Intel",
+      "renderer": "Intel(R) HD Graphics, or similar",
+      "version": "WebGL 1.0"
+    },
+    "canvasHash": "916683d2",
+    "audioFp": "err:Accessing TypedArray data over Xrays is slow, and forbidden in order to encourage performant code. To copy TypedArrays across origin boundaries, consider using Components.utils.cloneInto().",
+    "traps": {
+      "fnToString": true,
+      "errorStack": 3,
+      "navPropsCount": 48,
+      "hasCDC": []
+    }
+  },
+  "creepTrust": "CreepJS",
+  "at": "2026-10-15T00:33:48.164811"
+}

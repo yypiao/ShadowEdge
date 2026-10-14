@@ -1,0 +1,65 @@
+{
+  "tag": "run1",
+  "seed": 424242,
+  "profile": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "platform": "MacIntel",
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "hardwareConcurrency": 8,
+    "deviceMemory": 8,
+    "screen": {
+      "w": 1920,
+      "h": 1080
+    },
+    "webglVendor": "Google Inc. (Apple)",
+    "webglRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+    "canvasNoise": 0.0005843034430872649,
+    "timezone": "America/Los_Angeles",
+    "seed": 424242
+  },
+  "fingerprint": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "webdriver": false,
+    "platform": "MacIntel",
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "hardwareConcurrency": 8,
+    "deviceMemory": 8,
+    "maxTouchPoints": 0,
+    "vendor": "Google Inc.",
+    "screen": {
+      "width": 1920,
+      "height": 1080,
+      "availWidth": 1920,
+      "availHeight": 1055,
+      "colorDepth": 30,
+      "pixelRatio": 1
+    },
+    "timezone": "America/Los_Angeles",
+    "tzOffset": 420,
+    "chromeObj": "object",
+    "permissions": "prompt",
+    "plugins": 5,
+    "mimeTypes": 2,
+    "webgl": {
+      "vendor": "Google Inc. (Apple)",
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+      "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)"
+    },
+    "canvasHash": "8d0697d6",
+    "audioFp": "172.67165154411487",
+    "traps": {
+      "fnToString": true,
+      "errorStack": 3,
+      "navPropsCount": 84,
+      "hasCDC": []
+    }
+  },
+  "creepTrust": "FP ID: 237f8cb25d320380e9e56c609409515f8f7f548c8950c430d458c428a2bb0d55 Fuzzy: ab0f1816db2566ac8d49b7f142e7b9953fe384c38fd53a6f141a000000000000 456.80 ms WebRTCd262ed56 host connection: candidate:8416",
+  "at": "2026-10-14T16:30:36.105Z"
+}
