@@ -8,6 +8,11 @@
 > [ADR 0003](adr/0003-open-source-kernel-drivers.md)；竞品逆向依据见
 > [RESEARCH_ZINIAO_RE.md](RESEARCH_ZINIAO_RE.md)。本文中涉及自研 C++ 补丁、
 > 自建指纹素材库的条目以 ADR 0003 为准。
+>
+> **2026-10-14 路线修订**：Chromium 优先——Patchright 升为主驱动，Camoufox 降为可选备驱动；
+> 指纹补齐（方案 A：JS 注入 / 方案 B：C++ 补丁）待探针裁决实验定夺，见
+> [ADR 0004](adr/0004-chromium-first-patchright-primary.md)。所有组件零付费绑定、
+> 开发者环境零 C++ 工具链。
 
 ## 一、产品定位
 
@@ -40,6 +45,8 @@
 - seed 指纹生成器、信封加密、18 个单测全绿
 
 ### 阶段 1 — 指纹护城河（当前，先做）
+- [ ] **T0（新增，最先）** 探针裁决实验：Patchright+JS注入 vs Camoufox vs 紫鸟对照，
+      CreepJS/browserleaks 信任分对照，裁决 ADR 0004 的指纹补齐方案
 - [ ] **T2** 指纹一致性交叉校验（UA/CH 自洽、屏幕差值、平台与 GPU/触摸点相容、字体子集）
 - [ ] **T8（部分）** 探针页雏形，先能量化指纹分数
 
