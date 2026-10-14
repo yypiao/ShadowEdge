@@ -1,6 +1,6 @@
 # ADR 0001：UI 用 Electron，业务浏览器用打补丁的 Chromium
 
-- 状态：已接受
+- 状态：已被 [ADR 0003](0003-open-source-kernel-drivers.md) 取代（2026-09-18）
 - 日期：2026-09-08
 
 ## 背景

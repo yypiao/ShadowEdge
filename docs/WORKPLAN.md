@@ -2,12 +2,18 @@
 
 > 本文件是已确认的板块划分与工作顺序，后续所有开发从这里开始。
 > 详细功能拆解见 `docs/FEATURE_MATRIX.md`，单项任务背景/产出/验收见 `docs/NEXT_TASKS.md`。
+>
+> **2026-09-18 路线变更**：内核方案由「自研补丁 Chromium / 闭源 CloakBrowser」改为
+> 「开源双驱动：Camoufox 主 + Patchright 备，网络层用 Xray-core」，见
+> [ADR 0003](adr/0003-open-source-kernel-drivers.md)；竞品逆向依据见
+> [RESEARCH_ZINIAO_RE.md](RESEARCH_ZINIAO_RE.md)。本文中涉及自研 C++ 补丁、
+> 自建指纹素材库的条目以 ADR 0003 为准。
 
 ## 一、产品定位
 
 对标紫鸟浏览器（指纹浏览器 + 多账号安全运营平台），在以下五点做差异化超越：
 
-1. **内核级反检测** —— Chromium C++ 补丁伪造指纹，而非 JS hook；Worker/iframe 无死角。
+1. **内核级反检测** —— 集成开源源码级补丁内核（Camoufox 主 / Patchright 备），而非 JS hook；Worker/iframe 无死角，且不被闭源内核按并发抽成。
 2. **指纹零漂移** —— seed 确定性生成，升级后环境指纹不变，且可审计篡改。
 3. **启动一致性闸门** —— 指纹维度互相矛盾或与出口 IP 地理冲突时拒绝启动。
 4. **端到端加密** —— 账密/Cookie 服务端不可见；密码由主进程注入，操作员接触不到明文。
