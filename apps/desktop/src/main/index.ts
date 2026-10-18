@@ -3,6 +3,11 @@ import { join } from 'node:path';
 import { createConsoleLogger, IPC_CHANNELS, isShadowEdgeError, ShadowEdgeError } from '@shadowedge/core';
 import type { IpcChannel } from '@shadowedge/core';
 import { createHandlers } from './handlers.js';
+import { openDatabase } from './services/db.js';
+import { loadKeyring } from './services/keyring.js';
+import { ProfileRepository } from './services/profile-repository.js';
+import { ProxyRepository } from './services/proxy-repository.js';
+import { AuditLog, SessionRepository } from './services/local-records.js';
 
 const logger = createConsoleLogger({ component: 'main' });
 
@@ -42,9 +47,21 @@ function createWindow(): void {
 }
 
 function registerIpc(): void {
+  const dataDir = app.getPath('userData');
+  const handle = openDatabase(join(dataDir, 'shadowedge.db'));
+  const keyring = loadKeyring(dataDir);
+  const sessions = new SessionRepository(handle);
+  // 上次异常退出留下的未关闭会话统一收口，避免状态假活。
+  const orphans = sessions.sweepOrphans();
+  if (orphans > 0) logger.info('清理异常退出会话', { count: orphans });
+
   const handlers = createHandlers({
     logger: logger.child({ component: 'handlers' }),
     emit: (event, payload) => mainWindow?.webContents.send(event, payload),
+    profileRepo: new ProfileRepository(handle),
+    proxyRepo: new ProxyRepository(handle, keyring),
+    audit: new AuditLog(handle),
+    sessions,
   });
 
   for (const channel of IPC_CHANNELS) {

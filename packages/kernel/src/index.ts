@@ -1,12 +1,10 @@
 import type { BrowserProfile, LaunchOptions, LaunchResult, Uuid } from '@shadowedge/core';
 import { ShadowEdgeError } from '@shadowedge/core';
 import { generateFingerprint } from '@shadowedge/fingerprint';
-import { ProxyManager } from '@shadowedge/proxy';
 
 /** 便携的 Chromium 启动器，无需 prebuilt 二进制即可运行类型检查。 */
 export class BrowserKernel {
   private running = new Map<Uuid, { pid: number; wsEndpoint?: string }>();
-  private proxyManager = new ProxyManager();
 
   /** 启动浏览器环境。 */
   async launch(profile: BrowserProfile, options: LaunchOptions): Promise<LaunchResult> {
@@ -20,9 +18,8 @@ export class BrowserKernel {
       overrides: profile.fingerprint,
     });
 
-    const proxyConfig = profile.proxyId
-      ? await this.proxyManager.check(profile.proxyId)
-      : undefined;
+    // TODO(T3): 代理由 handlers 层经 ProxyRepository 解析后注入启动参数，
+    // 内核不直接查代理库；真实代理链路（Xray 网关）接入时在此组装。
 
     const sessionId = crypto.randomUUID() as Uuid;
     const result: LaunchResult = {

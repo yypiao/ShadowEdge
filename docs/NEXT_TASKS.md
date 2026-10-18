@@ -6,6 +6,14 @@
 
 ## T1 — 本地 SQLite 持久层
 
+> ✅ 已完成（2026-10-18）。
+> 实现调整：存储引擎用 **Node 内置 `node:sqlite`**（Electron 已升级到 44.9.0）替代
+> better-sqlite3 —— 本机无 Xcode CLT，原生模块无法编译；零原生依赖同时免除
+> Electron ABI 重编译问题。产物：`services/db.ts`（连接+迁移+唯一类型断言出口）、
+> `keyring.ts`（本地 KEK，0600）、`profile-repository.ts`、`proxy-repository.ts`
+> （密码 EnvelopeCrypto 密文落库 + reveal 仅限内核链路）、`local-records.ts`
+> （审计 + 会话 + 孤儿清理）、`test/repositories.test.ts` 7 个用例。
+
 **背景**：`apps/desktop/src/main/handlers.ts` 目前用内存 `Map` 存环境，重启即丢。
 
 **产出**：

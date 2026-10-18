@@ -12,10 +12,17 @@ import { auditFingerprint, generateFingerprint } from '@shadowedge/fingerprint';
 import { BrowserKernel } from '@shadowedge/kernel';
 import { ProxyManager } from '@shadowedge/proxy';
 import { RpaEngine } from '@shadowedge/rpa';
+import type { ProfileRepository } from './services/profile-repository.js';
+import type { ProxyRepository } from './services/proxy-repository.js';
+import type { AuditLog, SessionRepository } from './services/local-records.js';
 
 export interface HandlerDeps {
   logger: Logger;
   emit: <E extends IpcEventName>(event: E, payload: IpcEvents[E]) => void;
+  profileRepo: ProfileRepository;
+  proxyRepo: ProxyRepository;
+  audit: AuditLog;
+  sessions: SessionRepository;
 }
 
 /** 主进程 IPC 处理器集合。类型与 IpcApi 严格对齐，新增通道会立即产生编译错误。 */
@@ -27,24 +34,16 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   const kernel = new BrowserKernel();
   const proxyManager = new ProxyManager();
   const rpaEngine = new RpaEngine();
-  // TODO(step-2): 换成 better-sqlite3 持久层，见 packages/core 的存储契约。
-  const profiles = new Map<Uuid, BrowserProfile>();
 
   const requireProfile = (id: Uuid): BrowserProfile => {
-    const profile = profiles.get(id);
+    const profile = deps.profileRepo.get(id);
     if (!profile) throw new ShadowEdgeError('E_PROFILE_NOT_FOUND', `环境 ${id} 不存在`);
     return profile;
   };
 
   return {
     'profile:list': async (query) => {
-      const all = Array.from(profiles.values());
-      if (!query) return all;
-      return all.filter(
-        (p) =>
-          (!query.groupId || p.groupId === query.groupId) &&
-          (!query.keyword || p.name.toLowerCase().includes(query.keyword.toLowerCase())),
-      );
+      return deps.profileRepo.list(query ?? undefined);
     },
 
     'profile:get': async (id) => requireProfile(id),
@@ -69,7 +68,8 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         createdAt: now,
         updatedAt: now,
       };
-      profiles.set(id, profile);
+      deps.profileRepo.save(profile);
+      deps.audit.record('profile:create', 'profile', id, { name: input.name });
       deps.logger.info('创建环境', { profileId: id, name: input.name });
       return profile;
     },
@@ -77,20 +77,24 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'profile:update': async ({ id, patch }) => {
       const profile = requireProfile(id);
       const updated: BrowserProfile = { ...profile, ...patch, id, updatedAt: new Date().toISOString() };
-      profiles.set(id, updated);
+      deps.profileRepo.save(updated);
+      deps.audit.record('profile:update', 'profile', id, { fields: Object.keys(patch) });
       return updated;
     },
 
     'profile:delete': async (id) => {
       requireProfile(id);
-      profiles.delete(id);
+      deps.profileRepo.delete(id);
+      deps.audit.record('profile:delete', 'profile', id);
     },
 
     'profile:launch': async (options) => {
       const profile = requireProfile(options.profileId);
       deps.emit('profile:status', { profileId: profile.id, status: 'launching' });
       const result = await kernel.launch(profile, options);
-      profiles.set(profile.id, { ...profile, status: 'running', lastUsedAt: result.startedAt });
+      deps.profileRepo.save({ ...profile, status: 'running', lastUsedAt: result.startedAt });
+      deps.sessions.start(result);
+      deps.audit.record('profile:launch', 'profile', profile.id, { sessionId: result.sessionId });
       deps.emit('profile:status', { profileId: profile.id, status: 'running' });
       return result;
     },
@@ -98,7 +102,9 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'profile:close': async (id) => {
       const profile = requireProfile(id);
       await kernel.close(id);
-      profiles.set(id, { ...profile, status: 'idle' });
+      deps.profileRepo.save({ ...profile, status: 'idle' });
+      deps.sessions.end(id);
+      deps.audit.record('profile:close', 'profile', id);
       deps.emit('profile:status', { profileId: id, status: 'idle' });
     },
 
@@ -106,14 +112,26 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     'fingerprint:audit': async (id) => auditFingerprint(requireProfile(id).fingerprint),
 
-    'proxy:list': async () => proxyManager.list(),
-    'proxy:upsert': async (input) => proxyManager.upsert(input),
+    'proxy:list': async () => deps.proxyRepo.list(),
+    'proxy:upsert': async (input) => {
+      const saved = await deps.proxyRepo.upsert(input);
+      deps.audit.record('proxy:upsert', 'proxy', input.id, { label: input.label });
+      return saved;
+    },
     'proxy:check': async (id) => {
-      const health = await proxyManager.check(id);
+      const credential = deps.proxyRepo.get(id);
+      if (!credential) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${id} 不存在`);
+      const health = await proxyManager.check(credential);
       deps.emit('proxy:health', health);
       return health;
     },
-    'proxy:importBulk': async ({ text, format }) => proxyManager.importBulk(text, format),
+    'proxy:importBulk': async ({ text, format }) => {
+      const parsed = proxyManager.importBulk(text, format);
+      const saved: typeof parsed = [];
+      for (const item of parsed) saved.push(await deps.proxyRepo.upsert(item));
+      deps.audit.record('proxy:importBulk', 'proxy', undefined, { count: saved.length });
+      return saved;
+    },
 
     'rpa:list': async () => [],
     'rpa:run': async ({ workflowId, profileIds, inputs }) =>
@@ -127,7 +145,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'sync:push': async (profileId) => {
       const profile = requireProfile(profileId);
       const revision = profile.storage.remoteRevision + 1;
-      profiles.set(profileId, { ...profile, storage: { ...profile.storage, remoteRevision: revision } });
+      deps.profileRepo.save({ ...profile, storage: { ...profile.storage, remoteRevision: revision } });
       return { revision };
     },
 

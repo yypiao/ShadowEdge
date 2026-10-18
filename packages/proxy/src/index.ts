@@ -1,5 +1,4 @@
 import type { ProxyCredential, ProxyHealth, ProxyProtocol } from '@shadowedge/core';
-import { ShadowEdgeError } from '@shadowedge/core';
 
 /** 代理池管理器：组合、健康检查、出口一致性与偏好路由。 */
 export class ProxyManager {
@@ -20,12 +19,10 @@ export class ProxyManager {
     return Array.from(this.proxies.values());
   }
 
-  async check(id: string): Promise<ProxyHealth> {
-    const proxy = this.proxies.get(id);
-    if (!proxy) throw new ShadowEdgeError('E_INTERNAL', `代理 ${id} 不存在`);
+  async check(proxy: ProxyCredential): Promise<ProxyHealth> {
     const now = new Date().toISOString();
     return {
-      proxyId: id,
+      proxyId: proxy.id,
       checkedAt: now,
       reachable: true,
       latencyMs: 120,

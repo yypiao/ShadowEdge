@@ -6,7 +6,11 @@ export default defineConfig({
   main: {
     build: {
       outDir: 'dist/main',
-      rollupOptions: { input: resolve(__dirname, 'src/main/index.ts') },
+      rollupOptions: {
+        input: resolve(__dirname, 'src/main/index.ts'),
+        // node:sqlite 是 Electron 44 运行时内置模块，不得打包进 bundle。
+        external: ['node:sqlite'],
+      },
     },
   },
   preload: {
