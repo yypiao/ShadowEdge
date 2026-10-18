@@ -31,7 +31,18 @@ export type Handlers = {
 };
 
 export function createHandlers(deps: HandlerDeps): Handlers {
-  const kernel = new BrowserKernel();
+  const kernel = new BrowserKernel({
+    resolveProxy: async (proxyId) => {
+      const credential = deps.proxyRepo.get(proxyId);
+      if (!credential) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${proxyId} 不存在`);
+      const password = deps.proxyRepo.reveal(proxyId);
+      return {
+        server: `${credential.protocol}://${credential.host}:${credential.port}`,
+        username: credential.username,
+        password,
+      };
+    },
+  });
   const proxyManager = new ProxyManager();
   const rpaEngine = new RpaEngine();
 

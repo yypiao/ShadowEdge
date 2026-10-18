@@ -178,3 +178,5 @@ export function auditFingerprint(
   if (regenerated.webgl.vendor !== current.webgl.vendor) issues.push('WebGL vendor 与 seed 不匹配');
   return { consistent: issues.length === 0, issues };
 }
+
+export { buildInjectionScript } from './inject.js';

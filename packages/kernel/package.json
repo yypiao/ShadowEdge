@@ -21,6 +21,7 @@
   "dependencies": {
     "@shadowedge/core": "workspace:*",
     "@shadowedge/fingerprint": "workspace:*",
-    "@shadowedge/proxy": "workspace:*"
+    "@shadowedge/proxy": "workspace:*",
+    "patchright": "^1.64.1"
   }
 }
