@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
-import { join } from 'node:path';
+import { app, BrowserWindow, ipcMain, net, protocol, shell } from 'electron';
+import { join, normalize, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createConsoleLogger, IPC_CHANNELS, isShadowEdgeError, ShadowEdgeError } from '@shadowedge/core';
 import type { IpcChannel } from '@shadowedge/core';
 import { createHandlers } from './handlers.js';
@@ -12,6 +13,26 @@ import { AuditLog, SessionRepository } from './services/local-records.js';
 const logger = createConsoleLogger({ component: 'main' });
 
 let mainWindow: BrowserWindow | null = null;
+
+// file:// 下 ES module 受 CORS 限制无法加载，注册特权自定义协议作为渲染层 origin。
+// 必须在 app ready 之前声明特权，之后才能 protocol.handle。
+const RENDERER_SCHEME = 'seapp';
+protocol.registerSchemesAsPrivileged([
+  { scheme: RENDERER_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+]);
+
+function registerRendererProtocol(): void {
+  const rendererDir = join(__dirname, '../renderer');
+  protocol.handle(RENDERER_SCHEME, (request) => {
+    const pathname = decodeURIComponent(new URL(request.url).pathname);
+    const filePath = normalize(join(rendererDir, pathname));
+    // 防目录穿越：协议根必须收敛在渲染层产物目录内。
+    if (filePath !== rendererDir && !filePath.startsWith(rendererDir + sep)) {
+      return new Response('forbidden', { status: 403 });
+    }
+    return net.fetch(pathToFileURL(filePath).toString());
+  });
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -42,7 +63,7 @@ function createWindow(): void {
   if (process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+    void mainWindow.loadURL(`${RENDERER_SCHEME}://app/index.html`);
   }
 }
 
@@ -82,6 +103,7 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(() => {
+  registerRendererProtocol();
   registerIpc();
   createWindow();
 

@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import type { IpcApi, IpcEventName, IpcEvents } from '@shadowedge/core';
-import { IPC_CHANNELS, IPC_EVENTS } from '@shadowedge/core';
+// 沙箱化 preload 只能 require electron 本体，从子路径引入纯契约模块，
+// 避免打包器把 core 里依赖 node:crypto 的部分一并卷入。
+import type { IpcApi, IpcEventName, IpcEvents } from '@shadowedge/core/ipc';
+import { IPC_CHANNELS, IPC_EVENTS } from '@shadowedge/core/ipc';
 
 type InvokeMap = Record<string, (payload?: unknown) => Promise<unknown>>;
 type SubscribeMap = Record<string, (handler: (...args: unknown[]) => void) => () => void>;

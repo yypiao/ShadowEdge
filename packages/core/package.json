@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./ipc": {
+      "types": "./dist/ipc.d.ts",
+      "import": "./dist/ipc.js"
     }
   },
   "scripts": {
