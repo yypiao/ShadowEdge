@@ -29,7 +29,8 @@ export interface IpcApi {
   'profile:launch': (options: LaunchOptions) => LaunchResult;
   'profile:close': (id: Uuid) => void;
 
-  'fingerprint:preview': (input: { seed: string; overrides?: Partial<FingerprintProfile> }) => FingerprintProfile;
+  /** 预览画像；传 proxyId 时时区/语言/地理自动跟随代理出口（T9），显式 overrides 优先。 */
+  'fingerprint:preview': (input: { seed: string; proxyId?: Uuid; overrides?: Partial<FingerprintProfile> }) => FingerprintProfile;
   'fingerprint:audit': (id: Uuid) => { consistent: boolean; issues: string[] };
 
   'proxy:list': () => ProxyCredential[];

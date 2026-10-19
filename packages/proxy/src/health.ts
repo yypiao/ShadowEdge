@@ -26,6 +26,7 @@ interface Endpoint {
 interface IpApiGeo {
   status: string;
   country?: string;
+  countryCode?: string;
   regionName?: string;
   city?: string;
   timezone?: string;
@@ -33,6 +34,8 @@ interface IpApiGeo {
   proxy?: boolean;
   hosting?: boolean;
   query?: string;
+  lat?: number;
+  lon?: number;
 }
 
 const ENDPOINTS: Endpoint[] = [
@@ -41,13 +44,22 @@ const ENDPOINTS: Endpoint[] = [
     host: 'ip-api.com',
     port: 80,
     tls: false,
-    path: '/json/?fields=status,country,regionName,city,timezone,as,proxy,hosting,query',
+    path: '/json/?fields=status,country,countryCode,regionName,city,timezone,as,proxy,hosting,query,lat,lon',
     parse: (body) => {
       const data = JSON.parse(body) as IpApiGeo;
       if (data.status !== 'success') return {};
       return {
         exitIp: data.query,
-        geo: { country: data.country ?? '', region: data.regionName, city: data.city, timezone: data.timezone, asn: data.as },
+        geo: {
+          country: data.country ?? '',
+          countryCode: data.countryCode,
+          region: data.regionName,
+          city: data.city,
+          timezone: data.timezone,
+          asn: data.as,
+          latitude: data.lat,
+          longitude: data.lon,
+        },
         risk: {
           score: data.hosting ? 0.7 : data.proxy ? 0.4 : 0.05,
           isDatacenter: data.hosting ?? false,

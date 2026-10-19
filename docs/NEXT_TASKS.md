@@ -169,3 +169,16 @@
 
 **验收**：用带认证的 socks5 代理启动环境，浏览器内访问 ip 查询站显示的出口 IP
 与健康检查结果一致；双跳链路同样成立。
+
+---
+
+## T9 — 指纹跟随代理 ✅（2026-10-19 完成）
+
+> 已落地：`packages/fingerprint/src/geo-follow.ts`（deriveGeoOverrides：时区直通 + 国家码→语言映射
+> 26 个市场 + 坐标 ±0.05° 确定性抖动）；`profile:create` 与 `fingerprint:preview`（新增可选 proxyId）
+> 自动应用，显式 overrides 优先；主进程健康检查 5 分钟缓存（双跳探测 30s+ 不再重复）；
+> 顺手修复启动闸门漏解析 upstream 导致双跳代理误判不可达的问题。
+> UI 走查：选 os1-德国 → 预览自动 Europe/Berlin + de-DE + 法兰克福坐标 → 启动 running → 停止。
+>
+> 踩坑记录：patchright 的 page.evaluate 在隔离 world，看不到 contextBridge 桥，
+> 自动化走查须用 CDP Runtime.evaluate 打主世界。

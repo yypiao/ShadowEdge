@@ -138,7 +138,7 @@ export interface ProxyHealth {
   reachable: boolean;
   latencyMs?: number;
   exitIp?: string;
-  geo?: { country: string; region?: string; city?: string; timezone?: string; asn?: string };
+  geo?: { country: string; countryCode?: string; region?: string; city?: string; timezone?: string; asn?: string; latitude?: number; longitude?: number };
   /** IP 质量画像：是否被标记为数据中心、代理或高风险。 */
   risk?: { score: number; isDatacenter: boolean; isProxy: boolean; blacklisted: boolean };
   error?: string;

@@ -180,3 +180,5 @@ export function auditFingerprint(
 }
 
 export { buildInjectionScript } from './inject.js';
+export { deriveGeoOverrides } from './geo-follow.js';
+export type { GeoInput } from './geo-follow.js';

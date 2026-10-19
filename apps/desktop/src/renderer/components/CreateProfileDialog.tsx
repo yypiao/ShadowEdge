@@ -18,14 +18,15 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
   const [preview, setPreview] = useState<FingerprintProfile | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // 种子变化即实时预览画像，让用户在创建前确认「这张脸」
+  // 种子/代理变化即实时预览画像；选代理时时区/语言/地理自动跟随出口
   useEffect(() => {
     let cancelled = false;
-    window.shadowedge.api['fingerprint:preview']({ seed })
+    setPreview(null);
+    window.shadowedge.api['fingerprint:preview']({ seed, proxyId: proxyId || undefined })
       .then((fp) => { if (!cancelled) setPreview(fp); })
       .catch(toastError);
     return () => { cancelled = true; };
-  }, [seed]);
+  }, [seed, proxyId]);
 
   const submit = useCallback(async () => {
     if (!name.trim()) {
@@ -81,6 +82,11 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
             </option>
           ))}
         </select>
+        {proxyId && (
+          <div style={{ fontSize: 11, color: '#1976d2', marginTop: 4 }}>
+            已选择代理：指纹的时区 / 语言 / 地理坐标将自动跟随出口（预览加载约需数秒）
+          </div>
+        )}
 
         <span style={label}>指纹种子</span>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -90,6 +96,11 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
           </button>
         </div>
 
+        {!preview && (
+          <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: '#f8fafc', border: '1px solid #e5e7eb', fontSize: 12, color: '#888' }}>
+            指纹预览加载中…
+          </div>
+        )}
         {preview && (
           <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: '#f8fafc', border: '1px solid #e5e7eb', fontSize: 12 }}>
             <strong>指纹预览</strong>
@@ -99,6 +110,7 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
               <div>时区：{preview.timezone} · 语言：{preview.languages.join(', ')}</div>
               <div>CPU {preview.hardware.hardwareConcurrency} 核 · 内存 {preview.hardware.deviceMemoryGb}GB</div>
               <div>WebGL：{preview.webgl.vendor} / {preview.webgl.renderer}</div>
+              {preview.geolocation && <div>地理：{preview.geolocation.latitude}, {preview.geolocation.longitude}</div>}
             </div>
           </div>
         )}

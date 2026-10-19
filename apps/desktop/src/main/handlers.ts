@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import type {
   BrowserProfile,
+  FingerprintProfile,
   IpcApi,
   IpcEventName,
   IpcEvents,
   Logger,
+  ProxyHealth,
   Uuid,
 } from '@shadowedge/core';
 import { ShadowEdgeError } from '@shadowedge/core';
-import { auditFingerprint, generateFingerprint } from '@shadowedge/fingerprint';
+import { auditFingerprint, deriveGeoOverrides, generateFingerprint } from '@shadowedge/fingerprint';
 import { BrowserKernel } from '@shadowedge/kernel';
 import { ProxyManager } from '@shadowedge/proxy';
 import { RpaEngine } from '@shadowedge/rpa';
@@ -62,6 +64,43 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   const proxyManager = new ProxyManager();
   const rpaEngine = new RpaEngine();
 
+  // 健康检查缓存：住宅/双跳代理探测可达 30s+，建环境与预览不应每次重探
+  const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
+  const healthCache = new Map<Uuid, { health: ProxyHealth; at: number }>();
+
+  const resolveUpstream = (upstreamId: Uuid | undefined) => {
+    if (!upstreamId) return undefined;
+    const upstreamCred = deps.proxyRepo.get(upstreamId);
+    if (!upstreamCred) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `上游代理 ${upstreamId} 不存在`);
+    return {
+      protocol: upstreamCred.protocol === 'socks5' ? ('socks5' as const) : ('http' as const),
+      host: upstreamCred.host,
+      port: upstreamCred.port,
+      username: upstreamCred.username,
+      password: deps.proxyRepo.reveal(upstreamCred.id),
+    };
+  };
+
+  const getProxyHealth = async (proxyId: Uuid) => {
+    const cached = healthCache.get(proxyId);
+    if (cached && Date.now() - cached.at < HEALTH_CACHE_TTL_MS) return cached.health;
+    const credential = deps.proxyRepo.get(proxyId);
+    if (!credential) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${proxyId} 不存在`);
+    const health = await proxyManager.check(credential, deps.proxyRepo.reveal(proxyId), {
+      upstream: resolveUpstream(credential.upstreamId),
+    });
+    healthCache.set(proxyId, { health, at: Date.now() });
+    return health;
+  };
+
+  /** T9：显式 overrides 优先，缺省时由代理出口地理补齐时区/语言/坐标。 */
+  const geoFollowOverrides = async (proxyId: Uuid | undefined, overrides: Partial<FingerprintProfile> | undefined) => {
+    if (!proxyId) return overrides;
+    const health = await getProxyHealth(proxyId);
+    if (!health.geo) return overrides;
+    return { ...deriveGeoOverrides(health.geo), ...overrides };
+  };
+
   const requireProfile = (id: Uuid): BrowserProfile => {
     const profile = deps.profileRepo.get(id);
     if (!profile) throw new ShadowEdgeError('E_PROFILE_NOT_FOUND', `环境 ${id} 不存在`);
@@ -79,13 +118,14 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       const now = new Date().toISOString();
       const id = randomUUID() as Uuid;
       const seed = input.fingerprintSeed ?? randomUUID();
+      const overrides = await geoFollowOverrides(input.proxyId, input.overrides);
       const profile: BrowserProfile = {
         id,
         orgId: 'local',
         name: input.name,
         platformTag: input.platformTag,
         kernel: 'chromium-patched',
-        fingerprint: generateFingerprint({ seed, overrides: input.overrides }),
+        fingerprint: generateFingerprint({ seed, overrides }),
         proxyId: input.proxyId,
         ownerId: 'local-user',
         sharedWith: [],
@@ -120,11 +160,8 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       await runLaunchGate(
         { profile, ignoreProxyCheck: options.ignoreProxyCheck },
         {
-          checkProxy: async (proxyId) => {
-            const credential = deps.proxyRepo.get(proxyId);
-            if (!credential) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${proxyId} 不存在`);
-            return proxyManager.check(credential, deps.proxyRepo.reveal(proxyId));
-          },
+          // 走缓存 + 双跳解析（原实现漏了 upstream，双跳代理会被误判不可达）
+          checkProxy: getProxyHealth,
         },
       );
       deps.emit('profile:status', { profileId: profile.id, status: 'launching' });
@@ -145,7 +182,8 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       deps.emit('profile:status', { profileId: id, status: 'idle' });
     },
 
-    'fingerprint:preview': async ({ seed, overrides }) => generateFingerprint({ seed, overrides }),
+    'fingerprint:preview': async ({ seed, proxyId, overrides }) =>
+      generateFingerprint({ seed, overrides: await geoFollowOverrides(proxyId, overrides) }),
 
     'fingerprint:audit': async (id) => auditFingerprint(requireProfile(id).fingerprint),
 
@@ -156,21 +194,9 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       return saved;
     },
     'proxy:check': async (id) => {
-      const credential = deps.proxyRepo.get(id);
-      if (!credential) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${id} 不存在`);
-      let upstream: { protocol: 'http' | 'socks5'; host: string; port: number; username?: string; password?: string } | undefined;
-      if (credential.upstreamId) {
-        const upstreamCred = deps.proxyRepo.get(credential.upstreamId);
-        if (!upstreamCred) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `上游代理 ${credential.upstreamId} 不存在`);
-        upstream = {
-          protocol: upstreamCred.protocol === 'socks5' ? 'socks5' : 'http',
-          host: upstreamCred.host,
-          port: upstreamCred.port,
-          username: upstreamCred.username,
-          password: deps.proxyRepo.reveal(upstreamCred.id),
-        };
-      }
-      const health = await proxyManager.check(credential, deps.proxyRepo.reveal(id), { upstream });
+      // 手动点检查视为强制刷新：清缓存重探
+      healthCache.delete(id);
+      const health = await getProxyHealth(id);
       deps.emit('proxy:health', health);
       return health;
     },
