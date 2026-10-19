@@ -1,20 +1,29 @@
 import { useEffect } from 'react';
+import { Toasts } from '../components/Toasts.js';
 import { useStore } from '../store.js';
+import { ProfilesPage } from './ProfilesPage.js';
+import { ProxiesPage } from './ProxiesPage.js';
 
 export function App() {
-  const { profiles, sidebar, setSidebar, setProfiles } = useStore();
+  const { sidebar, setSidebar, setProfiles, setProxies, setProxyHealth, toast } = useStore();
 
   useEffect(() => {
     void window.shadowedge.api['profile:list'](undefined).then(setProfiles);
+    void window.shadowedge.api['proxy:list'](undefined).then(setProxies);
 
-    return window.shadowedge.on['profile:status']((payload) => {
-      useStore.setState((state) => ({
-        profiles: state.profiles.map((p) =>
-          p.id === payload.profileId ? { ...p, status: payload.status } : p,
-        ),
-      }));
-    });
-  }, [setProfiles]);
+    const unsubscribers = [
+      window.shadowedge.on['profile:status']((payload) => {
+        useStore.setState((state) => ({
+          profiles: state.profiles.map((p) =>
+            p.id === payload.profileId ? { ...p, status: payload.status } : p,
+          ),
+        }));
+      }),
+      window.shadowedge.on['proxy:health'](setProxyHealth),
+      window.shadowedge.on['app:toast']((payload) => toast(payload.level, payload.message)),
+    ];
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [setProfiles, setProxies, setProxyHealth, toast]);
 
   const tabs = [
     { key: 'profiles', label: '环境管理' },
@@ -52,28 +61,13 @@ export function App() {
       </nav>
 
       <main style={{ flex: 1, padding: 24, overflow: 'auto' }}>
-        <h2 style={{ marginBottom: 16 }}>环境列表</h2>
-        {profiles.length === 0 ? (
-          <p style={{ color: '#888' }}>暂无环境。创建第一个隔离环境即可开始。</p>
-        ) : (
-          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-            {profiles.map((profile) => (
-              <article
-                key={profile.id}
-                style={{ padding: 16, borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff' }}
-              >
-                <strong>{profile.name}</strong>
-                <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-                  {profile.platformTag ?? '通用'} · {profile.status}
-                </div>
-                <div style={{ fontSize: 11, color: '#999', marginTop: 6, wordBreak: 'break-all' }}>
-                  {profile.fingerprint.userAgent}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
+        {sidebar === 'profiles' && <ProfilesPage />}
+        {sidebar === 'proxies' && <ProxiesPage />}
+        {sidebar === 'rpa' && <p style={{ color: '#888' }}>自动化编排将在 T7 落地。</p>}
+        {sidebar === 'settings' && <p style={{ color: '#888' }}>设置页开发中。</p>}
       </main>
+
+      <Toasts />
     </div>
   );
 }

@@ -97,7 +97,12 @@
 
 ---
 
-## T6 — 环境创建/编辑 UI
+## T6 — 环境创建/编辑 UI ✅（2026-10-19 完成）
+
+> 已落地：`ProfilesPage`（卡片+启动/停止）、`CreateProfileDialog`（名称/平台/代理/种子+实时指纹预览）、
+> `ProxiesPage`（列表/批量导入/健康检查结果展示）、全局 `Toasts`（订阅 `app:toast`）。
+> 样式维持内联方案，未引入样式框架（避免无谓依赖）。
+> 顺带修复：patchright 系在 electron-vite 下保持 external 并显式列为 desktop 依赖，否则打包后动态 require 断裂。
 
 **背景**：渲染层目前只有一个只读列表。
 
