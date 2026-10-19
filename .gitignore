@@ -17,3 +17,4 @@ profiles/
 chromium-build/
 .pnpm-store/
 experiments/.secrets/
+experiments/probes/.probe-profile/
