@@ -1,0 +1,196 @@
+{
+  "label": "os1-worker-fix",
+  "seed": "walkthrough-de",
+  "proxy": "os1",
+  "at": "2026-10-19T07:58:45.216Z",
+  "fingerprint": {
+    "seed": "walkthrough-de",
+    "platform": "windows",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+    "userAgentData": {
+      "brands": [
+        {
+          "brand": "Chromium",
+          "version": "131"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Not?A_Brand",
+          "version": "99"
+        }
+      ],
+      "platform": "Windows",
+      "platformVersion": "15.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "fullVersion": "131.0.6778.86",
+      "mobile": false
+    },
+    "screen": {
+      "width": 1440,
+      "height": 900,
+      "availWidth": 1440,
+      "availHeight": 860,
+      "colorDepth": 24,
+      "pixelRatio": 2
+    },
+    "viewport": {
+      "width": 1440,
+      "height": 860
+    },
+    "languages": [
+      "de-DE",
+      "de",
+      "en-US"
+    ],
+    "timezone": "Europe/Berlin",
+    "hardware": {
+      "deviceMemoryGb": 16,
+      "hardwareConcurrency": 6,
+      "maxTouchPoints": 0
+    },
+    "webgl": {
+      "vendor": "Google Inc. (NVIDIA)",
+      "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "noise": "noise"
+    },
+    "canvas": "noise",
+    "audio": "noise",
+    "clientRects": "noise",
+    "fonts": {
+      "mode": "whitelist",
+      "families": [
+        "Arial",
+        "Georgia",
+        "Tahoma",
+        "Calibri",
+        "Webdings",
+        "Cambria",
+        "Times New Roman",
+        "Courier New"
+      ]
+    },
+    "webrtc": {
+      "mode": "replace"
+    },
+    "media": {
+      "audioInputs": 1,
+      "videoInputs": 1,
+      "audioOutputs": 1
+    },
+    "disabledFeatures": [],
+    "geolocation": {
+      "latitude": 50.13549,
+      "longitude": 8.68328,
+      "accuracy": 50
+    }
+  },
+  "expectedGeo": {
+    "exitIp": "82.198.243.159",
+    "timezone": "Europe/Berlin",
+    "countryCode": "DE",
+    "latitude": 50.1169,
+    "longitude": 8.6837
+  },
+  "local": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+    "webdriver": false,
+    "platform": "Win32",
+    "languages": [
+      "de-DE",
+      "de",
+      "en-US"
+    ],
+    "hardwareConcurrency": 6,
+    "deviceMemory": 16,
+    "maxTouchPoints": 0,
+    "vendor": "Google Inc.",
+    "screen": {
+      "width": 1440,
+      "height": 900,
+      "availWidth": 1440,
+      "availHeight": 860,
+      "colorDepth": 24,
+      "pixelRatio": 2
+    },
+    "timezone": "Europe/Berlin",
+    "tzOffset": -120,
+    "chromeObj": "object",
+    "permissions": "denied",
+    "plugins": 5,
+    "mimeTypes": 2,
+    "webgl": {
+      "vendor": "Google Inc. (NVIDIA)",
+      "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)"
+    },
+    "canvasHash": "d9fa3cb8",
+    "audioFp": "172.67165112688235",
+    "traps": {
+      "fnToString": true,
+      "errorStack": 3,
+      "navPropsCount": 36,
+      "hasCDC": []
+    }
+  },
+  "webrtc": {
+    "candidates": []
+  },
+  "creep": {
+    "trustScoreRaw": null,
+    "fingerprintId": "c8bbe3491b4070ee3e6a6654fcb26fbef9b6cdee9e503f187494015a9c1571c4",
+    "liesMentions": 0,
+    "bodySnippet": "FP ID: c8bbe3491b4070ee3e6a6654fcb26fbef9b6cdee9e503f187494015a9c1571c4\nFuzzy: caffb816da2566a95bb55ebc3deb09899fa4f41f5fd578dffd1a000000000000\n880.20 ms\nWebRTC6d954da0\nhost connection:\ncandidate:1664899920 1 udp 2113937151 9a8a6b08-51c5-47ad-950c-8b1e439dcbdd.local 58091 typ host generation 0 ufrag x8zx network-cost 999\nfoundation/ip:\ntype & base ip: 1664899920\nblocked\nsdp capabilities: 52dcc46c\nstun connection:\nblocked\ndevices (3):\nmic, audio, webcam\n6.00ms\nTimezone48a54f48\nMitteleuropäische Sommerzeit\nEurope, Berlin\n-27028688008000\n-120\n17.90ms\nIntl8ea4509e\nde-DE\nJuli um Mitteleuropäische Sommerzeit\nEnglisch (Vereinigte Staaten)\n21 Millionen\nnächstes Jahr\n0 oder 1\none\n15.10ms\nHeadlessca86107f\nchromium: true\n38% like headless: b68729d9\n0% headless: 52defe05\n20% stealth: 4b82ddf4\nplatform hints:\nArial\n9:82:91:100:82\n\n0.50ms\nResistance3fd9653b\nprivacy: unknown\nsecurity: unknown\nmode: unknown\nextension: Privacy Possum\n786.60ms\nServiceWorkerGlobalScope\nWorker8425e79e\nlang/timezone:\nde-DE (1 US-Dollar)\nEurope/Berlin (-120)\nconfidence: high\ngpu:\nGoogle Inc. (Apple)\nANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)\nuserAgent:\nua reduction\nMozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36\ndevice:\nMac (MacIntel)\nmacOS Catalina\ncores: 10, ram: 16\nuserAgentData:\n\nWindows Unknown [10.0] x86\n73.30ms\nWebGL6392b8c1\nimages:06f91e45\npixels:4c72f7ab\nparams (78): 7616ca9d\nexts (75): 901d2431\ngpu:\nconfidence: high\nGoogle Inc. (NVIDIA)\nANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)\n0.90ms\nScreena6384f80\n...screen: 1440 x 900\n....avail: 1440 x 860\ntouch: false\ndepth: 24|30\nviewport:\n1442\n1440\n1440\n869\n860\n860\nbrowser\nlandscape\nlandscape-primary\n2\n102.70ms\nCanvas 2d9b42d712\ndata: 46c8753b\nrendering:\ntextMetrics:\n0.025521647332310677\n😀☺♨...☑✴🅰\n210.50ms\nFontsfa39f4dc\nload (18/51): Like undefined\napps: unsupported\n\"American Typewriter Semibold\", \"Apple SD Gothic Neo ExtraBold\", \""
+  },
+  "expectations": [
+    {
+      "name": "userAgent 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "timezone 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "hardwareConcurrency 一致",
+      "ok": true
+    },
+    {
+      "name": "deviceMemory 一致",
+      "ok": true
+    },
+    {
+      "name": "maxTouchPoints=0(桌面)",
+      "ok": true
+    },
+    {
+      "name": "webdriver 未暴露",
+      "ok": true
+    },
+    {
+      "name": "无 cdc_$cdc 变量",
+      "ok": true
+    },
+    {
+      "name": "permissions.query 为原生",
+      "ok": true
+    },
+    {
+      "name": "WebGL renderer 一致",
+      "ok": true
+    },
+    {
+      "name": "WebRTC 无本机/真实出口 candidate",
+      "ok": true
+    },
+    {
+      "name": "WebRTC 未泄漏（candidate 为空或仅 mDNS）",
+      "ok": true
+    }
+  ],
+  "score": "11/11"
+}

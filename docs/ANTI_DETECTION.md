@@ -83,3 +83,17 @@
 3. **一致性** —— 交叉约束全部满足。
 4. **隐蔽性** —— 第三方检测站（CreepJS / BrowserLeaks / Pixelscan 等）无自动化告警。
 5. **隔离性** —— 环境间 Cookie / Storage / IP 互不可见。
+
+## 6. 探针回归实测记录（2026-10-19，CreepJS × os1 德国双跳链路）
+
+通过 `node experiments/probes/run.mjs --seed <s> --proxy os1` 复现。基线 11/11 后发现并修复三个深层漏洞：
+
+| 漏洞 | 现象 | 修复 |
+| --- | --- | --- |
+| WebRTC flag 失效 | `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` 在 Chromium 156 下 srflx 仍泄漏真实出口 IP | 注入层过滤 ice candidate（replace 改写为出口 IP / 无 publicIp 则丢弃 host/srflx） |
+| Worker 裸奔 | `addInitScript` 不覆盖 Worker 作用域，CreepJS 在 Worker 读到真实 GPU(Apple M4)/UA(Mac)/ cores，与页面世界矛盾 | 包装 `Worker`/`SharedWorker`：同源脚本同步拉源码、前置注入、转 blob；注入脚本做 Window/Worker 双作用域兼容；UA 逐世界注入（Worker 不吃上下文 UA 覆盖） |
+| ServiceWorker 无法注入 | CreepJS 首选 ServiceWorkerGlobalScope 采集指纹，`register()` 直拉 URL 无法拦截 | 屏蔽 `navigator.serviceWorker`，迫使探针回退到可包装的 Shared/Dedicated Worker（反检测浏览器通行做法） |
+
+修复后 CreepJS Worker 节：`Windows/Win32 · UA Edg/130 · GPU RTX 3060 · Europe/Berlin · de-DE`，与页面世界完全一致；同 seed 两次运行 FP ID 逐字节一致。
+
+**已知边界**：嵌套 Worker（Worker 里再建 Worker）不递归注入；ServiceWorker 屏蔽可能被标记为「隐私强化」特征（与紫鸟 EngTk2 的对照测试待做）。

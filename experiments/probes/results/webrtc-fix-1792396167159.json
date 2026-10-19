@@ -1,0 +1,173 @@
+{
+  "label": "webrtc-fix",
+  "seed": "smoke-1",
+  "proxy": null,
+  "at": "2026-10-19T07:49:27.158Z",
+  "fingerprint": {
+    "seed": "smoke-1",
+    "platform": "windows",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+    "userAgentData": {
+      "brands": [
+        {
+          "brand": "Chromium",
+          "version": "131"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Not?A_Brand",
+          "version": "99"
+        }
+      ],
+      "platform": "Windows",
+      "platformVersion": "15.0.0",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "fullVersion": "131.0.6778.86",
+      "mobile": false
+    },
+    "screen": {
+      "width": 1920,
+      "height": 1080,
+      "availWidth": 1920,
+      "availHeight": 1040,
+      "colorDepth": 24,
+      "pixelRatio": 1
+    },
+    "viewport": {
+      "width": 1920,
+      "height": 1040
+    },
+    "languages": [
+      "zh-CN",
+      "zh"
+    ],
+    "timezone": "Europe/Paris",
+    "hardware": {
+      "deviceMemoryGb": 4,
+      "hardwareConcurrency": 4,
+      "maxTouchPoints": 0
+    },
+    "webgl": {
+      "vendor": "Google Inc. (Intel)",
+      "renderer": "ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "noise": "noise"
+    },
+    "canvas": "noise",
+    "audio": "noise",
+    "clientRects": "noise",
+    "fonts": {
+      "mode": "whitelist",
+      "families": [
+        "Cambria",
+        "Tahoma",
+        "Courier New",
+        "Webdings",
+        "Calibri",
+        "Georgia",
+        "Verdana",
+        "Arial"
+      ]
+    },
+    "webrtc": {
+      "mode": "replace"
+    },
+    "media": {
+      "audioInputs": 1,
+      "videoInputs": 1,
+      "audioOutputs": 1
+    },
+    "disabledFeatures": []
+  },
+  "local": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+    "webdriver": false,
+    "platform": "Win32",
+    "languages": [
+      "zh-CN",
+      "zh"
+    ],
+    "hardwareConcurrency": 4,
+    "deviceMemory": 4,
+    "maxTouchPoints": 0,
+    "vendor": "Google Inc.",
+    "screen": {
+      "width": 1920,
+      "height": 1080,
+      "availWidth": 1920,
+      "availHeight": 1040,
+      "colorDepth": 24,
+      "pixelRatio": 1
+    },
+    "timezone": "Europe/Paris",
+    "tzOffset": -120,
+    "chromeObj": "object",
+    "permissions": "denied",
+    "plugins": 5,
+    "mimeTypes": 2,
+    "webgl": {
+      "vendor": "Google Inc. (Intel)",
+      "renderer": "ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)"
+    },
+    "canvasHash": "d9fa3cb8",
+    "audioFp": "172.6716493089407",
+    "traps": {
+      "fnToString": true,
+      "errorStack": 3,
+      "navPropsCount": 36,
+      "hasCDC": []
+    }
+  },
+  "webrtc": {
+    "candidates": []
+  },
+  "creep": null,
+  "expectations": [
+    {
+      "name": "userAgent 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "timezone 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "hardwareConcurrency 一致",
+      "ok": true
+    },
+    {
+      "name": "deviceMemory 一致",
+      "ok": true
+    },
+    {
+      "name": "maxTouchPoints=0(桌面)",
+      "ok": true
+    },
+    {
+      "name": "webdriver 未暴露",
+      "ok": true
+    },
+    {
+      "name": "无 cdc_$cdc 变量",
+      "ok": true
+    },
+    {
+      "name": "permissions.query 为原生",
+      "ok": true
+    },
+    {
+      "name": "WebGL renderer 一致",
+      "ok": true
+    },
+    {
+      "name": "WebRTC 无本机/真实出口 candidate",
+      "ok": true
+    }
+  ],
+  "score": "10/10"
+}

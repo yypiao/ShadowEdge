@@ -182,3 +182,16 @@
 >
 > 踩坑记录：patchright 的 page.evaluate 在隔离 world，看不到 contextBridge 桥，
 > 自动化走查须用 CDP Runtime.evaluate 打主世界。
+
+---
+
+## 阶段三开工：探针回归网 ✅ 基线建立（2026-10-19）
+
+> `experiments/probes/run.mjs`（`pnpm probe -- --seed <s> --proxy os1 --label <name>`）：
+> 真实产品链路（fingerprint→注入→中继→Patchright）跑本地采集 + WebRTC 泄漏检查 + CreepJS，
+> 输出 11 项期望比对矩阵与 JSON 报告（`experiments/probes/results/`）。
+> 首轮即抓出三个深层漏洞（WebRTC flag 失效 / Worker 裸奔 / ServiceWorker 无法注入），
+> 修复后 11/11 且 Worker 世界与页面世界完全一致。详见 docs/ANTI_DETECTION.md §6。
+
+**后续**：紫鸟 EngTk2 对照补测（T0 遗留 C 组）；Pixelscan/BrowserLeaks 纳入探针网；
+CreepJS trust score 的 DOM 精确提取（目前只抓了 FP ID）。

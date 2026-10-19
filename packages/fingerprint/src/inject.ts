@@ -15,10 +15,14 @@ export function buildInjectionScript(fp: FingerprintProfile): string {
     `let _s = ${noiseSeed} >>> 0;`,
     'const _rnd = () => { _s ^= _s << 13; _s ^= _s >>> 17; _s ^= _s << 5; return (_s >>> 0) / 4294967296; };',
     'const _def = (obj, key, get) => { try { Object.defineProperty(obj, key, { get, configurable: true }); } catch (_) {} };',
+    // 兼容 Window 与 Worker 两种全局作用域（Worker 穿透注入时无 window/screen/document）
+    'const _w = typeof window !== "undefined" ? window : self;',
   ];
 
   // navigator 基础属性
   lines.push(
+    // UA 在 Worker 里不吃上下文的 UA 覆盖（Chromium 行为），必须逐世界注入
+    `_def(navigator, 'userAgent', () => P.navigator.userAgent);`,
     `_def(navigator, 'platform', () => P.navigator.platform);`,
     `_def(navigator, 'languages', () => Object.freeze(P.navigator.languages.slice()));`,
     `_def(navigator, 'hardwareConcurrency', () => P.navigator.hardwareConcurrency);`,
@@ -29,14 +33,18 @@ export function buildInjectionScript(fp: FingerprintProfile): string {
     lines.push(`_def(navigator, 'webdriver', () => false);`);
   }
 
-  // 屏幕与像素比
+  // 屏幕与像素比（仅 Window 作用域存在）
   lines.push(
+    'if (typeof screen !== "undefined") {',
     `_def(screen, 'width', () => P.screen.width);`,
     `_def(screen, 'height', () => P.screen.height);`,
     `_def(screen, 'availWidth', () => P.screen.availWidth);`,
     `_def(screen, 'availHeight', () => P.screen.availHeight);`,
     `_def(screen, 'colorDepth', () => P.screen.colorDepth);`,
+    '}',
+    'if (typeof window !== "undefined") {',
     `_def(window, 'devicePixelRatio', () => P.screen.pixelRatio);`,
+    '}',
   );
 
   // WebGL vendor/renderer（WebGL1 + WebGL2 双上下文）
@@ -51,8 +59,8 @@ export function buildInjectionScript(fp: FingerprintProfile): string {
       '    return orig.call(this, p);',
       '  };',
       '};',
-      '_spoofGl(window.WebGLRenderingContext && WebGLRenderingContext.prototype);',
-      '_spoofGl(window.WebGL2RenderingContext && WebGL2RenderingContext.prototype);',
+      '_spoofGl(_w.WebGLRenderingContext && _w.WebGLRenderingContext.prototype);',
+      '_spoofGl(_w.WebGL2RenderingContext && _w.WebGL2RenderingContext.prototype);',
     );
   }
 
@@ -70,8 +78,11 @@ export function buildInjectionScript(fp: FingerprintProfile): string {
       '  }',
       '  ctx.putImageData(d, 0, 0);',
       '};',
+      'if (typeof HTMLCanvasElement !== "undefined") {',
       'const _origToDataURL = HTMLCanvasElement.prototype.toDataURL;',
       'HTMLCanvasElement.prototype.toDataURL = function (...args) { _noiseCanvas(this); return _origToDataURL.apply(this, args); };',
+      '}',
+      'if (typeof CanvasRenderingContext2D === "undefined") { /* worker 跳过 */ } else {',
       'const _origGetImageData = CanvasRenderingContext2D.prototype.getImageData;',
       'CanvasRenderingContext2D.prototype.getImageData = function (...args) {',
       '  const d = _origGetImageData.apply(this, args);',
@@ -79,12 +90,14 @@ export function buildInjectionScript(fp: FingerprintProfile): string {
       '  for (let i = 0; i < d.data.length; i += 997) { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; d.data[i] = d.data[i] ^ (s & 1); }',
       '  return d;',
       '};',
+      '}',
     );
   }
 
   // Audio 确定性微噪声
   if (fp.audio === 'noise') {
     lines.push(
+      'if (typeof AudioBuffer === "undefined") { /* worker 无 AudioBuffer 跳过 */ } else {',
       'const _origGetChannelData = AudioBuffer.prototype.getChannelData;',
       'AudioBuffer.prototype.getChannelData = function (ch) {',
       '  const data = _origGetChannelData.call(this, ch);',
@@ -95,6 +108,7 @@ export function buildInjectionScript(fp: FingerprintProfile): string {
       '  }',
       '  return data;',
       '};',
+      '}',
     );
   }
 
@@ -108,6 +122,54 @@ export function buildInjectionScript(fp: FingerprintProfile): string {
       "    _def(b, 'level', () => P.battery.level);",
       '    return b;',
       '  });',
+      '}',
+    );
+  }
+
+  // WebRTC 候选过滤：T0/探针回归实测 --force-webrtc-ip-handling-policy 在 Chromium 156
+  // 不再可靠（srflx 仍泄漏真实出口）。注入层过滤 ice candidate：
+  // replace 且有 publicIp → 改写为出口 IP；否则丢弃 host/srflx（等效 disable）。
+  if (fp.webrtc.mode !== 'real') {
+    lines.push(
+      'if (_w.RTCPeerConnection) {',
+      '  const _candRe = /candidate:\\S+ \\d+ \\S+ \\d+ ([0-9a-fA-F:.]+) \\d+ typ (host|srflx)/;',
+      '  const _filterCand = (cand) => {',
+      '    if (!cand || !cand.candidate) return cand;',
+      '    const m = cand.candidate.match(_candRe);',
+      '    if (!m) return cand;',
+      '    if (P.webrtc.mode === "replace" && P.webrtc.publicIp) {',
+      '      return new RTCIceCandidate({',
+      '        candidate: cand.candidate.replace(m[1], P.webrtc.publicIp),',
+      '        sdpMid: cand.sdpMid, sdpMLineIndex: cand.sdpMLineIndex, usernameFragment: cand.usernameFragment,',
+      '      });',
+      '    }',
+      '    return null;',
+      '  };',
+      '  const _OrigRTC = _w.RTCPeerConnection;',
+      '  const _wrap = (pc) => {',
+      '    const _origAdd = pc.addEventListener.bind(pc);',
+      '    pc.addEventListener = function (type, listener, ...rest) {',
+      '      if (type !== "icecandidate" || !listener) return _origAdd(type, listener, ...rest);',
+      '      return _origAdd(type, (ev) => {',
+      '        const c = _filterCand(ev.candidate);',
+      '        if (c !== null || ev.candidate === null) listener(ev.candidate === null ? ev : { ...ev, candidate: c });',
+      '      }, ...rest);',
+      '    };',
+      '    let _onice = null;',
+      '    Object.defineProperty(pc, "onicecandidate", {',
+      '      set(fn) { _onice = fn; },',
+      '      get() {',
+      '        return (ev) => {',
+      '          const c = _filterCand(ev.candidate);',
+      '          if ((c !== null || ev.candidate === null) && _onice) _onice(ev.candidate === null ? ev : { ...ev, candidate: c });',
+      '        };',
+      '      },',
+      '      configurable: true,',
+      '    });',
+      '    return pc;',
+      '  };',
+      '  _w.RTCPeerConnection = function (...args) { return _wrap(new _OrigRTC(...args)); };',
+      '  _w.RTCPeerConnection.prototype = _OrigRTC.prototype;',
       '}',
     );
   }
@@ -134,14 +196,52 @@ export function buildInjectionScript(fp: FingerprintProfile): string {
     );
   }
 
+  // Worker 穿透（探针回归实测发现）：CreepJS 在 Worker 里读 WebGL/UA，
+  // addInitScript 不覆盖 Worker 全局作用域，真实 GPU/UA 在那里裸奔形成跨世界矛盾。
+  // 包装 Worker：同源脚本同步拉源码、前置本注入、转 blob 启动。
+  // 另：CreepJS 优先选 ServiceWorker（register 直拉 URL 无法注入），屏蔽之迫使其
+  // 回退到 Shared/Dedicated（均可包装）；这是反检测浏览器的通行做法。
+  lines.push(
+    `_def(navigator, 'serviceWorker', () => undefined);`,
+  );
+  lines.push(
+    'if (_w.Worker) {',
+    '  const _OrigWorker = _w.Worker;',
+    '  const _wrapUrl = (url) => {',
+    '    try {',
+    '      const s = String(url);',
+    '      const same = s.startsWith("blob:") || s.startsWith("data:") || new URL(s, location.href).origin === location.origin;',
+    '      if (!same || !P.__injectSrc) return url;',
+    '      const xhr = new XMLHttpRequest();',
+    '      xhr.open("GET", s, false);',
+    '      xhr.send(null);',
+    '      if (xhr.status >= 400) return url;',
+    '      return URL.createObjectURL(new Blob([P.__injectSrc, "\\n", xhr.responseText], { type: "application/javascript" }));',
+    '    } catch (_) { return url; }',
+    '  };',
+    '  _w.Worker = function (url, opts) { return new _OrigWorker(_wrapUrl(url), opts); };',
+    '  _w.Worker.prototype = _OrigWorker.prototype;',
+    '  if (_w.SharedWorker) {',
+    '    const _OrigShared = _w.SharedWorker;',
+    '    _w.SharedWorker = function (url, opts) { return new _OrigShared(_wrapUrl(url), opts); };',
+    '    _w.SharedWorker.prototype = _OrigShared.prototype;',
+    '  }',
+    '}',
+  );
+
   lines.push('})();');
-  return lines.join('\n');
+
+  // 注入源码自引用：Worker 包装需要把整段脚本带过去。嵌套 Worker（Worker 再生 Worker）不递归。
+  const body = lines.join('\n'); // 末尾已是 IIFE 闭合 })();
+  const assign = `try { P.__injectSrc = ${JSON.stringify(body)}; } catch (_) {}`;
+  return body.replace(/\}\)\(\);\s*$/, assign + '\n})();');
 }
 
 /** 注入所需的最小画像子集（避免把无用字段带进页面世界）。 */
 function serializeForInjection(fp: FingerprintProfile) {
   return {
     navigator: {
+      userAgent: fp.userAgent,
       platform: fp.platform === 'macos' ? 'MacIntel' : fp.platform === 'windows' ? 'Win32' : 'Linux x86_64',
       languages: fp.languages,
       hardwareConcurrency: fp.hardware.hardwareConcurrency,
@@ -157,6 +257,7 @@ function serializeForInjection(fp: FingerprintProfile) {
       pixelRatio: fp.screen.pixelRatio,
     },
     webgl: { vendor: fp.webgl.vendor, renderer: fp.webgl.renderer },
+    webrtc: { mode: fp.webrtc.mode, publicIp: fp.webrtc.publicIp },
     battery: fp.battery ? { charging: fp.battery.charging, level: fp.battery.level } : undefined,
     media: { audioInputs: fp.media.audioInputs, videoInputs: fp.media.videoInputs, audioOutputs: fp.media.audioOutputs },
   };
