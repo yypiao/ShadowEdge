@@ -1,0 +1,45 @@
+{
+  "main": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "webdriver": false,
+    "platform": "MacIntel",
+    "languages": [
+      "zh-CN",
+      "zh"
+    ],
+    "hardwareConcurrency": 8,
+    "deviceMemory": 8,
+    "maxTouchPoints": 0,
+    "timezone": "Asia/Shanghai",
+    "tzOffset": -480,
+    "screen": {
+      "w": 1470,
+      "h": 956,
+      "dpr": 2
+    },
+    "permissions": "prompt",
+    "webgl": {
+      "renderer": "ANGLE (Apple, Apple M3 Max, OpenGL 4.1)"
+    },
+    "canvasHash": "738e93c",
+    "audioFp": "172.65264915063744",
+    "traps": {
+      "fnToString": true,
+      "hasCDC": [],
+      "navPropsCount": 83
+    }
+  },
+  "worker": {
+    "hc": 8,
+    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+    "platform": "MacIntel",
+    "langs": [
+      "zh-CN",
+      "zh"
+    ]
+  },
+  "webrtc": {
+    "candidates": []
+  },
+  "serviceWorker": "可用"
+}
