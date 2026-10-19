@@ -125,7 +125,8 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         name: input.name,
         platformTag: input.platformTag,
         kernel: 'chromium-patched',
-        fingerprint: generateFingerprint({ seed, overrides }),
+        // 缺省跟随宿主机平台（紫鸟式同系微调哲学）；显式指定则尊重用户选择
+        fingerprint: generateFingerprint({ seed, platform: input.platform ?? 'host', overrides }),
         proxyId: input.proxyId,
         ownerId: 'local-user',
         sharedWith: [],
@@ -182,8 +183,8 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       deps.emit('profile:status', { profileId: id, status: 'idle' });
     },
 
-    'fingerprint:preview': async ({ seed, proxyId, overrides }) =>
-      generateFingerprint({ seed, overrides: await geoFollowOverrides(proxyId, overrides) }),
+    'fingerprint:preview': async ({ seed, proxyId, platform, overrides }) =>
+      generateFingerprint({ seed, platform: platform ?? 'host', overrides: await geoFollowOverrides(proxyId, overrides) }),
 
     'fingerprint:audit': async (id) => auditFingerprint(requireProfile(id).fingerprint),
 

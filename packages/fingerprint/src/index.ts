@@ -11,7 +11,8 @@ interface FingerprintDatabase {
   uaDatas: Record<Platform, FingerprintProfile['userAgentData'][]>;
   screens: FingerprintProfile['screen'][];
   fonts: Record<Platform, string[]>;
-  webglVendors: Array<{ vendor: string; renderer: string }>;
+  /** platforms 为「跟随宿主机」模式的平台约束标签；缺省表示全平台可用（保持旧行为）。 */
+  webglVendors: Array<{ vendor: string; renderer: string; platforms?: Platform[] }>;
 }
 
 /** 嵌入式指纹素材库 —— 实际生产环境应定期从遥测集群拉取并编译。 */
@@ -62,29 +63,42 @@ const DEFAULT_DB: FingerprintDatabase = {
     linux: ['DejaVu Sans', 'DejaVu Serif', 'Liberation Sans', 'Liberation Serif', 'Ubuntu', 'Noto Sans', 'Noto Serif', 'Droid Sans', 'Cantarell', 'FreeSans'],
   },
   webglVendors: [
-    { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)' },
-    { vendor: 'Google Inc. (Apple)', renderer: 'ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)' },
-    { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)' },
-    { vendor: 'Google Inc. (AMD)', renderer: 'ANGLE (AMD, AMD Radeon Pro 5500M, OpenGL 4.1)' },
+    { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)', platforms: ['windows'] },
+    { vendor: 'Google Inc. (Apple)', renderer: 'ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)', platforms: ['macos'] },
+    { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)', platforms: ['windows'] },
+    { vendor: 'Google Inc. (AMD)', renderer: 'ANGLE (AMD, AMD Radeon Pro 5500M, OpenGL 4.1)', platforms: ['macos'] },
   ],
 };
 
+/** 'host' → 宿主机平台。fingerprint 在 Node 主进程运行，process.platform 即宿主。 */
+export function resolvePlatform(platform?: Platform | 'host'): Platform {
+  if (platform && platform !== 'host') return platform;
+  const nodePlatform = typeof process !== 'undefined' ? process.platform : 'win32';
+  return nodePlatform === 'darwin' ? 'macos' : nodePlatform === 'win32' ? 'windows' : 'linux';
+}
+
 export interface FingerprintGeneratorOptions {
   seed: string;
-  platform?: Platform;
+  /** 传 'host' 跟随宿主机平台（推荐默认）；显式平台保持历史 pick 行为不变。 */
+  platform?: Platform | 'host';
   overrides?: Partial<FingerprintProfile>;
   db?: Partial<FingerprintDatabase>;
 }
 
 export function generateFingerprint(options: FingerprintGeneratorOptions): FingerprintProfile {
-  const { seed, platform = 'windows', overrides, db: dbOverrides } = options;
+  const { seed, overrides, db: dbOverrides } = options;
+  const followHost = options.platform === 'host';
+  const platform = resolvePlatform(options.platform ?? 'windows');
   const rng = new SeededRandom(seed);
   const db = mergeDb(dbOverrides);
 
   const ua = rng.pick(db.userAgents[platform]);
   const uaData = rng.pick(db.uaDatas[platform]);
   const screen = rng.pick(db.screens);
-  const webgl = rng.pick(db.webglVendors);
+  // 跟随宿主机时 GPU 限定同系（Mac 不出 NVIDIA D3D11）；显式平台维持旧候选集防历史环境漂移
+  const webglPool = followHost ? db.webglVendors.filter((g) => !g.platforms || g.platforms.includes(platform)) : db.webglVendors;
+  // 平台素材缺失时（如 linux）回退全量，宁可跨系也不空集
+  const webgl = rng.pick(webglPool.length > 0 ? webglPool : db.webglVendors);
   const fontPool = db.fonts[platform];
 
   const profile: FingerprintProfile = {

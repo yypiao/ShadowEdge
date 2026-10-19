@@ -33,8 +33,9 @@ ShadowEdge 全部具备，且我们多了「指纹跟随代理出口」的自动
    我们选择屏蔽—— CreepJS 类探针可能把「无 serviceWorker」记为隐私强化特征。
    长期需要内核层方案（Patchright 补丁研究或自研 SW 注入）。
 2. **伪装哲学不同**。紫鸟在 Mac 上选「同系微调」（MacIntel + M3 Max），我们默认全平台随机
-   （Mac 用户装出 Windows+NVIDIA）。后者用户群更大但「Mac 主力机装 Win」在风控画像里偏少数派，
-   建议画像生成增加「跟随宿主机平台」选项。
+   （Mac 用户装出 Windows+NVIDIA）。~~建议画像生成增加「跟随宿主机平台」选项~~
+   → 2026-10-19 已落地：`platform: 'host'`（新建环境默认），GPU 限定同系（Mac 不出 D3D11），
+   显式平台保持历史 pick 行为防漂移；UI 提供 跟随宿主机/Windows/macOS/Linux 四选。
 3. **UA 库运营**。紫鸟 UA 刻意落后内核 4 个大版本（146 vs 150）说明其 UA 库有持续维护；
    我们的 `DEFAULT_DB` 需要定期更新机制，否则随时间推移会成为静态特征。
 

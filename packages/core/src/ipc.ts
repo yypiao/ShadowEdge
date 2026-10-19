@@ -3,6 +3,7 @@ import type {
   FingerprintProfile,
   LaunchOptions,
   LaunchResult,
+  Platform,
   ProxyCredential,
   ProxyHealth,
   RpaRun,
@@ -21,6 +22,8 @@ export interface IpcApi {
     name: string;
     platformTag?: string;
     proxyId?: Uuid;
+    /** 画像平台；'host' 跟随宿主机（推荐），缺省由主进程按 'host' 处理。 */
+    platform?: Platform | 'host';
     fingerprintSeed?: string;
     overrides?: Partial<FingerprintProfile>;
   }) => BrowserProfile;
@@ -30,7 +33,7 @@ export interface IpcApi {
   'profile:close': (id: Uuid) => void;
 
   /** 预览画像；传 proxyId 时时区/语言/地理自动跟随代理出口（T9），显式 overrides 优先。 */
-  'fingerprint:preview': (input: { seed: string; proxyId?: Uuid; overrides?: Partial<FingerprintProfile> }) => FingerprintProfile;
+  'fingerprint:preview': (input: { seed: string; proxyId?: Uuid; platform?: Platform | 'host'; overrides?: Partial<FingerprintProfile> }) => FingerprintProfile;
   'fingerprint:audit': (id: Uuid) => { consistent: boolean; issues: string[] };
 
   'proxy:list': () => ProxyCredential[];

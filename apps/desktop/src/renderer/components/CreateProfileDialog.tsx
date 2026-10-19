@@ -3,6 +3,12 @@ import type { FingerprintProfile } from '@shadowedge/core';
 import { toastError, useStore } from '../store.js';
 
 const PLATFORM_TAGS = ['通用', 'amazon', 'tiktok', 'shopee', 'facebook', 'google'] as const;
+const FP_PLATFORMS = [
+  { value: 'host', label: '跟随宿主机（推荐）' },
+  { value: 'windows', label: 'Windows' },
+  { value: 'macos', label: 'macOS' },
+  { value: 'linux', label: 'Linux' },
+] as const;
 
 interface Props {
   onClose: () => void;
@@ -13,6 +19,7 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
   const { proxies } = useStore();
   const [name, setName] = useState('');
   const [platformTag, setPlatformTag] = useState<string>('通用');
+  const [fpPlatform, setFpPlatform] = useState<string>('host');
   const [proxyId, setProxyId] = useState('');
   const [seed, setSeed] = useState<string>(() => crypto.randomUUID());
   const [preview, setPreview] = useState<FingerprintProfile | null>(null);
@@ -22,11 +29,11 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
   useEffect(() => {
     let cancelled = false;
     setPreview(null);
-    window.shadowedge.api['fingerprint:preview']({ seed, proxyId: proxyId || undefined })
+    window.shadowedge.api['fingerprint:preview']({ seed, proxyId: proxyId || undefined, platform: fpPlatform as 'host' })
       .then((fp) => { if (!cancelled) setPreview(fp); })
       .catch(toastError);
     return () => { cancelled = true; };
-  }, [seed, proxyId]);
+  }, [seed, proxyId, fpPlatform]);
 
   const submit = useCallback(async () => {
     if (!name.trim()) {
@@ -39,6 +46,7 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
         name: name.trim(),
         platformTag: platformTag === '通用' ? undefined : platformTag,
         proxyId: proxyId || undefined,
+        platform: fpPlatform as 'host',
         fingerprintSeed: seed,
       });
       useStore.getState().toast('info', `环境「${name.trim()}」已创建`);
@@ -47,7 +55,7 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
       toastError(error);
       setSubmitting(false);
     }
-  }, [name, platformTag, proxyId, seed, onCreated]);
+  }, [name, platformTag, fpPlatform, proxyId, seed, onCreated]);
 
   const input: React.CSSProperties = {
     width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box',
@@ -71,6 +79,11 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
         <span style={label}>平台</span>
         <select style={input} value={platformTag} onChange={(e) => setPlatformTag(e.target.value)}>
           {PLATFORM_TAGS.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+        </select>
+
+        <span style={label}>画像系统</span>
+        <select style={input} value={fpPlatform} onChange={(e) => setFpPlatform(e.target.value)}>
+          {FP_PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
         </select>
 
         <span style={label}>代理（可选）</span>
