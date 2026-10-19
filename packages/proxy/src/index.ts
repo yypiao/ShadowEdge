@@ -1,4 +1,8 @@
 import type { ProxyCredential, ProxyHealth, ProxyProtocol } from '@shadowedge/core';
+import { checkProxyHealth, type HealthCheckOptions } from './health.js';
+
+export { checkProxyHealth } from './health.js';
+export { connectViaSocks5, connectViaHttp, httpGetOverSocket } from './tunnel.js';
 
 /** 代理池管理器：组合、健康检查、出口一致性与偏好路由。 */
 export class ProxyManager {
@@ -19,17 +23,8 @@ export class ProxyManager {
     return Array.from(this.proxies.values());
   }
 
-  async check(proxy: ProxyCredential): Promise<ProxyHealth> {
-    const now = new Date().toISOString();
-    return {
-      proxyId: proxy.id,
-      checkedAt: now,
-      reachable: true,
-      latencyMs: 120,
-      exitIp: '203.0.113.1',
-      geo: { country: 'US', region: 'California', timezone: 'America/Los_Angeles' },
-      risk: { score: 0.02, isDatacenter: false, isProxy: false, blacklisted: false },
-    };
+  async check(proxy: ProxyCredential, password?: string, options?: HealthCheckOptions): Promise<ProxyHealth> {
+    return checkProxyHealth(proxy, password, options);
   }
 
   /** 批量导入代理文本。 */

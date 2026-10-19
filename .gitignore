@@ -16,3 +16,4 @@ data/
 profiles/
 chromium-build/
 .pnpm-store/
+experiments/.secrets/

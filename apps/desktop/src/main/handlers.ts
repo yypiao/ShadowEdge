@@ -15,6 +15,7 @@ import { RpaEngine } from '@shadowedge/rpa';
 import type { ProfileRepository } from './services/profile-repository.js';
 import type { ProxyRepository } from './services/proxy-repository.js';
 import type { AuditLog, SessionRepository } from './services/local-records.js';
+import { runLaunchGate } from './services/launch-gate.js';
 
 export interface HandlerDeps {
   logger: Logger;
@@ -101,6 +102,16 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     'profile:launch': async (options) => {
       const profile = requireProfile(options.profileId);
+      await runLaunchGate(
+        { profile, ignoreProxyCheck: options.ignoreProxyCheck },
+        {
+          checkProxy: async (proxyId) => {
+            const credential = deps.proxyRepo.get(proxyId);
+            if (!credential) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${proxyId} 不存在`);
+            return proxyManager.check(credential, deps.proxyRepo.reveal(proxyId));
+          },
+        },
+      );
       deps.emit('profile:status', { profileId: profile.id, status: 'launching' });
       const result = await kernel.launch(profile, options);
       deps.profileRepo.save({ ...profile, status: 'running', lastUsedAt: result.startedAt });
@@ -132,7 +143,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'proxy:check': async (id) => {
       const credential = deps.proxyRepo.get(id);
       if (!credential) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${id} 不存在`);
-      const health = await proxyManager.check(credential);
+      const health = await proxyManager.check(credential, deps.proxyRepo.reveal(id));
       deps.emit('proxy:health', health);
       return health;
     },

@@ -46,7 +46,11 @@
 
 ---
 
-## T3 — 代理健康检查真实实现
+## T3 — 代理健康检查真实实现 ✅（2026-10-18 完成）
+
+> 已落地：`packages/proxy/src/tunnel.ts`（零依赖 SOCKS5/HTTP CONNECT 隧道）+
+> `health.ts`（多端点回退 ip-api → httpbin → api.ip.sb，每端点重试一次）。
+> 三组真实住宅代理实测全过（出口 IP/地理/时区/风险分），见下「实测记录」。
 
 **背景**：`ProxyManager.check()` 目前返回硬编码假数据。
 
@@ -62,7 +66,10 @@
 
 ---
 
-## T4 — 启动前一致性闸门
+## T4 — 启动前一致性闸门 ✅（2026-10-18 完成）
+
+> 已落地：`apps/desktop/src/main/services/launch-gate.ts`，
+> 三检（auditFingerprint → 代理可达 → 时区地理对齐）接入 `handlers.ts` 的 `profile:launch`。
 
 **背景**：目前 `BrowserKernel.launch()` 不做任何前置校验就"启动"。
 

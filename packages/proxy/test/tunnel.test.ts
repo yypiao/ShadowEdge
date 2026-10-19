@@ -1,0 +1,75 @@
+import { describe, expect, it, afterEach } from 'vitest';
+import { createServer, type Server, type Socket } from 'node:net';
+import { connectViaSocks5, httpGetOverSocket } from '../src/tunnel.js';
+
+/** 微型 SOCKS5 服务端：校验握手与认证，然后把请求原样回显。 */
+function fakeSocks5(expectAuth: { user: string; pass: string } | null): { server: Server; port: () => number } {
+  const server = createServer((socket: Socket) => {
+    let stage = 0;
+    socket.on('data', (buf: Buffer) => {
+      if (stage === 0) {
+        stage = 1;
+        socket.write(Buffer.from([0x05, expectAuth ? 0x02 : 0x00]));
+      } else if (stage === 1 && expectAuth) {
+        stage = 2;
+        const userLen = buf[1]!;
+        const user = buf.subarray(2, 2 + userLen).toString();
+        const passLen = buf[2 + userLen]!;
+        const pass = buf.subarray(3 + userLen, 3 + userLen + passLen).toString();
+        socket.write(Buffer.from([0x01, user === expectAuth.user && pass === expectAuth.pass ? 0x00 : 0x01]));
+      } else {
+        const hostLen = buf[4]!;
+        const host = buf.subarray(5, 5 + hostLen).toString();
+        const port = buf.readUInt16BE(5 + hostLen);
+        socket.write(Buffer.from([0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, port >> 8, port & 0xff]));
+        socket.on('data', (req: Buffer) => {
+          socket.write(
+            'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n' +
+              JSON.stringify({ host, received: req.toString().slice(0, 20) }),
+          );
+          socket.end();
+        });
+      }
+    });
+  });
+  server.listen(0, '127.0.0.1');
+  return { server, port: () => (server.address() as { port: number }).port };
+}
+
+let servers: Server[] = [];
+afterEach(() => {
+  servers.forEach((s) => s.close());
+  servers = [];
+});
+
+describe('SOCKS5 隧道', () => {
+  it('无认证握手并传输数据', async () => {
+    const fake = fakeSocks5(null);
+    servers.push(fake.server);
+    await new Promise((r) => fake.server.once('listening', r));
+    const socket = await connectViaSocks5({ host: '127.0.0.1', port: fake.port() }, { host: 'example.com', port: 80 });
+    const resp = await httpGetOverSocket(socket, { host: 'example.com', port: 80, tls: false }, '/ip');
+    expect(resp.status).toBe(200);
+    expect(resp.body).toContain('example.com');
+  });
+
+  it('用户名密码认证成功', async () => {
+    const fake = fakeSocks5({ user: 'yypiao', pass: 'piao121521@' });
+    servers.push(fake.server);
+    await new Promise((r) => fake.server.once('listening', r));
+    const socket = await connectViaSocks5(
+      { host: '127.0.0.1', port: fake.port(), username: 'yypiao', password: 'piao121521@' },
+      { host: 'example.com', port: 80 },
+    );
+    socket.destroy();
+  });
+
+  it('密码错误时抛出可重试错误', async () => {
+    const fake = fakeSocks5({ user: 'u', pass: 'right' });
+    servers.push(fake.server);
+    await new Promise((r) => fake.server.once('listening', r));
+    await expect(
+      connectViaSocks5({ host: '127.0.0.1', port: fake.port(), username: 'u', password: 'wrong' }, { host: 'x', port: 80 }),
+    ).rejects.toThrowError(/认证失败/);
+  });
+});

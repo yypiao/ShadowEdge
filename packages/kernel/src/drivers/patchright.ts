@@ -34,6 +34,8 @@ export function buildLaunchConfig(spec: KernelLaunchSpec, cdpPort?: number) {
 
   const args = [
     WEBRTC_POLICY_FLAG,
+    // QUIC 不走 HTTP/SOCKS5 代理的 TCP 通道，禁用防止流量绕过代理出口。
+    '--disable-quic',
     '--disable-blink-features=AutomationControlled',
     `--window-size=${fp.screen.width},${fp.screen.height}`,
     ...(cdpPort ? [`--remote-debugging-port=${cdpPort}`] : []),
