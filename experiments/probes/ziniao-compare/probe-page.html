@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>ShadowEdge × 紫鸟 对照探针</title></head>
+<body style="font-family: system-ui; max-width: 720px; margin: 40px auto; padding: 0 16px;">
+  <h2>ShadowEdge × 紫鸟 对照探针</h2>
+  <p id="status">采集中…（约 8 秒）</p>
+  <pre id="out" style="background:#f6f8fa;padding:12px;border-radius:8px;font-size:12px;white-space:pre-wrap;"></pre>
+<script>
+async function collect() {
+  const nav = navigator;
+  const out = { main: {}, worker: null, webrtc: null, serviceWorker: null };
+  const m = out.main;
+  m.userAgent = nav.userAgent;
+  m.webdriver = nav.webdriver;
+  m.platform = nav.platform;
+  m.languages = nav.languages;
+  m.hardwareConcurrency = nav.hardwareConcurrency;
+  m.deviceMemory = nav.deviceMemory;
+  m.maxTouchPoints = nav.maxTouchPoints;
+  m.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  m.tzOffset = new Date().getTimezoneOffset();
+  m.screen = { w: screen.width, h: screen.height, dpr: devicePixelRatio };
+  try { m.permissions = (await nav.permissions.query({ name: 'notifications' })).state; } catch (e) { m.permissions = 'err'; }
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl');
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    m.webgl = { renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) };
+  } catch (e) { m.webgl = 'err'; }
+  try {
+    const c = document.createElement('canvas'); c.width = 240; c.height = 60;
+    const ctx = c.getContext('2d');
+    ctx.textBaseline = 'top'; ctx.font = "14px 'Arial'";
+    ctx.fillStyle = '#f60'; ctx.fillRect(125, 1, 62, 20);
+    ctx.fillStyle = '#069'; ctx.fillText('ShadowEdge,T0 🔥', 2, 15);
+    ctx.fillStyle = 'rgba(102,204,0,0.7)'; ctx.fillText('ShadowEdge,T0 🔥', 4, 17);
+    const data = c.toDataURL();
+    let h = 0; for (let i = 0; i < data.length; i++) h = ((h << 5) - h + data.charCodeAt(i)) | 0;
+    m.canvasHash = (h >>> 0).toString(16);
+  } catch (e) { m.canvasHash = 'err'; }
+  try {
+    const ac = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100, 44100);
+    const osc = ac.createOscillator(); osc.type = 'triangle'; osc.frequency.value = 10000;
+    const comp = ac.createDynamicsCompressor();
+    osc.connect(comp); comp.connect(ac.destination); osc.start(0);
+    const buf = await ac.startRendering();
+    const d = buf.getChannelData(0); let s = 0;
+    for (let i = 4500; i < 5000; i++) s += Math.abs(d[i]);
+    m.audioFp = s.toString();
+  } catch (e) { m.audioFp = 'err'; }
+  m.traps = {
+    fnToString: Function.prototype.toString.call(navigator.permissions.query).includes('[native code]'),
+    hasCDC: Object.keys(window).filter(k => k.includes('cdc_') || k.includes('$cdc')),
+    navPropsCount: Object.getOwnPropertyNames(Navigator.prototype).length,
+  };
+  // Worker 世界
+  try {
+    out.worker = await new Promise((res) => {
+      const code = 'postMessage(JSON.stringify({hc: navigator.hardwareConcurrency, ua: navigator.userAgent, platform: navigator.platform, langs: navigator.languages}))';
+      const w = new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
+      w.onmessage = (e) => res(JSON.parse(e.data));
+      setTimeout(() => res('timeout'), 5000);
+    });
+  } catch (e) { out.worker = 'err: ' + e.message; }
+  // WebRTC
+  out.webrtc = await new Promise((res) => {
+    const ips = new Set();
+    try {
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      pc.createDataChannel('x');
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          const mm = e.candidate.candidate.match(/([0-9a-f:.]+) \d+ typ (host|srflx)/);
+          if (mm) ips.add(mm[1] + ':' + mm[2]);
+        }
+      };
+      pc.createOffer().then((o) => pc.setLocalDescription(o));
+      setTimeout(() => { pc.close(); res({ candidates: [...ips] }); }, 3500);
+    } catch (e) { res({ error: e.message }); }
+  });
+  // ServiceWorker
+  out.serviceWorker = navigator.serviceWorker ? '可用' : '不存在(被屏蔽)';
+  return out;
+}
+collect().then(async (data) => {
+  document.getElementById('out').textContent = JSON.stringify(data, null, 2);
+  await fetch('/report', { method: 'POST', body: JSON.stringify(data) });
+  document.getElementById('status').textContent = '✅ 采集完成，结果已回传。可以关闭本页。';
+});
+</script>
+</body>
+</html>
