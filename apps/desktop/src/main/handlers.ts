@@ -143,7 +143,19 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'proxy:check': async (id) => {
       const credential = deps.proxyRepo.get(id);
       if (!credential) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${id} 不存在`);
-      const health = await proxyManager.check(credential, deps.proxyRepo.reveal(id));
+      let upstream: { protocol: 'http' | 'socks5'; host: string; port: number; username?: string; password?: string } | undefined;
+      if (credential.upstreamId) {
+        const upstreamCred = deps.proxyRepo.get(credential.upstreamId);
+        if (!upstreamCred) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `上游代理 ${credential.upstreamId} 不存在`);
+        upstream = {
+          protocol: upstreamCred.protocol === 'socks5' ? 'socks5' : 'http',
+          host: upstreamCred.host,
+          port: upstreamCred.port,
+          username: upstreamCred.username,
+          password: deps.proxyRepo.reveal(upstreamCred.id),
+        };
+      }
+      const health = await proxyManager.check(credential, deps.proxyRepo.reveal(id), { upstream });
       deps.emit('proxy:health', health);
       return health;
     },

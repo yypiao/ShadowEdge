@@ -25,23 +25,25 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   ]);
 }
 
-/** SOCKS5 CONNECT：握手 → 用户名密码认证 → 连接目标。 */
-export async function connectViaSocks5(
-  proxy: TunnelTarget & { username?: string; password?: string },
-  target: TunnelTarget,
-  options: TunnelOptions = {},
-): Promise<Socket> {
-  const timeoutMs = options.timeoutMs ?? 10000;
-  const socket = await withTimeout(
+function connectTcp(target: TunnelTarget, timeoutMs: number, label: string): Promise<Socket> {
+  return withTimeout(
     new Promise<Socket>((resolve, reject) => {
-      const s = netConnect(proxy.port, proxy.host);
+      const s = netConnect(target.port, target.host);
       s.once('connect', () => resolve(s));
       s.once('error', reject);
     }),
     timeoutMs,
-    'SOCKS5 代理连接',
+    label,
   );
+}
 
+/** 在已建立的 socket 上完成 SOCKS5 握手 → 认证 → CONNECT。 */
+async function socks5HandshakeOver(
+  socket: Socket,
+  auth: { username?: string; password?: string },
+  target: TunnelTarget,
+  timeoutMs: number,
+): Promise<Socket> {
   const exchange = (payload: Buffer, expect: number, label: string): Promise<Buffer> =>
     withTimeout(
       new Promise<Buffer>((resolve, reject) => {
@@ -78,12 +80,12 @@ export async function connectViaSocks5(
   const hello = await exchange(Buffer.alloc(0), 2, 'SOCKS5 握手');
   if (hello[0] !== 0x05) fail('SOCKS5 握手失败：协议版本不符');
   if (hello[1] === 0x02) {
-    const username = proxy.username;
+    const username = auth.username;
     if (!username) return fail('代理要求用户名密码认证，但未提供凭据');
     const user = Buffer.from(username, 'utf-8');
-    const pass = Buffer.from(proxy.password ?? '', 'utf-8');
-    const auth = Buffer.concat([Buffer.from([0x01, user.length]), user, Buffer.from([pass.length]), pass]);
-    const authResp = await exchange(auth, 2, 'SOCKS5 认证');
+    const pass = Buffer.from(auth.password ?? '', 'utf-8');
+    const authPayload = Buffer.concat([Buffer.from([0x01, user.length]), user, Buffer.from([pass.length]), pass]);
+    const authResp = await exchange(authPayload, 2, 'SOCKS5 认证');
     if (authResp[1] !== 0x00) fail('SOCKS5 认证失败：用户名或密码错误');
   } else if (hello[1] !== 0x00) {
     fail(`SOCKS5 无可用认证方式（server=0x${hello[1]?.toString(16)}）`);
@@ -100,27 +102,28 @@ export async function connectViaSocks5(
   return socket;
 }
 
-/** HTTP CONNECT：建立到目标的 TCP 隧道。 */
-export async function connectViaHttp(
+/** SOCKS5 CONNECT：握手 → 用户名密码认证 → 连接目标。 */
+export async function connectViaSocks5(
   proxy: TunnelTarget & { username?: string; password?: string },
   target: TunnelTarget,
   options: TunnelOptions = {},
 ): Promise<Socket> {
   const timeoutMs = options.timeoutMs ?? 10000;
-  const socket = await withTimeout(
-    new Promise<Socket>((resolve, reject) => {
-      const s = netConnect(proxy.port, proxy.host);
-      s.once('connect', () => resolve(s));
-      s.once('error', reject);
-    }),
-    timeoutMs,
-    'HTTP 代理连接',
-  );
+  const socket = await connectTcp(proxy, timeoutMs, 'SOCKS5 代理连接');
+  return socks5HandshakeOver(socket, proxy, target, timeoutMs);
+}
 
-  const auth = proxy.username
-    ? `Proxy-Authorization: Basic ${Buffer.from(`${proxy.username}:${proxy.password ?? ''}`).toString('base64')}\r\n`
+/** 在已建立的 socket 上发出 HTTP CONNECT 并校验 2xx。 */
+async function httpConnectOver(
+  socket: Socket,
+  auth: { username?: string; password?: string },
+  target: TunnelTarget,
+  timeoutMs: number,
+): Promise<Socket> {
+  const authHeader = auth.username
+    ? `Proxy-Authorization: Basic ${Buffer.from(`${auth.username}:${auth.password ?? ''}`).toString('base64')}\r\n`
     : '';
-  const request = `CONNECT ${target.host}:${target.port} HTTP/1.1\r\nHost: ${target.host}:${target.port}\r\n${auth}\r\n`;
+  const request = `CONNECT ${target.host}:${target.port} HTTP/1.1\r\nHost: ${target.host}:${target.port}\r\n${authHeader}\r\n`;
 
   const response = await withTimeout(
     new Promise<string>((resolve, reject) => {
@@ -146,6 +149,66 @@ export async function connectViaHttp(
     throw new ShadowEdgeError('E_PROXY_UNREACHABLE', `HTTP CONNECT 被拒绝: ${statusLine}`, { retryable: true });
   }
   return socket;
+}
+
+/** HTTP CONNECT：建立到目标的 TCP 隧道。 */
+export async function connectViaHttp(
+  proxy: TunnelTarget & { username?: string; password?: string },
+  target: TunnelTarget,
+  options: TunnelOptions = {},
+): Promise<Socket> {
+  const timeoutMs = options.timeoutMs ?? 10000;
+  const socket = await connectTcp(proxy, timeoutMs, 'HTTP 代理连接');
+  return httpConnectOver(socket, proxy, target, timeoutMs);
+}
+
+/** 上游代理描述：用于「本地代理 → 海外静态」这类双跳链路的第一跳。 */
+export interface UpstreamHop {
+  protocol: 'http' | 'socks5';
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+}
+
+/**
+ * 经上游代理把 TCP 隧道打到第二跳代理的端口上。
+ * 返回的 socket 已对准第二跳，调用方在其上继续跑第二跳自己的协议握手。
+ */
+export async function connectViaUpstream(
+  upstream: UpstreamHop,
+  nextHop: TunnelTarget,
+  options: TunnelOptions = {},
+): Promise<Socket> {
+  return upstream.protocol === 'socks5'
+    ? connectViaSocks5(upstream, nextHop, options)
+    : connectViaHttp(upstream, nextHop, options);
+}
+
+/**
+ * 统一隧道入口：可选上游一跳（本地翻墙代理），再跑目标代理自己的协议握手。
+ * 覆盖「直连」「双跳（本地 → 海外静态）」两种拓扑。
+ */
+export async function openTunnel(
+  proxy: TunnelTarget & { protocol: 'http' | 'socks5'; username?: string; password?: string },
+  target: TunnelTarget,
+  options: TunnelOptions & { upstream?: UpstreamHop } = {},
+): Promise<Socket> {
+  const timeoutMs = options.timeoutMs ?? 10000;
+  if (!options.upstream) {
+    return proxy.protocol === 'socks5'
+      ? connectViaSocks5(proxy, target, { timeoutMs })
+      : connectViaHttp(proxy, target, { timeoutMs });
+  }
+  const socket = await connectViaUpstream(options.upstream, { host: proxy.host, port: proxy.port }, { timeoutMs });
+  try {
+    return proxy.protocol === 'socks5'
+      ? await socks5HandshakeOver(socket, proxy, target, timeoutMs)
+      : await httpConnectOver(socket, proxy, target, timeoutMs);
+  } catch (error) {
+    socket.destroy();
+    throw error;
+  }
 }
 
 /** 在隧道上发起一次 HTTP(S) GET，返回状态码与 body（Connection: close，支持 chunked）。 */

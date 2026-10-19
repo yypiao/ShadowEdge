@@ -1,6 +1,6 @@
 import type { ProxyCredential, ProxyHealth } from '@shadowedge/core';
 import { ShadowEdgeError } from '@shadowedge/core';
-import { connectViaHttp, connectViaSocks5, httpGetOverSocket, type TunnelTarget } from './tunnel.js';
+import { httpGetOverSocket, openTunnel, type TunnelTarget, type UpstreamHop } from './tunnel.js';
 
 /**
  * 代理健康检查真实化（T3）：经代理隧道拉取出口 IP 与地理/风险画像。
@@ -9,6 +9,8 @@ import { connectViaHttp, connectViaSocks5, httpGetOverSocket, type TunnelTarget 
 
 export interface HealthCheckOptions {
   timeoutMs?: number;
+  /** 第一跳上游（如本地翻墙代理），用于双跳链路。 */
+  upstream?: UpstreamHop;
   /** 测试注入点：替换隧道请求实现，单测用。 */
   fetchJson?: (credential: ProxyCredential, password: string | undefined, target: Endpoint) => Promise<{ status: number; body: string }>;
 }
@@ -79,13 +81,13 @@ async function defaultFetchJson(
   password: string | undefined,
   endpoint: Endpoint,
   timeoutMs: number,
+  upstream?: UpstreamHop,
 ): Promise<{ status: number; body: string }> {
-  const proxy = { host: credential.host, port: credential.port, username: credential.username, password };
+  // 隧道层只区分 TCP 上的两种握手；https/ssh/wireguard 暂按 http 语义处理（落地时单独实现）
+  const protocol: 'http' | 'socks5' = credential.protocol === 'socks5' ? 'socks5' : 'http';
+  const proxy = { host: credential.host, port: credential.port, protocol, username: credential.username, password };
   const target: TunnelTarget = { host: endpoint.host, port: endpoint.port };
-  const socket =
-    credential.protocol === 'socks5'
-      ? await connectViaSocks5(proxy, target, { timeoutMs })
-      : await connectViaHttp(proxy, target, { timeoutMs });
+  const socket = await openTunnel(proxy, target, { timeoutMs, upstream });
   return httpGetOverSocket(socket, { ...target, tls: endpoint.tls }, endpoint.path, {}, timeoutMs);
 }
 
@@ -104,7 +106,7 @@ export async function checkProxyHealth(
       try {
         const fetcher = options.fetchJson
           ? (ep: Endpoint) => options.fetchJson!(credential, password, ep)
-          : (ep: Endpoint) => defaultFetchJson(credential, password, ep, timeoutMs);
+        : (ep: Endpoint) => defaultFetchJson(credential, password, ep, timeoutMs, options.upstream);
         const { status, body } = await fetcher(endpoint);
         if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`);
         const parsed = endpoint.parse(body);
