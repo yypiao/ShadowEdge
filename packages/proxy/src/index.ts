@@ -2,7 +2,10 @@ import type { ProxyCredential, ProxyHealth, ProxyProtocol } from '@shadowedge/co
 import { checkProxyHealth, type HealthCheckOptions } from './health.js';
 
 export { checkProxyHealth } from './health.js';
-export { connectViaSocks5, connectViaHttp, httpGetOverSocket } from './tunnel.js';
+export { connectViaSocks5, connectViaHttp, connectViaUpstream, httpGetOverSocket, openTunnel } from './tunnel.js';
+export type { UpstreamHop } from './tunnel.js';
+export { startRelay } from './relay.js';
+export type { RelayHandle, RelayProxy, RelayOptions } from './relay.js';
 
 /** 代理池管理器：组合、健康检查、出口一致性与偏好路由。 */
 export class ProxyManager {

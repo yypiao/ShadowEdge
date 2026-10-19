@@ -37,10 +37,25 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       const credential = deps.proxyRepo.get(proxyId);
       if (!credential) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${proxyId} 不存在`);
       const password = deps.proxyRepo.reveal(proxyId);
+      let upstream: { protocol: 'http' | 'socks5'; host: string; port: number; username?: string; password?: string } | undefined;
+      if (credential.upstreamId) {
+        const upstreamCred = deps.proxyRepo.get(credential.upstreamId);
+        if (!upstreamCred) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `上游代理 ${credential.upstreamId} 不存在`);
+        upstream = {
+          protocol: upstreamCred.protocol === 'socks5' ? 'socks5' : 'http',
+          host: upstreamCred.host,
+          port: upstreamCred.port,
+          username: upstreamCred.username,
+          password: deps.proxyRepo.reveal(upstreamCred.id),
+        };
+      }
       return {
-        server: `${credential.protocol}://${credential.host}:${credential.port}`,
+        protocol: credential.protocol === 'socks5' ? ('socks5' as const) : ('http' as const),
+        host: credential.host,
+        port: credential.port,
         username: credential.username,
         password,
+        upstream,
       };
     },
   });

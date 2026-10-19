@@ -1,10 +1,27 @@
 import type { BrowserProfile, LaunchOptions, LaunchResult, Uuid } from '@shadowedge/core';
 
-/** 已解析的代理（handlers 层从加密仓储取出后注入，内核不接触密文存储）。 */
+/** 给 Chromium 的代理配置：永远指向本机中继（T8），驱动不感知真实代理。 */
 export interface ResolvedProxy {
   server: string;
   username?: string;
   password?: string;
+}
+
+/** 已解析的真实代理（handlers 层从加密仓储取出后注入，内核不接触密文存储）。 */
+export interface ResolvedUpstreamProxy {
+  protocol: 'http' | 'socks5';
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  /** 双跳链路的第一跳（如本地翻墙代理）。 */
+  upstream?: {
+    protocol: 'http' | 'socks5';
+    host: string;
+    port: number;
+    username?: string;
+    password?: string;
+  };
 }
 
 /** 驱动无关的启动规格：由 BrowserKernel 门面组装，驱动只负责执行。 */
