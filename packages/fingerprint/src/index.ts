@@ -33,40 +33,140 @@ const DEFAULT_DB: FingerprintDatabase = {
   uaDatas: {
     windows: [
       {
-        brands: [{ brand: 'Chromium', version: '131' }, { brand: 'Google Chrome', version: '131' }, { brand: 'Not?A_Brand', version: '99' }],
-        platform: 'Windows', platformVersion: '15.0.0', architecture: 'x86', bitness: '64', model: '', fullVersion: '131.0.6778.86', mobile: false,
+        brands: [
+          { brand: 'Chromium', version: '131' },
+          { brand: 'Google Chrome', version: '131' },
+          { brand: 'Not?A_Brand', version: '99' },
+        ],
+        platform: 'Windows',
+        platformVersion: '15.0.0',
+        architecture: 'x86',
+        bitness: '64',
+        model: '',
+        fullVersion: '131.0.6778.86',
+        mobile: false,
       },
     ],
     macos: [
       {
-        brands: [{ brand: 'Chromium', version: '131' }, { brand: 'Google Chrome', version: '131' }, { brand: 'Not?A_Brand', version: '99' }],
-        platform: 'macOS', platformVersion: '14_6', architecture: 'x86', bitness: '64', model: '', fullVersion: '131.0.6778.86', mobile: false,
+        brands: [
+          { brand: 'Chromium', version: '131' },
+          { brand: 'Google Chrome', version: '131' },
+          { brand: 'Not?A_Brand', version: '99' },
+        ],
+        platform: 'macOS',
+        platformVersion: '14_6',
+        architecture: 'x86',
+        bitness: '64',
+        model: '',
+        fullVersion: '131.0.6778.86',
+        mobile: false,
       },
     ],
     linux: [
       {
-        brands: [{ brand: 'Chromium', version: '131' }, { brand: 'Google Chrome', version: '131' }, { brand: 'Not?A_Brand', version: '99' }],
-        platform: 'Linux', platformVersion: '', architecture: 'x86', bitness: '64', model: '', fullVersion: '131.0.6778.86', mobile: false,
+        brands: [
+          { brand: 'Chromium', version: '131' },
+          { brand: 'Google Chrome', version: '131' },
+          { brand: 'Not?A_Brand', version: '99' },
+        ],
+        platform: 'Linux',
+        platformVersion: '',
+        architecture: 'x86',
+        bitness: '64',
+        model: '',
+        fullVersion: '131.0.6778.86',
+        mobile: false,
       },
     ],
   },
   screens: [
-    { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040, colorDepth: 24, pixelRatio: 1 },
-    { width: 1920, height: 1080, availWidth: 1920, availHeight: 1030, colorDepth: 24, pixelRatio: 1 },
+    {
+      width: 1920,
+      height: 1080,
+      availWidth: 1920,
+      availHeight: 1040,
+      colorDepth: 24,
+      pixelRatio: 1,
+    },
+    {
+      width: 1920,
+      height: 1080,
+      availWidth: 1920,
+      availHeight: 1030,
+      colorDepth: 24,
+      pixelRatio: 1,
+    },
     { width: 1440, height: 900, availWidth: 1440, availHeight: 860, colorDepth: 24, pixelRatio: 2 },
-    { width: 2560, height: 1440, availWidth: 2560, availHeight: 1400, colorDepth: 30, pixelRatio: 1 },
+    {
+      width: 2560,
+      height: 1440,
+      availWidth: 2560,
+      availHeight: 1400,
+      colorDepth: 30,
+      pixelRatio: 1,
+    },
     { width: 1366, height: 768, availWidth: 1366, availHeight: 730, colorDepth: 24, pixelRatio: 1 },
   ],
   fonts: {
-    windows: ['Arial', 'Calibri', 'Cambria', 'Courier New', 'Georgia', 'Segoe UI', 'Tahoma', 'Times New Roman', 'Verdana', 'Webdings'],
-    macos: ['Helvetica', 'Arial', 'Georgia', 'Times New Roman', 'Courier', 'Verdana', 'Trebuchet MS', 'Lucida Grande', 'Menlo', 'Monaco'],
-    linux: ['DejaVu Sans', 'DejaVu Serif', 'Liberation Sans', 'Liberation Serif', 'Ubuntu', 'Noto Sans', 'Noto Serif', 'Droid Sans', 'Cantarell', 'FreeSans'],
+    windows: [
+      'Arial',
+      'Calibri',
+      'Cambria',
+      'Courier New',
+      'Georgia',
+      'Segoe UI',
+      'Tahoma',
+      'Times New Roman',
+      'Verdana',
+      'Webdings',
+    ],
+    macos: [
+      'Helvetica',
+      'Arial',
+      'Georgia',
+      'Times New Roman',
+      'Courier',
+      'Verdana',
+      'Trebuchet MS',
+      'Lucida Grande',
+      'Menlo',
+      'Monaco',
+    ],
+    linux: [
+      'DejaVu Sans',
+      'DejaVu Serif',
+      'Liberation Sans',
+      'Liberation Serif',
+      'Ubuntu',
+      'Noto Sans',
+      'Noto Serif',
+      'Droid Sans',
+      'Cantarell',
+      'FreeSans',
+    ],
   },
   webglVendors: [
-    { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)', platforms: ['windows'] },
-    { vendor: 'Google Inc. (Apple)', renderer: 'ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)', platforms: ['macos'] },
-    { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)', platforms: ['windows'] },
-    { vendor: 'Google Inc. (AMD)', renderer: 'ANGLE (AMD, AMD Radeon Pro 5500M, OpenGL 4.1)', platforms: ['macos'] },
+    {
+      vendor: 'Google Inc. (Intel)',
+      renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)',
+      platforms: ['windows'],
+    },
+    {
+      vendor: 'Google Inc. (Apple)',
+      renderer: 'ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)',
+      platforms: ['macos'],
+    },
+    {
+      vendor: 'Google Inc. (NVIDIA)',
+      renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)',
+      platforms: ['windows'],
+    },
+    {
+      vendor: 'Google Inc. (AMD)',
+      renderer: 'ANGLE (AMD, AMD Radeon Pro 5500M, OpenGL 4.1)',
+      platforms: ['macos'],
+    },
   ],
 };
 
@@ -93,10 +193,14 @@ export function generateFingerprint(options: FingerprintGeneratorOptions): Finge
   const db = mergeDb(dbOverrides);
 
   const ua = rng.pick(db.userAgents[platform]);
-  const uaData = rng.pick(db.uaDatas[platform]);
+  // Client Hints 必须由 UA 派生：UA 与 UA-CH 互相打脸是最常见的判定点
+  // （Pixelscan 实测：UA 说 Edge 130、CH 说 Chrome 131 时直接判 inconsistent）
+  const uaData = syncUserAgentData(ua, rng.pick(db.uaDatas[platform]));
   const screen = rng.pick(db.screens);
   // 跟随宿主机时 GPU 限定同系（Mac 不出 NVIDIA D3D11）；显式平台维持旧候选集防历史环境漂移
-  const webglPool = followHost ? db.webglVendors.filter((g) => !g.platforms || g.platforms.includes(platform)) : db.webglVendors;
+  const webglPool = followHost
+    ? db.webglVendors.filter((g) => !g.platforms || g.platforms.includes(platform))
+    : db.webglVendors;
   // 平台素材缺失时（如 linux）回退全量，宁可跨系也不空集
   const webgl = rng.pick(webglPool.length > 0 ? webglPool : db.webglVendors);
   const fontPool = db.fonts[platform];
@@ -116,10 +220,18 @@ export function generateFingerprint(options: FingerprintGeneratorOptions): Finge
       ['ko-KR', 'ko'],
     ]),
     timezone: rng.pick([
-      'America/New_York', 'America/Chicago', 'America/Los_Angeles',
-      'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Singapore',
-      'Europe/London', 'Europe/Berlin', 'Europe/Paris',
-      'Australia/Sydney', 'America/Sao_Paulo',
+      'America/New_York',
+      'America/Chicago',
+      'America/Los_Angeles',
+      'Asia/Shanghai',
+      'Asia/Tokyo',
+      'Asia/Seoul',
+      'Asia/Singapore',
+      'Europe/London',
+      'Europe/Berlin',
+      'Europe/Paris',
+      'Australia/Sydney',
+      'America/Sao_Paulo',
     ]),
     hardware: {
       deviceMemoryGb: rng.pick([4, 8, 16, 32]),
@@ -137,6 +249,31 @@ export function generateFingerprint(options: FingerprintGeneratorOptions): Finge
   };
 
   return overrides ? applyOverrides(profile, overrides) : profile;
+}
+
+/**
+ * 由 UA 解析品牌与大版本，校正 UA-CH，保证两者同源。
+ * 数据库里的 CH 素材保留完整版本号等细节，只替换可能冲突的品牌/主版本。
+ */
+export function syncUserAgentData(
+  ua: string,
+  base: FingerprintProfile['userAgentData'],
+): FingerprintProfile['userAgentData'] {
+  const edge = ua.match(/Edg\/(\d+)[\d.]*/);
+  const chrome = ua.match(/Chrome\/(\d+)[\d.]*/);
+  const major = edge?.[1] ?? chrome?.[1];
+  if (!major) return base;
+
+  const brands: FingerprintProfile['userAgentData']['brands'] = [
+    { brand: 'Chromium', version: major },
+    edge ? { brand: 'Microsoft Edge', version: major } : { brand: 'Google Chrome', version: major },
+    { brand: 'Not?A_Brand', version: '99' },
+  ];
+  return {
+    ...base,
+    brands,
+    fullVersion: base.fullVersion.replace(/^\d+/, major),
+  };
 }
 
 function mergeDb(overrides?: Partial<FingerprintDatabase>): FingerprintDatabase {
@@ -182,17 +319,33 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** 一致性审计：检查指定种子是否可复现已有指纹。 */
-export function auditFingerprint(
-  current: FingerprintProfile,
-): { consistent: boolean; issues: string[] } {
+export function auditFingerprint(current: FingerprintProfile): {
+  consistent: boolean;
+  issues: string[];
+} {
   const issues: string[] = [];
   const regenerated = generateFingerprint({ seed: current.seed, platform: current.platform });
   if (regenerated.userAgent !== current.userAgent) issues.push('userAgent 与 seed 不匹配');
+  const syncedUaData = syncUserAgentData(current.userAgent, current.userAgentData);
+  if (JSON.stringify(syncedUaData) !== JSON.stringify(current.userAgentData)) {
+    issues.push('userAgentData 品牌/版本与 userAgent 不一致');
+  }
+  const uaPlatform = current.userAgent.includes('Windows NT')
+    ? 'Windows'
+    : current.userAgent.includes('Macintosh')
+      ? 'macOS'
+      : current.userAgent.includes('Linux')
+        ? 'Linux'
+        : null;
+  if (uaPlatform && current.userAgentData.platform !== uaPlatform) {
+    issues.push('userAgentData.platform 与 userAgent 不一致');
+  }
   if (regenerated.screen.width !== current.screen.width) issues.push('屏幕宽度与 seed 不匹配');
   if (regenerated.webgl.vendor !== current.webgl.vendor) issues.push('WebGL vendor 与 seed 不匹配');
   return { consistent: issues.length === 0, issues };
 }
 
 export { buildInjectionScript } from './inject.js';
+export { buildClientHintHeaders } from './client-hints.js';
 export { deriveGeoOverrides } from './geo-follow.js';
 export type { GeoInput } from './geo-follow.js';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { auditFingerprint, generateFingerprint } from '../src/index.js';
+import { auditFingerprint, generateFingerprint, syncUserAgentData } from '../src/index.js';
 
 describe('generateFingerprint', () => {
   it('同一 seed 必须产出完全相同的画像', () => {
@@ -47,5 +47,47 @@ describe('auditFingerprint', () => {
     const result = auditFingerprint({ ...fp, userAgent: 'tampered' });
     expect(result.consistent).toBe(false);
     expect(result.issues.join()).toContain('userAgent');
+  });
+
+  it('被篡改的 UA-CH 品牌应被检出', () => {
+    const fp = generateFingerprint({ seed: 'audit-ua-ch' });
+    const result = auditFingerprint({
+      ...fp,
+      userAgentData: { ...fp.userAgentData, brands: [{ brand: 'Google Chrome', version: '99' }] },
+    });
+    expect(result.consistent).toBe(false);
+    expect(result.issues.join()).toContain('userAgentData');
+  });
+});
+
+describe('syncUserAgentData', () => {
+  const base = generateFingerprint({ seed: 'ua-ch-base', platform: 'windows' }).userAgentData;
+
+  it('Edge UA 应产出 Microsoft Edge 品牌与同主版本', () => {
+    const ua =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0';
+    const result = syncUserAgentData(ua, base);
+    expect(result.brands).toEqual([
+      { brand: 'Chromium', version: '130' },
+      { brand: 'Microsoft Edge', version: '130' },
+      { brand: 'Not?A_Brand', version: '99' },
+    ]);
+    expect(result.fullVersion.startsWith('130.')).toBe(true);
+  });
+
+  it('Chrome UA 应产出 Google Chrome 品牌与同主版本', () => {
+    const ua =
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+    const result = syncUserAgentData(ua, base);
+    expect(result.brands).toEqual([
+      { brand: 'Chromium', version: '131' },
+      { brand: 'Google Chrome', version: '131' },
+      { brand: 'Not?A_Brand', version: '99' },
+    ]);
+    expect(result.fullVersion.startsWith('131.')).toBe(true);
+  });
+
+  it('无法解析版本的 UA 应保留素材库默认值', () => {
+    expect(syncUserAgentData('tampered', base)).toBe(base);
   });
 });

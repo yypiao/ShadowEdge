@@ -17,6 +17,7 @@
 **背景**：`apps/desktop/src/main/handlers.ts` 目前用内存 `Map` 存环境，重启即丢。
 
 **产出**：
+
 - `apps/desktop/src/main/services/db.ts` —— 基于 `better-sqlite3` 的连接与迁移
 - 表：`profiles`、`proxies`、`sessions`、`audit_local`
 - `apps/desktop/src/main/services/profile-repository.ts` —— CRUD 仓储
@@ -33,6 +34,7 @@
 **背景**：`auditFingerprint()` 目前只校验「能否由 seed 复现」，没校验各维度之间是否自相矛盾。这是风控最容易抓的点，见 `docs/ANTI_DETECTION.md` §2.3。
 
 **产出**：在 `packages/fingerprint/src/` 新增 `consistency.ts`，实现下列规则并接入 `auditFingerprint()`：
+
 - UA 中的 OS 与 `platform`、`userAgentData.platform` 一致
 - UA 中的 Chrome 主版本与 `userAgentData.brands`、`fullVersion` 一致
 - `screen.availHeight < screen.height`，且差值在 20–80px 合理区间
@@ -55,6 +57,7 @@
 **背景**：`ProxyManager.check()` 目前返回硬编码假数据。
 
 **产出**：
+
 - 通过代理请求 IP 查询服务，取真实出口 IP、地理位置、时区、ASN
 - 测量真实延迟（三次取中位数）
 - 失败时返回 `reachable: false` 并填 `error`，不要抛异常
@@ -74,6 +77,7 @@
 **背景**：目前 `BrowserKernel.launch()` 不做任何前置校验就"启动"。
 
 **产出**：在 `launch()` 开头依次执行：
+
 1. `auditFingerprint()` 不通过 → 抛 `E_FINGERPRINT_INCONSISTENT`
 2. 代理不可达（且未设 `ignoreProxyCheck`）→ 抛 `E_PROXY_UNREACHABLE`
 3. 代理出口地理与环境 timezone 冲突 → 抛 `E_PROXY_GEO_MISMATCH`，并在错误 `details` 里给出建议的 timezone
@@ -87,6 +91,7 @@
 **背景**：`BrowserKernel.launch()` 现在返回假的 `pid: 0`，没有真启动进程。
 
 **产出**：
+
 - `packages/kernel/src/args.ts` —— 由 `BrowserProfile` 编译出完整命令行参数
 - 必须包含：`--user-data-dir`、`--proxy-server`、`--disable-quic`、`--host-resolver-rules`、`--lang`、`--window-size`、`--remote-debugging-port`
 - 必须**不**包含：`--enable-automation`、`--disable-blink-features=AutomationControlled`（后者本身就是痕迹）
@@ -107,6 +112,7 @@
 **背景**：渲染层目前只有一个只读列表。
 
 **产出**：
+
 - 环境创建对话框：名称、平台标签、代理选择、指纹预览（调 `fingerprint:preview` 实时展示）
 - 环境卡片上的启动/停止按钮，绑定 `profile:launch` / `profile:close`
 - 代理管理页：列表、批量导入文本框、健康检查按钮与结果展示
@@ -123,6 +129,7 @@
 **背景**：`RpaEngine.run()` 只创建 run 记录，不执行任何节点。
 
 **产出**：
+
 - 节点执行器注册表，实现 `navigate` / `click` / `type` / `wait` / `extract` / `screenshot`
 - 通过 CDP 操作目标环境
 - 按 `graph` 拓扑推进，支持 `onError` 的 stop / continue / retry
@@ -136,6 +143,7 @@
 ## T8 — 探针站与验证矩阵
 
 **产出**：
+
 - `scripts/probe/` —— 采集全部指纹维度的静态页面
 - `tests/e2e/isolation.test.ts` —— 验证两个环境的 Cookie/Storage/指纹/IP 四项全不相同
 - `tests/e2e/stability.test.ts` —— 同一环境重启 20 次指纹哈希不变
@@ -155,6 +163,7 @@
 > 注意：e2e 脚本里不能用 `execSync` 调 curl——事件循环阻塞会让中继无法 accept（血的教训）。
 
 **背景**（2026-10-19 自动化走查实测确认）：Chromium 自身有两个代理能力缺口——
+
 1. **SOCKS5 不支持用户名密码认证**（我们全部五个测试代理都有认证）
 2. **不支持代理链**（海外静态 IP 需要「本地翻墙 → 海外」双跳）
 
@@ -163,6 +172,7 @@
 `openTunnel()`（已支持双跳）转发出去，Chromium 只指向这个本地端口（无认证、无链）。
 
 **产出**：
+
 - `packages/proxy/src/relay.ts` — `startRelay(credential, password, upstream?) → { port, close() }`
 - 内核启动参数改为 `--proxy-server=http://127.0.0.1:<port>`，环境关闭时回收端口
 - 中继需按目标主机分流：直连名单（内网/localhost）不走隧道
@@ -185,13 +195,21 @@
 
 ---
 
-## 阶段三开工：探针回归网 ✅ 基线建立（2026-10-19）
+## 阶段三：探针回归网 ✅ 27/27 基线（2026-10-20）
 
 > `experiments/probes/run.mjs`（`pnpm probe -- --seed <s> --proxy os1 --label <name>`）：
-> 真实产品链路（fingerprint→注入→中继→Patchright）跑本地采集 + WebRTC 泄漏检查 + CreepJS，
-> 输出 11 项期望比对矩阵与 JSON 报告（`experiments/probes/results/`）。
-> 首轮即抓出三个深层漏洞（WebRTC flag 失效 / Worker 裸奔 / ServiceWorker 无法注入），
-> 修复后 11/11 且 Worker 世界与页面世界完全一致。详见 docs/ANTI_DETECTION.md §6。
+> 真实产品链路（fingerprint→注入→中继→Patchright）跑本地采集、Worker 穿透、WebRTC SDP 泄漏检查，
+> 并接入 CreepJS / BrowserLeaks / Pixelscan，输出 27 项期望矩阵与 JSON 报告。
+> 最新基线：`os1-final-1792469080283.json`，**27/27**；CreepJS `0% headless / 0% stealth`，
+> BrowserLeaks 无 IP 泄漏，Pixelscan Fingerprint 卡片为 `No masking detected`。
+> 本轮修复 Worker Blob 源码登记、OffscreenCanvas GPU、Canvas 幂等噪声、UA-CH、navigator 原型与 SDP 泄漏。
+> 详见 docs/ANTI_DETECTION.md §6。
 
-**后续**：紫鸟 EngTk2 对照补测（T0 遗留 C 组）；Pixelscan/BrowserLeaks 纳入探针网；
-CreepJS trust score 的 DOM 精确提取（目前只抓了 FP ID）。
+**已知边界**：os1 为数据中心代理，Pixelscan 会单独显示 `Proxy detected`，不伪造绕过；
+嵌套 Worker 不递归注入；ServiceWorker 采用屏蔽+回退策略；紫鸟 EngTk2 全量对照仍待补测。
+
+**后续优先级**：
+
+1. 紫鸟 EngTk2 对照补测（T0 遗留 C 组），把差异固化为矩阵。
+2. 用住宅代理复跑 Pixelscan，区分「代理质量」与「指纹伪装」。
+3. 探针纳入 CI 夜间回归，Patchright/Chromium 升级前必须全绿。

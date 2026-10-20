@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildInjectionScript, generateFingerprint } from '../src/index.js';
+import { buildClientHintHeaders, buildInjectionScript, generateFingerprint } from '../src/index.js';
 
 describe('指纹注入脚本', () => {
   it('同一 seed 产出逐字节一致的脚本', () => {
@@ -20,6 +20,15 @@ describe('指纹注入脚本', () => {
     expect(script).toContain(fp.webgl.renderer);
     expect(script).toContain(String(fp.hardware.hardwareConcurrency));
     expect(script).toContain(String(fp.screen.width));
+    expect(script).toContain('userAgentData');
+    expect(script).toContain('getHighEntropyValues');
+    expect(script).toContain(fp.userAgentData.fullVersion);
+    expect(script).toContain('const _navProto');
+    expect(script).toContain('WorkerNavigator.prototype');
+    expect(script).toContain('OffscreenCanvas.prototype.getContext');
+    expect(script).toContain('_blobUrlSource');
+    expect(script).toContain('_nativeFn("Worker"');
+    expect(script).not.toContain('_def(navigator');
     // 语法有效性：能作为函数体被 new Function 接受
     expect(() => new Function(script)).not.toThrow();
   });
@@ -27,11 +36,23 @@ describe('指纹注入脚本', () => {
   it('禁用项 webdriver 时脚本包含隐藏逻辑', () => {
     const fp = generateFingerprint({ seed: 'env-004' });
     fp.disabledFeatures = [...fp.disabledFeatures, 'webdriver'];
-    expect(buildInjectionScript(fp)).toContain("webdriver");
+    expect(buildInjectionScript(fp)).toContain('webdriver');
   });
 
   it('canvas=off 时不注入噪声逻辑', () => {
     const fp = { ...generateFingerprint({ seed: 'env-005' }), canvas: 'off' as const };
-    expect(buildInjectionScript(fp)).not.toContain('_noiseCanvas');
+    expect(buildInjectionScript(fp)).not.toContain('_noisyDataUrl');
+  });
+});
+
+describe('HTTP Client Hints', () => {
+  it('请求头品牌顺序与 UA-CH 完全一致', () => {
+    const fp = generateFingerprint({ seed: 'hints-001' });
+    const headers = buildClientHintHeaders(fp);
+    expect(headers['sec-ch-ua']).toBe(
+      fp.userAgentData.brands.map(({ brand, version }) => `"${brand}";v="${version}"`).join(', '),
+    );
+    expect(headers['sec-ch-ua-mobile']).toBe('?0');
+    expect(headers['sec-ch-ua-platform']).toBe(`"${fp.userAgentData.platform}"`);
   });
 });

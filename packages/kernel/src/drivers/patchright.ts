@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { chromium, type BrowserContext } from 'patchright';
 import { ShadowEdgeError } from '@shadowedge/core';
-import { buildInjectionScript } from '@shadowedge/fingerprint';
+import { buildClientHintHeaders, buildInjectionScript } from '@shadowedge/fingerprint';
 import type { KernelDriver, KernelLaunchSpec, RunningInstance } from '../driver.js';
 
 /** T0 实验结论：禁止非代理 UDP，否则 WebRTC 泄漏真实出口 IP。 */
@@ -27,9 +27,13 @@ export function buildLaunchConfig(spec: KernelLaunchSpec, cdpPort?: number) {
 
   if (spec.options.headless) {
     // T0 实验结论：headless 被 CreepJS 以 94% 置信度识别，业务环境一律 headed。
-    throw new ShadowEdgeError('E_KERNEL_LAUNCH_FAILED', '业务环境禁止 headless 启动（可被探针识别）', {
-      details: { profileId: spec.profile.id },
-    });
+    throw new ShadowEdgeError(
+      'E_KERNEL_LAUNCH_FAILED',
+      '业务环境禁止 headless 启动（可被探针识别）',
+      {
+        details: { profileId: spec.profile.id },
+      },
+    );
   }
 
   const args = [
@@ -46,12 +50,18 @@ export function buildLaunchConfig(spec: KernelLaunchSpec, cdpPort?: number) {
     headless: false,
     args,
     userAgent: fp.userAgent,
+    // HTTP Client Hints 不受 addInitScript 影响，必须与画像同步覆盖。
+    extraHTTPHeaders: buildClientHintHeaders(fp),
     locale: fp.languages[0] ?? 'en-US',
     timezoneId: fp.timezone,
     viewport: { width: fp.viewport.width, height: fp.viewport.height },
     deviceScaleFactor: fp.screen.pixelRatio,
     geolocation: fp.geolocation
-      ? { latitude: fp.geolocation.latitude, longitude: fp.geolocation.longitude, accuracy: fp.geolocation.accuracy }
+      ? {
+          latitude: fp.geolocation.latitude,
+          longitude: fp.geolocation.longitude,
+          accuracy: fp.geolocation.accuracy,
+        }
       : undefined,
     permissions: fp.geolocation ? ['geolocation'] : [],
     proxy: spec.proxy
@@ -76,10 +86,14 @@ export class PatchrightDriver implements KernelDriver {
     try {
       context = await chromium.launchPersistentContext(userDataDir, contextOptions);
     } catch (error) {
-      throw new ShadowEdgeError('E_KERNEL_LAUNCH_FAILED', `内核启动失败: ${(error as Error).message}`, {
-        retryable: true,
-        cause: error,
-      });
+      throw new ShadowEdgeError(
+        'E_KERNEL_LAUNCH_FAILED',
+        `内核启动失败: ${(error as Error).message}`,
+        {
+          retryable: true,
+          cause: error,
+        },
+      );
     }
     await context.addInitScript({ content: injectionScript });
 

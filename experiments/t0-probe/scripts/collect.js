@@ -11,19 +11,47 @@ window.__collectFingerprint = async function () {
     maxTouchPoints: nav.maxTouchPoints,
     vendor: nav.vendor,
     screen: {
-      width: screen.width, height: screen.height,
-      availWidth: screen.availWidth, availHeight: screen.availHeight,
-      colorDepth: screen.colorDepth, pixelRatio: window.devicePixelRatio,
+      width: screen.width,
+      height: screen.height,
+      availWidth: screen.availWidth,
+      availHeight: screen.availHeight,
+      colorDepth: screen.colorDepth,
+      pixelRatio: window.devicePixelRatio,
     },
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     tzOffset: new Date().getTimezoneOffset(),
     chromeObj: typeof window.chrome,
-    permissions: null, plugins: nav.plugins.length, mimeTypes: nav.mimeTypes.length,
+    permissions: null,
+    plugins: nav.plugins.length,
+    mimeTypes: nav.mimeTypes.length,
   };
+  if (nav.userAgentData) {
+    out.uaData = {
+      brands: nav.userAgentData.brands.map((b) => ({ brand: b.brand, version: b.version })),
+      mobile: nav.userAgentData.mobile,
+      platform: nav.userAgentData.platform,
+      stableObject: nav.userAgentData === nav.userAgentData,
+    };
+    try {
+      out.uaDataHighEntropy = await nav.userAgentData.getHighEntropyValues([
+        'architecture',
+        'bitness',
+        'fullVersionList',
+        'model',
+        'platformVersion',
+        'uaFullVersion',
+        'wow64',
+      ]);
+    } catch (e) {
+      out.uaDataHighEntropy = 'err:' + e.message;
+    }
+  }
   try {
     const r = await nav.permissions.query({ name: 'notifications' });
     out.permissions = r.state;
-  } catch (e) { out.permissions = 'err:' + e.message; }
+  } catch (e) {
+    out.permissions = 'err:' + e.message;
+  }
   // WebGL
   try {
     const c = document.createElement('canvas');
@@ -34,36 +62,69 @@ window.__collectFingerprint = async function () {
       renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
       version: gl.getParameter(gl.VERSION),
     };
-  } catch (e) { out.webgl = 'err:' + e.message; }
+  } catch (e) {
+    out.webgl = 'err:' + e.message;
+  }
   // Canvas hash
   try {
-    const c = document.createElement('canvas'); c.width = 240; c.height = 60;
+    const c = document.createElement('canvas');
+    c.width = 240;
+    c.height = 60;
     const ctx = c.getContext('2d');
-    ctx.textBaseline = 'top'; ctx.font = "14px 'Arial'";
-    ctx.fillStyle = '#f60'; ctx.fillRect(125, 1, 62, 20);
-    ctx.fillStyle = '#069'; ctx.fillText('ShadowEdge,T0 \u{1F525}', 2, 15);
-    ctx.fillStyle = 'rgba(102,204,0,0.7)'; ctx.fillText('ShadowEdge,T0 \u{1F525}', 4, 17);
+    ctx.textBaseline = 'top';
+    ctx.font = "14px 'Arial'";
+    ctx.fillStyle = '#f60';
+    ctx.fillRect(125, 1, 62, 20);
+    ctx.fillStyle = '#069';
+    ctx.fillText('ShadowEdge,T0 \u{1F525}', 2, 15);
+    ctx.fillStyle = 'rgba(102,204,0,0.7)';
+    ctx.fillText('ShadowEdge,T0 \u{1F525}', 4, 17);
     const data = c.toDataURL();
-    let h = 0; for (let i = 0; i < data.length; i++) { h = ((h << 5) - h + data.charCodeAt(i)) | 0; }
+    let h = 0;
+    for (let i = 0; i < data.length; i++) {
+      h = ((h << 5) - h + data.charCodeAt(i)) | 0;
+    }
     out.canvasHash = (h >>> 0).toString(16);
-  } catch (e) { out.canvasHash = 'err:' + e.message; }
+  } catch (e) {
+    out.canvasHash = 'err:' + e.message;
+  }
   // AudioContext fingerprint
   try {
-    const ac = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100, 44100);
-    const osc = ac.createOscillator(); osc.type = 'triangle'; osc.frequency.value = 10000;
+    const ac = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(
+      1,
+      44100,
+      44100,
+    );
+    const osc = ac.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = 10000;
     const comp = ac.createDynamicsCompressor();
-    osc.connect(comp); comp.connect(ac.destination); osc.start(0);
+    osc.connect(comp);
+    comp.connect(ac.destination);
+    osc.start(0);
     const buf = await ac.startRendering();
-    const d = buf.getChannelData(0); let s = 0;
+    const d = buf.getChannelData(0);
+    let s = 0;
     for (let i = 4500; i < 5000; i++) s += Math.abs(d[i]);
     out.audioFp = s.toString();
-  } catch (e) { out.audioFp = 'err:' + e.message; }
+  } catch (e) {
+    out.audioFp = 'err:' + e.message;
+  }
   // 注入痕迹检测（探针常用检查）
   out.traps = {
-    fnToString: Function.prototype.toString.call(navigator.permissions.query).includes('[native code]'),
-    errorStack: (() => { try { null.x } catch (e) { return (e.stack || '').split('\n').length } })(),
+    fnToString: Function.prototype.toString
+      .call(navigator.permissions.query)
+      .includes('[native code]'),
+    errorStack: (() => {
+      try {
+        null.x;
+      } catch (e) {
+        return (e.stack || '').split('\n').length;
+      }
+    })(),
     navPropsCount: Object.getOwnPropertyNames(Navigator.prototype).length,
-    hasCDC: Object.keys(window).filter(k => k.includes('cdc_') || k.includes('$cdc')),
+    navOwnProps: Object.getOwnPropertyNames(navigator),
+    hasCDC: Object.keys(window).filter((k) => k.includes('cdc_') || k.includes('$cdc')),
   };
   return out;
 };

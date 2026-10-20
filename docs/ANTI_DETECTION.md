@@ -1,6 +1,6 @@
 # 反检测技术方案
 
-## 1. 为什么 JS 注入不够
+## 1. 为什么最终不能只靠 JS 注入
 
 主流指纹浏览器（含紫鸟部分维度）用 `Page.addScriptToEvaluateOnNewDocument` 注入脚本覆写 `navigator` 属性。这种方案的暴露点：
 
@@ -10,39 +10,45 @@
 4. **Worker 上下文逃逸** —— `new Worker()`、`SharedWorker`、`ServiceWorker` 有独立全局对象，JS 注入难以全覆盖，探针在 Worker 里读原始值即可穿透。
 5. **CDP 自身痕迹** —— `Runtime.enable` 会让 `console` 行为变化，`Error.stack` 出现异常帧。
 
-因此 ShadowEdge 采用 **Chromium 源码级补丁**：在 C++ 层拦截 Blink 的 API 实现，从渲染引擎内部返回伪造值。JS 层看不到任何 hook 痕迹，Worker 与 iframe 自动继承。
+ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init script** 为唯一主驱动，
+先在不引入 C++ 工具链的前提下把可检测面压到第三方探针可接受的水平；高风控场景再升级到
+**Chromium 源码级补丁**，在 C++ 层拦截 Blink API，从渲染引擎内部返回画像值。两条路线共享同一份
+`FingerprintProfile` 和探针矩阵，迁移时不允许破坏 seed 可复现性。
 
-## 2. 补丁清单
+## 2. C++ 内核阶段补丁清单
+
+以下为阶段二目标，不代表当前 Patchright 路线已经完成；当前已落地的过渡能力见 §6。
 
 ### 2.1 自动化痕迹清除
-| 目标 | 补丁位置 | 做法 |
-| --- | --- | --- |
-| `navigator.webdriver` | `third_party/blink/renderer/core/frame/navigator.cc` | 直接返回 `false`，移除 `--enable-automation` 的联动 |
-| `window.cdc_*` 变量 | ChromeDriver 注入点 | 不使用 ChromeDriver，改用直连 CDP |
-| `Runtime.enable` 痕迹 | `content/renderer/` | 延迟启用，或用 isolated world 执行 |
-| `--enable-automation` infobar | `chrome/browser/ui/` | 移除 switch 检测 |
-| `navigator.plugins` 为空 | `navigator_plugins.cc` | 注入符合真实 Chrome 的 PDF Viewer 等 5 项 |
-| `navigator.mimeTypes` 为空 | 同上 | 与 plugins 对应填充 |
-| `Notification.permission` 异常 | permission 模块 | headless 下返回 `default` 而非 `denied` |
-| `chrome.runtime` 缺失 | `extensions/renderer/` | 保留最小 `chrome` 对象骨架 |
+
+| 目标                           | 补丁位置                                             | 做法                                                |
+| ------------------------------ | ---------------------------------------------------- | --------------------------------------------------- |
+| `navigator.webdriver`          | `third_party/blink/renderer/core/frame/navigator.cc` | 直接返回 `false`，移除 `--enable-automation` 的联动 |
+| `window.cdc_*` 变量            | ChromeDriver 注入点                                  | 不使用 ChromeDriver，改用直连 CDP                   |
+| `Runtime.enable` 痕迹          | `content/renderer/`                                  | 延迟启用，或用 isolated world 执行                  |
+| `--enable-automation` infobar  | `chrome/browser/ui/`                                 | 移除 switch 检测                                    |
+| `navigator.plugins` 为空       | `navigator_plugins.cc`                               | 注入符合真实 Chrome 的 PDF Viewer 等 5 项           |
+| `navigator.mimeTypes` 为空     | 同上                                                 | 与 plugins 对应填充                                 |
+| `Notification.permission` 异常 | permission 模块                                      | headless 下返回 `default` 而非 `denied`             |
+| `chrome.runtime` 缺失          | `extensions/renderer/`                               | 保留最小 `chrome` 对象骨架                          |
 
 ### 2.2 指纹维度伪造
 
-| 维度 | 拦截点 | 策略 |
-| --- | --- | --- |
-| Canvas 2D | `CanvasRenderingContext2D::getImageData`, `toDataURL` | 按 seed 对像素施加确定性微扰（±1 LSB），肉眼无差异但哈希稳定唯一 |
-| WebGL | `WebGLRenderingContext::getParameter` | 替换 `VENDOR`/`RENDERER`/`UNMASKED_*`；`readPixels` 施加噪声 |
-| AudioContext | `AudioBuffer::getChannelData`, `AnalyserNode` | 对浮点样本乘以 seed 派生的极小系数 |
-| ClientRects | `Element::getBoundingClientRect` | 对返回值加 seed 派生的亚像素偏移 |
-| 字体枚举 | `FontCache::GetFontData` | 仅命中白名单字体，其余回退默认字体 |
-| WebRTC | `PeerConnection` ICE 候选生成 | 用代理出口 IP 替换本地候选，或完全禁用 mDNS 候选 |
-| 时区 | `blink::TimeZoneController` | 从环境配置读取，不读系统时区 |
-| 语言 | `Navigator::languages` | 从环境配置读取 |
-| 地理位置 | Geolocation service | 返回代理出口 IP 对应坐标 |
-| 硬件参数 | `Navigator::hardwareConcurrency`, `deviceMemory` | 从环境配置读取 |
-| 媒体设备 | `MediaDevices::enumerateDevices` | 返回配置的虚拟设备列表，deviceId 由 seed 派生 |
-| Battery | `BatteryManager` | 返回配置值 |
-| Screen | `Screen::width` 等 | 从环境配置读取，且 `availHeight` 需减去合理任务栏高度 |
+| 维度         | 拦截点                                                | 策略                                                             |
+| ------------ | ----------------------------------------------------- | ---------------------------------------------------------------- |
+| Canvas 2D    | `CanvasRenderingContext2D::getImageData`, `toDataURL` | 按 seed 对像素施加确定性微扰（±1 LSB），肉眼无差异但哈希稳定唯一 |
+| WebGL        | `WebGLRenderingContext::getParameter`                 | 替换 `VENDOR`/`RENDERER`/`UNMASKED_*`；`readPixels` 施加噪声     |
+| AudioContext | `AudioBuffer::getChannelData`, `AnalyserNode`         | 对浮点样本乘以 seed 派生的极小系数                               |
+| ClientRects  | `Element::getBoundingClientRect`                      | 对返回值加 seed 派生的亚像素偏移                                 |
+| 字体枚举     | `FontCache::GetFontData`                              | 仅命中白名单字体，其余回退默认字体                               |
+| WebRTC       | `PeerConnection` ICE 候选生成                         | 用代理出口 IP 替换本地候选，或完全禁用 mDNS 候选                 |
+| 时区         | `blink::TimeZoneController`                           | 从环境配置读取，不读系统时区                                     |
+| 语言         | `Navigator::languages`                                | 从环境配置读取                                                   |
+| 地理位置     | Geolocation service                                   | 返回代理出口 IP 对应坐标                                         |
+| 硬件参数     | `Navigator::hardwareConcurrency`, `deviceMemory`      | 从环境配置读取                                                   |
+| 媒体设备     | `MediaDevices::enumerateDevices`                      | 返回配置的虚拟设备列表，deviceId 由 seed 派生                    |
+| Battery      | `BatteryManager`                                      | 返回配置值                                                       |
+| Screen       | `Screen::width` 等                                    | 从环境配置读取，且 `availHeight` 需减去合理任务栏高度            |
 
 ### 2.3 一致性闸门
 
@@ -76,7 +82,7 @@
 
 ## 5. 验证方法
 
-搭建自有探针站（`scripts/probe/`）采集全部维度，并交叉验证：
+`experiments/probes/run.mjs` 跑真实产品链路，并用 CreepJS / BrowserLeaks / Pixelscan 交叉验证：
 
 1. **唯一性** —— 100 个环境的指纹哈希两两不同。
 2. **稳定性** —— 同一环境重启 20 次，指纹哈希不变。
@@ -84,16 +90,35 @@
 4. **隐蔽性** —— 第三方检测站（CreepJS / BrowserLeaks / Pixelscan 等）无自动化告警。
 5. **隔离性** —— 环境间 Cookie / Storage / IP 互不可见。
 
-## 6. 探针回归实测记录（2026-10-19，CreepJS × os1 德国双跳链路）
+## 6. 探针回归实测记录（2026-10-20，os1 德国双跳链路）
 
-通过 `node experiments/probes/run.mjs --seed <s> --proxy os1` 复现。基线 11/11 后发现并修复三个深层漏洞：
+基线报告：`experiments/probes/results/os1-final-1792469080283.json`，seed `ps-test`。
+通过 `pnpm probe -- --seed ps-test --proxy os1 --label os1-final` 复现，结果为 **27/27**。
 
-| 漏洞 | 现象 | 修复 |
-| --- | --- | --- |
-| WebRTC flag 失效 | `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` 在 Chromium 156 下 srflx 仍泄漏真实出口 IP | 注入层过滤 ice candidate（replace 改写为出口 IP / 无 publicIp 则丢弃 host/srflx） |
-| Worker 裸奔 | `addInitScript` 不覆盖 Worker 作用域，CreepJS 在 Worker 读到真实 GPU(Apple M4)/UA(Mac)/ cores，与页面世界矛盾 | 包装 `Worker`/`SharedWorker`：同源脚本同步拉源码、前置注入、转 blob；注入脚本做 Window/Worker 双作用域兼容；UA 逐世界注入（Worker 不吃上下文 UA 覆盖） |
-| ServiceWorker 无法注入 | CreepJS 首选 ServiceWorkerGlobalScope 采集指纹，`register()` 直拉 URL 无法拦截 | 屏蔽 `navigator.serviceWorker`，迫使探针回退到可包装的 Shared/Dedicated Worker（反检测浏览器通行做法） |
+| 观测点                                   | 结果                                                                       |
+| ---------------------------------------- | -------------------------------------------------------------------------- |
+| CreepJS                                  | `0% headless`、`38% like headless`、`0% stealth`、`lies = 0`               |
+| BrowserLeaks                             | 无 WebRTC 本机 IP 或非出口公网 IP 泄漏                                     |
+| Pixelscan Browser / Location / Bot check | 全部通过                                                                   |
+| Pixelscan Fingerprint                    | `No masking detected`                                                      |
+| Pixelscan Proxy                          | `Proxy detected`：os1 是德国数据中心静态代理，属于外部网络条件，不伪装绕过 |
+| Pixelscan 综合                           | `nonProxyConsistent = true`（除代理类型外所有非代理因素一致）              |
 
-修复后 CreepJS Worker 节：`Windows/Win32 · UA Edg/130 · GPU RTX 3060 · Europe/Berlin · de-DE`，与页面世界完全一致；同 seed 两次运行 FP ID 逐字节一致。
+本轮修复的深层问题：
 
-**已知边界**：嵌套 Worker（Worker 里再建 Worker）不递归注入；ServiceWorker 屏蔽可能被标记为「隐私强化」特征（与紫鸟 EngTk2 的对照测试待做）。
+| 漏洞                | 现象                                                                                             | 修复                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| Worker 源码读取失败 | Pixelscan 禁止同步 XHR 读取 `blob:` URL，旧包装静默回退，Worker 暴露真实 `Chrome/156 + Apple M4` | 在 `Blob` 构造与 `URL.createObjectURL()` 时登记源码，Worker 构造直接取用；不再依赖 XHR                    |
+| Worker GPU 裸奔     | Worker 无 `WebGLRenderingContext` 全局构造器，OffscreenCanvas 返回的上下文未被覆盖               | 包装 `OffscreenCanvas.prototype.getContext`，从实例原型套用 WebGL spoof；兼容 `WorkerNavigator.prototype` |
+| Canvas 噪声可被回读 | 持久修改原画布会让重复读取累积漂移，并可能破坏纯色检测块                                         | `toDataURL` 在临时画布加噪；`getImageData` 只改返回副本；仅扰动 3×3 邻域颜色种类 ≥3 的纹理像素            |
+| UA / UA-CH 不一致   | HTTP Client Hints 不受页面 JS 注入影响，服务端看到内核真实版本                                   | `buildClientHintHeaders()` 覆盖 `sec-ch-ua*`；页面侧 `userAgentData` 与 UA 同源、稳定对象、高熵接口补齐   |
+| Navigator 伪造痕迹  | 属性挂在 `navigator` 实例上，`Object.getOwnPropertyNames(navigator)` 非空                        | 全部属性定义到 `Navigator.prototype` / `WorkerNavigator.prototype`                                        |
+| SDP 候选泄漏        | 只过滤 ICE 事件时，`localDescription.sdp` 仍含 host/srflx IP                                     | 同步过滤 `c=` 与 `a=candidate` 行，并按模式改写或删除                                                     |
+| 包装函数 toString   | Worker / SharedWorker 包装器暴露源码                                                             | 统一 `_nativeFn()` 恢复原生 `toString()` 形态                                                             |
+
+修复后 Worker 实测与画像一致：UA `Chrome/131`、UA-CH `Chromium/Google Chrome 131`、
+`hardwareConcurrency = 12`、GPU `Google Inc. (Apple) / Apple M1 Pro`、`navigator` 无自有属性；
+同一 seed 重复读取 Canvas 与像素结果稳定。
+
+**已知边界**：嵌套 Worker（Worker 里再建 Worker）不递归注入；ServiceWorker 仍通过屏蔽迫使探针回退；
+数据中心代理会被 Pixelscan 单独标为 `Proxy detected`，这属于代理质量而非指纹伪装失败；与紫鸟 EngTk2 的完整对照仍待补测。

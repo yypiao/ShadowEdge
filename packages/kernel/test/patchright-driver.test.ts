@@ -4,14 +4,24 @@ import { generateFingerprint } from '@shadowedge/fingerprint';
 import { buildLaunchConfig } from '../src/drivers/patchright.js';
 import type { KernelLaunchSpec } from '../src/driver.js';
 
-function makeSpec(overrides: Partial<KernelLaunchSpec['options']> = {}, proxy?: KernelLaunchSpec['proxy']): KernelLaunchSpec {
+function makeSpec(
+  overrides: Partial<KernelLaunchSpec['options']> = {},
+  proxy?: KernelLaunchSpec['proxy'],
+): KernelLaunchSpec {
   const now = new Date().toISOString();
   const profile: BrowserProfile = {
-    id: 'p1', orgId: 'local', name: 't', kernel: 'chromium-patched',
+    id: 'p1',
+    orgId: 'local',
+    name: 't',
+    kernel: 'chromium-patched',
     fingerprint: generateFingerprint({ seed: 'driver-test' }),
-    ownerId: 'local-user', sharedWith: [],
+    ownerId: 'local-user',
+    sharedWith: [],
     storage: { userDataDir: 'profiles/p1', remoteRevision: 0, syncMode: 'auto' },
-    startupUrls: [], status: 'idle', createdAt: now, updatedAt: now,
+    startupUrls: [],
+    status: 'idle',
+    createdAt: now,
+    updatedAt: now,
   };
   return { profile, options: { profileId: 'p1', ...overrides }, proxy };
 }
@@ -33,12 +43,20 @@ describe('Patchright 驱动启动配置', () => {
     expect(contextOptions.timezoneId).toBe(spec.profile.fingerprint.timezone);
     expect(contextOptions.locale).toBe(spec.profile.fingerprint.languages[0]);
     expect(contextOptions.viewport?.width).toBe(spec.profile.fingerprint.viewport.width);
+    expect(contextOptions.extraHTTPHeaders?.['sec-ch-ua']).toContain('"Chromium"');
+    expect(contextOptions.extraHTTPHeaders?.['sec-ch-ua-platform']).toBe('"Windows"');
     expect(contextOptions.headless).toBe(false);
   });
 
   it('代理映射含凭据', () => {
-    const { contextOptions } = buildLaunchConfig(makeSpec({}, { server: 'socks5://1.2.3.4:1080', username: 'u', password: 'p' }));
-    expect(contextOptions.proxy).toEqual({ server: 'socks5://1.2.3.4:1080', username: 'u', password: 'p' });
+    const { contextOptions } = buildLaunchConfig(
+      makeSpec({}, { server: 'socks5://1.2.3.4:1080', username: 'u', password: 'p' }),
+    );
+    expect(contextOptions.proxy).toEqual({
+      server: 'socks5://1.2.3.4:1080',
+      username: 'u',
+      password: 'p',
+    });
   });
 
   it('remoteDebugging 时注入 CDP 端口参数', () => {
