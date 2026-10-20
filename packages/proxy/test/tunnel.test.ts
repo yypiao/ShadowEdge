@@ -28,7 +28,10 @@ function fakeHttpUpstream(): { server: Server; port: () => number; targets: stri
 }
 
 /** 微型 SOCKS5 服务端：校验握手与认证，然后把请求原样回显。 */
-function fakeSocks5(expectAuth: { user: string; pass: string } | null): { server: Server; port: () => number } {
+function fakeSocks5(expectAuth: { user: string; pass: string } | null): {
+  server: Server;
+  port: () => number;
+} {
   const server = createServer((socket: Socket) => {
     let stage = 0;
     socket.on('data', (buf: Buffer) => {
@@ -41,7 +44,9 @@ function fakeSocks5(expectAuth: { user: string; pass: string } | null): { server
         const user = buf.subarray(2, 2 + userLen).toString();
         const passLen = buf[2 + userLen]!;
         const pass = buf.subarray(3 + userLen, 3 + userLen + passLen).toString();
-        socket.write(Buffer.from([0x01, user === expectAuth.user && pass === expectAuth.pass ? 0x00 : 0x01]));
+        socket.write(
+          Buffer.from([0x01, user === expectAuth.user && pass === expectAuth.pass ? 0x00 : 0x01]),
+        );
       } else {
         const hostLen = buf[4]!;
         const host = buf.subarray(5, 5 + hostLen).toString();
@@ -72,18 +77,25 @@ describe('SOCKS5 隧道', () => {
     const fake = fakeSocks5(null);
     servers.push(fake.server);
     await new Promise((r) => fake.server.once('listening', r));
-    const socket = await connectViaSocks5({ host: '127.0.0.1', port: fake.port() }, { host: 'example.com', port: 80 });
-    const resp = await httpGetOverSocket(socket, { host: 'example.com', port: 80, tls: false }, '/ip');
+    const socket = await connectViaSocks5(
+      { host: '127.0.0.1', port: fake.port() },
+      { host: 'example.com', port: 80 },
+    );
+    const resp = await httpGetOverSocket(
+      socket,
+      { host: 'example.com', port: 80, tls: false },
+      '/ip',
+    );
     expect(resp.status).toBe(200);
     expect(resp.body).toContain('example.com');
   });
 
   it('用户名密码认证成功', async () => {
-    const fake = fakeSocks5({ user: 'yypiao', pass: 'piao121521@' });
+    const fake = fakeSocks5({ user: 'test-user', pass: 'test-pass' });
     servers.push(fake.server);
     await new Promise((r) => fake.server.once('listening', r));
     const socket = await connectViaSocks5(
-      { host: '127.0.0.1', port: fake.port(), username: 'yypiao', password: 'piao121521@' },
+      { host: '127.0.0.1', port: fake.port(), username: 'test-user', password: 'test-pass' },
       { host: 'example.com', port: 80 },
     );
     socket.destroy();
@@ -94,7 +106,10 @@ describe('SOCKS5 隧道', () => {
     servers.push(fake.server);
     await new Promise((r) => fake.server.once('listening', r));
     await expect(
-      connectViaSocks5({ host: '127.0.0.1', port: fake.port(), username: 'u', password: 'wrong' }, { host: 'x', port: 80 }),
+      connectViaSocks5(
+        { host: '127.0.0.1', port: fake.port(), username: 'u', password: 'wrong' },
+        { host: 'x', port: 80 },
+      ),
     ).rejects.toThrowError(/认证失败/);
   });
 });
@@ -102,7 +117,7 @@ describe('SOCKS5 隧道', () => {
 describe('双跳链路（上游 → 第二跳代理）', () => {
   it('HTTP CONNECT 上游 → SOCKS5 第二跳：先 CONNECT 到第二跳端口，再完成 SOCKS5 握手', async () => {
     const upstream = fakeHttpUpstream();
-    const secondHop = fakeSocks5({ user: 'beMBQkwJhdJP', pass: 'RBcbYC3B4G' });
+    const secondHop = fakeSocks5({ user: 'hop-user', pass: 'hop-pass' });
     servers.push(upstream.server, secondHop.server);
     await Promise.all([
       new Promise((r) => upstream.server.once('listening', r)),
@@ -110,11 +125,21 @@ describe('双跳链路（上游 → 第二跳代理）', () => {
     ]);
 
     const socket = await openTunnel(
-      { host: '127.0.0.1', port: secondHop.port(), protocol: 'socks5', username: 'beMBQkwJhdJP', password: 'RBcbYC3B4G' },
+      {
+        host: '127.0.0.1',
+        port: secondHop.port(),
+        protocol: 'socks5',
+        username: 'hop-user',
+        password: 'hop-pass',
+      },
       { host: 'api.ip.sb', port: 443 },
       { upstream: { protocol: 'http', host: '127.0.0.1', port: upstream.port() } },
     );
-    const resp = await httpGetOverSocket(socket, { host: 'api.ip.sb', port: 443, tls: false }, '/ip');
+    const resp = await httpGetOverSocket(
+      socket,
+      { host: 'api.ip.sb', port: 443, tls: false },
+      '/ip',
+    );
     expect(resp.status).toBe(200);
     expect(resp.body).toContain('api.ip.sb');
     expect(upstream.targets[0]).toBe(`CONNECT 127.0.0.1:${secondHop.port()} HTTP/1.1`);
@@ -131,7 +156,13 @@ describe('双跳链路（上游 → 第二跳代理）', () => {
 
     await expect(
       openTunnel(
-        { host: '127.0.0.1', port: secondHop.port(), protocol: 'socks5', username: 'wrong', password: 'pass' },
+        {
+          host: '127.0.0.1',
+          port: secondHop.port(),
+          protocol: 'socks5',
+          username: 'wrong',
+          password: 'pass',
+        },
         { host: 'api.ip.sb', port: 443 },
         { upstream: { protocol: 'http', host: '127.0.0.1', port: upstream.port() } },
       ),
