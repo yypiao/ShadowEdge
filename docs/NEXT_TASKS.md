@@ -200,11 +200,13 @@
 > `experiments/probes/run.mjs`（`pnpm probe -- --seed <s> --proxy os1 --label <name>`）：
 > 真实产品链路（fingerprint→注入→中继→Patchright）跑本地采集、Worker 穿透、WebRTC SDP 泄漏检查，
 > 并接入 CreepJS / BrowserLeaks / Pixelscan，输出 27 项期望矩阵与 JSON 报告。
-> 最新基线：`os1-final-20261021-1792546993130.json`（德国）与
-> `os2-residential-20261021-1792550255011.json`（英国），均为 **27/27**；CreepJS `0% headless / 0% stealth`，
+> 最新基线：`os1-final-audit-1792553903844.json`（德国）与
+> `os2-final-audit-1792554019160.json`（英国），均为 **27/27**；CreepJS `0% headless / 0% stealth`，
 > BrowserLeaks 无 IP 泄漏，Pixelscan Fingerprint 卡片为 `No masking detected`。
 > 本轮修复 Worker Canvas 作用域回归、Canvas 纯色保护与 5×5 纹理判定、Proxy 命名 `toString`
-> （Pixelscan C14 的 38/42 字符检查）、WebRTC mDNS 正则与 `0.0.0.0` 分类。
+> （Pixelscan C14 的 38/42 字符检查）、WebRTC mDNS 正则与 `0.0.0.0` 分类；
+> 并完成注入层自查：消除 `screen` / `userAgentData` / `mediaDevices` / WebRTC / battery 的实例自有属性，
+> 补齐 `screen.pixelDepth` 与 `colorDepth` 一致性，保留 `devicePixelRatio` 原生 setter descriptor。
 > 详见 docs/ANTI_DETECTION.md §6。
 
 紫鸟 EngTk2 对照已完成并归档到 `docs/COMPARISON_ZINIAO.md`：跨世界一致、WebRTC、Canvas/Audio、

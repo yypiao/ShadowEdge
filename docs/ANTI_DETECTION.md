@@ -93,8 +93,8 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 ## 6. 探针回归实测记录（2026-10-21，os1 德国双跳链路）
 
 基线报告：
-- os1 德国：`experiments/probes/results/os1-final-20261021-1792546993130.json`，seed `ps-test`，**27/27**。
-- os2 英国：`experiments/probes/results/os2-residential-20261021-1792550255011.json`，seed `ps-test-uk`，**27/27**。
+- os1 德国：`experiments/probes/results/os1-final-audit-1792553903844.json`，seed `ps-final-audit`，**27/27**。
+- os2 英国：`experiments/probes/results/os2-final-audit-1792554019160.json`，seed `ps-final-audit`，**27/27**。
 
 通过 `pnpm probe -- --seed <seed> --proxy os1|os2 --label <name>` 复现。
 
@@ -119,6 +119,12 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 | SDP 候选泄漏        | 只过滤 ICE 事件时，`localDescription.sdp` 仍含 host/srflx IP；mDNS 候选因正则只认 IP 字符集而漏删 | 同步过滤 `c=` 与 `a=candidate` 行；地址匹配改为 `[^\s]+`，覆盖带连字符的 mDNS；`0.0.0.0` / `::` 归为 unspecified |
 | 包装函数 toString   | Worker / SharedWorker 包装器暴露源码；Proxy 默认返回 32 字符匿名原生串，Pixelscan C14 直接判失败   | Proxy 增加 `toString` / `name` get 陷阱：`fn.toString()` 返回带名原生串（`toDataURL` 为 38 字符），`Function.prototype.toString.call` 仍不泄漏源码 |
 | Worker 注入中断     | Canvas 噪声代码在 Worker 中引用不存在的 `CanvasRenderingContext2D`，整段 Worker 注入抛错并超时    | 给 Canvas 原型方法循环加 `typeof CanvasRenderingContext2D !== "undefined"` 守卫                              |
+| Screen 实例属性     | `screen` 被挂成实例自有属性，`Object.getOwnPropertyNames(screen)` 从 `[]` 变成 5 项               | 改挂 `Screen.prototype`；实例自有属性恢复为空                                                              |
+| screen 位深矛盾     | `colorDepth` 被改成 24，但 `pixelDepth` 仍是宿主机的 30                                          | `pixelDepth` 与 `colorDepth` 同源返回画像值                                                                 |
+| DPR descriptor      | 只定义 `window.devicePixelRatio` getter，原生 setter 被覆盖成 `undefined`                         | 保留原生 descriptor 的 setter，并让 getter 继续返回画像值                                                   |
+| UA-CH 实例属性      | 手工构造的 `userAgentData` 带 `brands/mobile/platform/getHighEntropyValues` 自有属性               | 返回原生对象，getter/method 全部落在 `NavigatorUAData.prototype`；`brands` 每次返回新的冻结数组              |
+| MediaDevices 源码   | `enumerateDevices` 挂成实例方法，`toString()` 直接输出注入用 async 源码                            | 改为 `MediaDevices.prototype` 上的 Proxy 方法，实例无自有属性，`toString()` 为原生串                         |
+| WebRTC / Battery    | WebRTC 包装把 `addEventListener` / `onicecandidate` / `localDescription` 挂到连接实例；battery 同样落到实例 | WebRTC 改为原型级拦截（构造器保持原生）；BatteryManager 属性改挂原型；实测实例自有属性均为空               |
 
 修复后 Worker 实测与画像一致：UA `Chrome/131`、UA-CH `Chromium/Google Chrome 131`、
 `hardwareConcurrency = 12`、GPU `Google Inc. (Apple) / Apple M1 Pro`、`navigator` 无自有属性；

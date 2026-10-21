@@ -4,8 +4,8 @@
 - ShadowEdge 侧：`experiments/probes/ziniao-compare/run-shadowedge.mjs`（seed `ziniao-compare`，跟随宿主机平台）。
 - 紫鸟侧：用户在本机 EngTk2 环境中通过 `file://` 打开探针页，UI 全选复制结果；
   原始报告 `experiments/probes/ziniao-compare/result-1792471246829.json`。
-- 最终回归基线：`experiments/probes/results/os1-final-20261021-1792546993130.json`（德国，27/27）、
-  `experiments/probes/results/os2-residential-20261021-1792550255011.json`（英国，27/27）。
+- 最终回归基线：`experiments/probes/results/os1-final-audit-1792553903844.json`（德国，27/27）、
+  `experiments/probes/results/os2-final-audit-1792554019160.json`（英国，27/27）。
 
 ## 1. 逐项对比
 
@@ -68,6 +68,14 @@ UA-CH 与 HTTP 头同源、纯色检测块保护，这些紫鸟具备的维度 S
   修复 Pixelscan C14 的“长度必须是 38/42”检查；`Function.prototype.toString.call` 仍不泄漏源码。
 - **WebRTC mDNS / unspecified**：候选正则从 IP 字符集改为 `[^\s]+`，正确识别带连字符的 mDNS；
   `0.0.0.0` / `::` 归类为 `unspecified`，不再误报 public。
+- **注入层实例痕迹**：`screen` 与 `mediaDevices` 改挂原型；WebRTC 从实例包装改为
+  `EventTarget.prototype` / `RTCPeerConnection.prototype` 条件拦截，构造器保持原生；
+  battery 改挂 `BatteryManager.prototype`。实测这些对象的实例自有属性均为 `[]`。
+- **UA-CH 对象布局**：`navigator.userAgentData` 改为原生对象 + `NavigatorUAData.prototype`
+  级 getter/method，实例自有属性为空；`brands` 每次返回新的冻结数组，符合原生行为。
+- **屏幕位深**：`screen.pixelDepth` 与 `screen.colorDepth` 同源，避免 24 vs 30 的矛盾。
+- **DPR descriptor**：保留原生 `window.devicePixelRatio` 的 getter/setter 形态，
+  避免只定义 getter 导致 descriptor 对比异常。
 
 ## 4. 紫鸟侧工程观察（供架构参考）
 
