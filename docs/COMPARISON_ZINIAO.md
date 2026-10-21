@@ -4,7 +4,8 @@
 - ShadowEdge 侧：`experiments/probes/ziniao-compare/run-shadowedge.mjs`（seed `ziniao-compare`，跟随宿主机平台）。
 - 紫鸟侧：用户在本机 EngTk2 环境中通过 `file://` 打开探针页，UI 全选复制结果；
   原始报告 `experiments/probes/ziniao-compare/result-1792471246829.json`。
-- 最终回归基线：`experiments/probes/results/os1-final-20261021-1792546993130.json`（27/27）。
+- 最终回归基线：`experiments/probes/results/os1-final-20261021-1792546993130.json`（德国，27/27）、
+  `experiments/probes/results/os2-residential-20261021-1792550255011.json`（英国，27/27）。
 
 ## 1. 逐项对比
 
@@ -27,7 +28,7 @@
 | ServiceWorker | **屏蔽** | **可用** | 紫鸟有内核层注入，我们目前用屏蔽迫使探针回退 |
 | webdriver / CDC / native | 干净 | 干净 | 一致 |
 | CreepJS | `0% headless / 0% stealth` | 未测（需其 API） | — |
-| Pixelscan | 27/27，`No masking detected`（os1 数据中心代理单独标 `Proxy detected`） | 未测 | 住宅代理复跑仍待补 |
+| Pixelscan | 27/27，`No masking detected`（os1 德国 / os2 英国静态住宅代理，Proxy 卡单独标 `Proxy detected`） | 未测 | 两组住宅代理均已复跑 |
 
 ## 2. 结论
 

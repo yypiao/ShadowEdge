@@ -200,7 +200,8 @@
 > `experiments/probes/run.mjs`（`pnpm probe -- --seed <s> --proxy os1 --label <name>`）：
 > 真实产品链路（fingerprint→注入→中继→Patchright）跑本地采集、Worker 穿透、WebRTC SDP 泄漏检查，
 > 并接入 CreepJS / BrowserLeaks / Pixelscan，输出 27 项期望矩阵与 JSON 报告。
-> 最新基线：`os1-final-20261021-1792546993130.json`，**27/27**；CreepJS `0% headless / 0% stealth`，
+> 最新基线：`os1-final-20261021-1792546993130.json`（德国）与
+> `os2-residential-20261021-1792550255011.json`（英国），均为 **27/27**；CreepJS `0% headless / 0% stealth`，
 > BrowserLeaks 无 IP 泄漏，Pixelscan Fingerprint 卡片为 `No masking detected`。
 > 本轮修复 Worker Canvas 作用域回归、Canvas 纯色保护与 5×5 纹理判定、Proxy 命名 `toString`
 > （Pixelscan C14 的 38/42 字符检查）、WebRTC mDNS 正则与 `0.0.0.0` 分类。
@@ -210,13 +211,12 @@
 UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代理出口地理跟随上更优。
 仍差 ServiceWorker 作用域注入与带名原生 `Function.prototype.toString.call`，两者都需要内核层能力。
 
-**已知边界**：os1 为数据中心代理，Pixelscan 会单独显示 `Proxy detected`，不伪造绕过；
-嵌套 Worker 不递归注入；ServiceWorker 采用屏蔽+回退策略；住宅代理凭据未提供，住宅代理复跑 Pixelscan 仍被阻塞；
+**已知边界**：os1/os2 为静态住宅/ISP 代理（ip-api `hosting=false`），Pixelscan 仍会单独显示 `Proxy detected`，不伪造绕过；
+嵌套 Worker 不递归注入；ServiceWorker 采用屏蔽+回退策略；
 `Function.prototype.toString.call(Worker/Blob)` 仍是匿名原生串（全局补丁会让 CreepJS stealth 升到 20%，已回退）。
 
 **后续优先级**：
 
-1. 用住宅代理复跑 Pixelscan，区分「代理质量」与「指纹伪装」（等待住宅代理凭据）。
-2. 评估 Chromium 内核层补丁：ServiceWorker 注入 + 带名原生 `Function.prototype.toString`，对标紫鸟 C++ 能力。
-3. 建立 UA / UA-CH 库更新机制，避免画像版本长期停留在 Chrome 130/131。
-4. 探针纳入 CI 夜间回归，Patchright/Chromium 升级前必须全绿。
+1. 评估 Chromium 内核层补丁：ServiceWorker 注入 + 带名原生 `Function.prototype.toString`，对标紫鸟 C++ 能力。
+2. 建立 UA / UA-CH 库更新机制，避免画像版本长期停留在 Chrome 130/131。
+3. 探针纳入 CI 夜间回归，Patchright/Chromium 升级前必须全绿。

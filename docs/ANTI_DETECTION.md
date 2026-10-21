@@ -92,8 +92,11 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 
 ## 6. 探针回归实测记录（2026-10-21，os1 德国双跳链路）
 
-基线报告：`experiments/probes/results/os1-final-20261021-1792546993130.json`，seed `ps-test`。
-通过 `pnpm probe -- --seed ps-test --proxy os1 --label os1-final-20261021` 复现，结果为 **27/27**。
+基线报告：
+- os1 德国：`experiments/probes/results/os1-final-20261021-1792546993130.json`，seed `ps-test`，**27/27**。
+- os2 英国：`experiments/probes/results/os2-residential-20261021-1792550255011.json`，seed `ps-test-uk`，**27/27**。
+
+通过 `pnpm probe -- --seed <seed> --proxy os1|os2 --label <name>` 复现。
 
 | 观测点                                   | 结果                                                                       |
 | ---------------------------------------- | -------------------------------------------------------------------------- |
@@ -101,7 +104,7 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 | BrowserLeaks                             | 无 WebRTC 本机 IP 或非出口公网 IP 泄漏                                     |
 | Pixelscan Browser / Location / Bot check | 全部通过                                                                   |
 | Pixelscan Fingerprint                    | `No masking detected`                                                      |
-| Pixelscan Proxy                          | `Proxy detected`：os1 是德国数据中心静态代理，属于外部网络条件，不伪装绕过 |
+| Pixelscan Proxy                          | `Proxy detected`：os1/os2 为静态住宅/ISP 代理，ip-api 显示 `hosting=false`、`proxy=false`；Pixelscan 仍按代理检测库单独标记，不伪造绕过 |
 | Pixelscan 综合                           | `nonProxyConsistent = true`（除代理类型外所有非代理因素一致）              |
 
 本轮修复的深层问题：
@@ -129,5 +132,5 @@ UA / Client Hints、平台 / 语言 / 硬件合理性、字体与 OS 匹配、�
 **已知边界**：嵌套 Worker（Worker 里再建 Worker）不递归注入；ServiceWorker 仍通过屏蔽迫使探针回退；
 `Function.prototype.toString.call(Worker/Blob)` 仍是匿名原生串（紫鸟为带名原生串），
 全局补丁 `Function.prototype.toString` 会让 CreepJS stealth 升到 20%，已放弃 JS 层方案，留待 C++ 内核层；
-数据中心代理会被 Pixelscan 单独标为 `Proxy detected`，这属于代理质量而非指纹伪装失败；
-住宅代理凭据尚未提供，住宅代理复跑 Pixelscan 仍被外部依赖阻塞。
+静态住宅/ISP 代理仍会被 Pixelscan 单独标为 `Proxy detected`，这属于代理检测而非指纹伪装失败；
+os1 德国与 os2 英国两组住宅代理均已复跑，非代理因素全部通过，Pixelscan 无 `masking detected`。
