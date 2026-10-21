@@ -27,7 +27,18 @@ describe('指纹注入脚本', () => {
     expect(script).toContain('WorkerNavigator.prototype');
     expect(script).toContain('OffscreenCanvas.prototype.getContext');
     expect(script).toContain('_blobUrlSource');
-    expect(script).toContain('_nativeFn("Worker"');
+    expect(script).toContain('_proxy(_OrigWorker');
+    expect(script).toContain('_proxy(_OrigBlob');
+    expect(script).toContain('_proxy(_origCreateObjectURL');
+    expect(script).toContain('_drawNoise');
+    expect(script).toContain('_isSolidCanvas');
+    expect(script).toContain('_isTextured');
+    expect(script).toContain('_canvasVersion');
+    expect(script).toContain('_imageDataCache');
+    expect(script).toContain('if (p === "toString")');
+    expect(script).toContain('"toDataURL");');
+    expect(script).toContain('"get " + key');
+    expect(script).not.toContain('_nativeFn');
     expect(script).not.toContain('_def(navigator');
     // 语法有效性：能作为函数体被 new Function 接受
     expect(() => new Function(script)).not.toThrow();

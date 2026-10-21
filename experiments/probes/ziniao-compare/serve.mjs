@@ -13,10 +13,75 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const page = readFileSync(join(HERE, 'probe-page.html'), 'utf8');
 
+function saveResult(data) {
+  const file = join(HERE, `result-${Date.now()}.json`);
+  writeFileSync(file, JSON.stringify(data, null, 2));
+  console.log('\n===== 紫鸟 EngTk2 采集结果 =====');
+  console.log('UA:', data.main?.userAgent);
+  console.log(
+    'platform:',
+    data.main?.platform,
+    '| hc:',
+    data.main?.hardwareConcurrency,
+    '| mem:',
+    data.main?.deviceMemory,
+    '| touch:',
+    data.main?.maxTouchPoints,
+  );
+  console.log(
+    'webdriver:',
+    data.main?.webdriver,
+    '| langs:',
+    data.main?.languages?.join(','),
+    '| tz:',
+    data.main?.timezone,
+  );
+  console.log('WebGL:', data.main?.webgl?.renderer);
+  console.log(
+    'canvasHash:',
+    data.main?.canvasHash,
+    '| audioFp:',
+    String(data.main?.audioFp).slice(0, 12),
+  );
+  console.log('traps:', JSON.stringify(data.main?.traps));
+  console.log('Worker:', JSON.stringify(data.worker));
+  console.log('WebRTC:', JSON.stringify(data.webrtc));
+  console.log('ServiceWorker:', data.serviceWorker);
+  console.log(
+    '服务端 UA-CH:',
+    data.serverHeaders?.secChUa,
+    '| platform:',
+    data.serverHeaders?.secChUaPlatform,
+  );
+  console.log('报告已存:', file);
+}
+
 const server = createServer((req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
   if (req.url === '/probe') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(page);
+    return;
+  }
+  if (req.url?.startsWith('/beacon') && req.method === 'GET') {
+    const url = new URL(req.url, 'http://127.0.0.1');
+    const raw = url.searchParams.get('data');
+    if (!raw) {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
+    const data = JSON.parse(raw);
+    data.serverHeaders = {
+      userAgent: req.headers['user-agent'] ?? null,
+      secChUa: req.headers['sec-ch-ua'] ?? null,
+      secChUaMobile: req.headers['sec-ch-ua-mobile'] ?? null,
+      secChUaPlatform: req.headers['sec-ch-ua-platform'] ?? null,
+      acceptLanguage: req.headers['accept-language'] ?? null,
+    };
+    saveResult(data);
+    res.writeHead(200, { 'Content-Type': 'image/gif', 'Cache-Control': 'no-store' });
+    res.end(Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64'));
     return;
   }
   if (req.url === '/report' && req.method === 'POST') {
@@ -24,21 +89,20 @@ const server = createServer((req, res) => {
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       const data = JSON.parse(body);
-      const file = join(HERE, `result-${Date.now()}.json`);
-      writeFileSync(file, JSON.stringify(data, null, 2));
+      const one = (name) => {
+        const value = req.headers[name];
+        return Array.isArray(value) ? value.join(', ') : (value ?? null);
+      };
+      data.serverHeaders = {
+        userAgent: one('user-agent'),
+        secChUa: one('sec-ch-ua'),
+        secChUaMobile: one('sec-ch-ua-mobile'),
+        secChUaPlatform: one('sec-ch-ua-platform'),
+        acceptLanguage: one('accept-language'),
+      };
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end('{"ok":true}');
-      console.log('\n===== 紫鸟 EngTk2 采集结果 =====');
-      console.log('UA:', data.main?.userAgent);
-      console.log('platform:', data.main?.platform, '| hc:', data.main?.hardwareConcurrency, '| mem:', data.main?.deviceMemory, '| touch:', data.main?.maxTouchPoints);
-      console.log('webdriver:', data.main?.webdriver, '| langs:', data.main?.languages?.join(','), '| tz:', data.main?.timezone);
-      console.log('WebGL:', data.main?.webgl?.renderer);
-      console.log('canvasHash:', data.main?.canvasHash, '| audioFp:', String(data.main?.audioFp).slice(0, 12));
-      console.log('traps:', JSON.stringify(data.main?.traps));
-      console.log('Worker:', JSON.stringify(data.worker));
-      console.log('WebRTC:', JSON.stringify(data.webrtc));
-      console.log('ServiceWorker:', data.serviceWorker);
-      console.log('报告已存:', file);
+      saveResult(data);
     });
     return;
   }

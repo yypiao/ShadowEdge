@@ -1,0 +1,100 @@
+{
+  "at": "2026-10-20T04:40:44Z",
+  "capture": "manual-file-ui-copy",
+  "main": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "webdriver": false,
+    "platform": "MacIntel",
+    "languages": ["en-GB", "en"],
+    "hardwareConcurrency": 4,
+    "deviceMemory": 8,
+    "maxTouchPoints": 0,
+    "timezone": "Europe/London",
+    "tzOffset": -60,
+    "screen": {
+      "w": 1440,
+      "h": 2560,
+      "dpr": 1,
+      "availW": 1440,
+      "availH": 2530,
+      "depth": 24
+    },
+    "navOwnProps": [],
+    "uaData": {
+      "brands": [
+        { "brand": "Not;A=Brand", "version": "8" },
+        { "brand": "Chromium", "version": "150" },
+        { "brand": "Google Chrome", "version": "150" }
+      ],
+      "mobile": false,
+      "platform": "macOS",
+      "stableObject": false
+    },
+    "uaDataHighEntropy": {
+      "architecture": "arm",
+      "bitness": "64",
+      "brands": [
+        { "brand": "Not;A=Brand", "version": "8" },
+        { "brand": "Chromium", "version": "150" },
+        { "brand": "Google Chrome", "version": "150" }
+      ],
+      "fullVersionList": [
+        { "brand": "Not;A=Brand", "version": "8.0.0.0" },
+        { "brand": "Chromium", "version": "150.0.7871.184" },
+        { "brand": "Google Chrome", "version": "150.0.7871.184" }
+      ],
+      "mobile": false,
+      "model": "",
+      "platform": "macOS",
+      "platformVersion": "10.15.1",
+      "uaFullVersion": "150.0.7871.184",
+      "wow64": false
+    },
+    "permissions": "prompt",
+    "webgl": {
+      "vendor": "Google Inc. (Apple)",
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Pro, Unspecified Version)"
+    },
+    "canvas": {
+      "textureHash": "631a6983",
+      "repeatStable": true,
+      "pixelStable": true,
+      "solidHash": "39756b3c",
+      "solidPixels": "255,0,0,255,255,0,0,255,255,0,0,255,255,0,0,255"
+    },
+    "canvasHash": "631a6983",
+    "audioFp": "172.67165096467215",
+    "traps": {
+      "fnToString": true,
+      "workerToString": "function Worker() { [native code] }",
+      "blobToString": "function Blob() { [native code] }",
+      "hasCDC": [],
+      "navPropsCount": 83
+    }
+  },
+  "worker": {
+    "hc": 4,
+    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "platform": "MacIntel",
+    "langs": ["en-GB", "en"],
+    "navOwnProps": [],
+    "brands": [
+      { "brand": "Not;A=Brand", "version": "8" },
+      { "brand": "Chromium", "version": "150" },
+      { "brand": "Google Chrome", "version": "150" }
+    ],
+    "gpu": [
+      "Google Inc. (Apple)",
+      "ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Pro, Unspecified Version)"
+    ]
+  },
+  "webrtc": {
+    "candidates": [],
+    "sdp": {
+      "candidateCount": 0,
+      "candidates": [],
+      "connections": [{ "family": "IP4", "addressClass": "public" }]
+    }
+  },
+  "serviceWorker": "可用"
+}

@@ -1,92 +1,299 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><title>ShadowEdge × 紫鸟 对照探针</title></head>
-<body style="font-family: system-ui; max-width: 720px; margin: 40px auto; padding: 0 16px;">
-  <h2>ShadowEdge × 紫鸟 对照探针</h2>
-  <p id="status">采集中…（约 8 秒）</p>
-  <pre id="out" style="background:#f6f8fa;padding:12px;border-radius:8px;font-size:12px;white-space:pre-wrap;"></pre>
-<script>
-async function collect() {
-  const nav = navigator;
-  const out = { main: {}, worker: null, webrtc: null, serviceWorker: null };
-  const m = out.main;
-  m.userAgent = nav.userAgent;
-  m.webdriver = nav.webdriver;
-  m.platform = nav.platform;
-  m.languages = nav.languages;
-  m.hardwareConcurrency = nav.hardwareConcurrency;
-  m.deviceMemory = nav.deviceMemory;
-  m.maxTouchPoints = nav.maxTouchPoints;
-  m.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  m.tzOffset = new Date().getTimezoneOffset();
-  m.screen = { w: screen.width, h: screen.height, dpr: devicePixelRatio };
-  try { m.permissions = (await nav.permissions.query({ name: 'notifications' })).state; } catch (e) { m.permissions = 'err'; }
-  try {
-    const c = document.createElement('canvas');
-    const gl = c.getContext('webgl');
-    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
-    m.webgl = { renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) };
-  } catch (e) { m.webgl = 'err'; }
-  try {
-    const c = document.createElement('canvas'); c.width = 240; c.height = 60;
-    const ctx = c.getContext('2d');
-    ctx.textBaseline = 'top'; ctx.font = "14px 'Arial'";
-    ctx.fillStyle = '#f60'; ctx.fillRect(125, 1, 62, 20);
-    ctx.fillStyle = '#069'; ctx.fillText('ShadowEdge,T0 🔥', 2, 15);
-    ctx.fillStyle = 'rgba(102,204,0,0.7)'; ctx.fillText('ShadowEdge,T0 🔥', 4, 17);
-    const data = c.toDataURL();
-    let h = 0; for (let i = 0; i < data.length; i++) h = ((h << 5) - h + data.charCodeAt(i)) | 0;
-    m.canvasHash = (h >>> 0).toString(16);
-  } catch (e) { m.canvasHash = 'err'; }
-  try {
-    const ac = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100, 44100);
-    const osc = ac.createOscillator(); osc.type = 'triangle'; osc.frequency.value = 10000;
-    const comp = ac.createDynamicsCompressor();
-    osc.connect(comp); comp.connect(ac.destination); osc.start(0);
-    const buf = await ac.startRendering();
-    const d = buf.getChannelData(0); let s = 0;
-    for (let i = 4500; i < 5000; i++) s += Math.abs(d[i]);
-    m.audioFp = s.toString();
-  } catch (e) { m.audioFp = 'err'; }
-  m.traps = {
-    fnToString: Function.prototype.toString.call(navigator.permissions.query).includes('[native code]'),
-    hasCDC: Object.keys(window).filter(k => k.includes('cdc_') || k.includes('$cdc')),
-    navPropsCount: Object.getOwnPropertyNames(Navigator.prototype).length,
-  };
-  // Worker 世界
-  try {
-    out.worker = await new Promise((res) => {
-      const code = 'postMessage(JSON.stringify({hc: navigator.hardwareConcurrency, ua: navigator.userAgent, platform: navigator.platform, langs: navigator.languages}))';
-      const w = new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
-      w.onmessage = (e) => res(JSON.parse(e.data));
-      setTimeout(() => res('timeout'), 5000);
-    });
-  } catch (e) { out.worker = 'err: ' + e.message; }
-  // WebRTC
-  out.webrtc = await new Promise((res) => {
-    const ips = new Set();
-    try {
-      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-      pc.createDataChannel('x');
-      pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          const mm = e.candidate.candidate.match(/([0-9a-f:.]+) \d+ typ (host|srflx)/);
-          if (mm) ips.add(mm[1] + ':' + mm[2]);
+  <head>
+    <meta charset="UTF-8" />
+    <title>ShadowEdge × 紫鸟 对照探针</title>
+  </head>
+  <body style="font-family: system-ui; max-width: 720px; margin: 40px auto; padding: 0 16px">
+    <h2>ShadowEdge × 紫鸟 对照探针</h2>
+    <p id="status">采集中…（约 10 秒）</p>
+    <pre
+      id="out"
+      style="
+        background: #f6f8fa;
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        white-space: pre-wrap;
+      "
+    ></pre>
+    <script>
+      function hashText(text) {
+        let h = 0x811c9dc5;
+        for (let i = 0; i < text.length; i++) {
+          h ^= text.charCodeAt(i);
+          h = Math.imul(h, 0x01000193);
         }
-      };
-      pc.createOffer().then((o) => pc.setLocalDescription(o));
-      setTimeout(() => { pc.close(); res({ candidates: [...ips] }); }, 3500);
-    } catch (e) { res({ error: e.message }); }
-  });
-  // ServiceWorker
-  out.serviceWorker = navigator.serviceWorker ? '可用' : '不存在(被屏蔽)';
-  return out;
-}
-collect().then(async (data) => {
-  document.getElementById('out').textContent = JSON.stringify(data, null, 2);
-  await fetch('/report', { method: 'POST', body: JSON.stringify(data) });
-  document.getElementById('status').textContent = '✅ 采集完成，结果已回传。可以关闭本页。';
-});
-</script>
-</body>
+        return (h >>> 0).toString(16);
+      }
+
+      function ipClass(address) {
+        if (!address) return 'none';
+        if (address.endsWith('.local') || address.includes('-')) return 'mdns';
+        if (address === '0.0.0.0' || address === '::') return 'unspecified';
+        if (address === '::1' || address.startsWith('127.')) return 'loopback';
+        if (
+          address.startsWith('10.') ||
+          address.startsWith('192.168.') ||
+          /^172\.(1[6-9]|2\d|3[01])\./.test(address)
+        )
+          return 'private';
+        if (address.startsWith('169.254.')) return 'link-local';
+        return address.includes(':') ? 'ipv6' : 'public';
+      }
+
+      function summarizeSdp(sdp) {
+        const candidates = (sdp || '').match(/^a=candidate:[^\r\n]+/gm) || [];
+        const connections = (sdp || '').match(/^c=IN (?:IP4|IP6) [^\r\n]+/gm) || [];
+        return {
+          candidateCount: candidates.length,
+          candidates: candidates.map((line) => {
+            const m = line.match(
+              /^a=candidate:\S+ \d+ \S+ \d+ ([^\s]+) \d+ typ (host|srflx|relay)/,
+            );
+            return m
+              ? { type: m[2], addressClass: ipClass(m[1]) }
+              : { type: 'unknown', addressClass: 'unknown' };
+          }),
+          connections: connections.map((line) => {
+            const m = line.match(/^c=IN (IP4|IP6) ([^\r\n]+)$/);
+            return m
+              ? { family: m[1], addressClass: ipClass(m[2]) }
+              : { family: 'unknown', addressClass: 'unknown' };
+          }),
+        };
+      }
+
+      function canvasProfile() {
+        const texture = document.createElement('canvas');
+        texture.width = 240;
+        texture.height = 60;
+        const ctx = texture.getContext('2d');
+        ctx.textBaseline = 'top';
+        ctx.font = "14px 'Arial'";
+        ctx.fillStyle = '#f60';
+        ctx.fillRect(125, 1, 62, 20);
+        ctx.fillStyle = '#069';
+        ctx.fillText('ShadowEdge,T0 🔥', 2, 15);
+        ctx.fillStyle = 'rgba(102,204,0,0.7)';
+        ctx.fillText('ShadowEdge,T0 🔥', 4, 17);
+        const textureUrl1 = texture.toDataURL();
+        const textureUrl2 = texture.toDataURL();
+        const texture1 = hashText(textureUrl1);
+        const texture2 = hashText(textureUrl2);
+        const bytes1 = atob(textureUrl1.split(',')[1]);
+        const bytes2 = atob(textureUrl2.split(',')[1]);
+        let diffCount = 0;
+        let firstDiff = null;
+        for (let i = 0; i < Math.max(bytes1.length, bytes2.length); i++) {
+          if (bytes1[i] !== bytes2[i]) {
+            diffCount++;
+            if (firstDiff === null) firstDiff = i;
+          }
+        }
+        const sample = ctx.getImageData(130, 5, 1, 1).data;
+        const sample2 = ctx.getImageData(130, 5, 1, 1).data;
+
+        const solid = document.createElement('canvas');
+        solid.width = 64;
+        solid.height = 64;
+        const sctx = solid.getContext('2d');
+        sctx.fillStyle = '#ff0000';
+        sctx.fillRect(0, 0, 64, 64);
+        const solidUrl1 = solid.toDataURL();
+        const solidUrl2 = solid.toDataURL();
+        const solidHash = hashText(solidUrl1);
+        const solidPixels = Array.from(sctx.getImageData(0, 0, 2, 2).data).join(',');
+        return {
+          textureHash: texture1,
+          textureHash2: texture2,
+          textureLength1: textureUrl1.length,
+          textureLength2: textureUrl2.length,
+          textureDiffBytes: diffCount,
+          textureFirstDiff: firstDiff,
+          repeatStable: texture1 === texture2,
+          pixelStable: Array.from(sample).join(',') === Array.from(sample2).join(','),
+          solidHash,
+          solidHash2: solidHash === hashText(solidUrl2) ? solidHash : hashText(solidUrl2),
+          solidRepeatStable: solidUrl1 === solidUrl2,
+          solidPixels,
+        };
+      }
+
+      async function collect() {
+        const nav = navigator;
+        const out = { main: {}, worker: null, webrtc: null, serviceWorker: null };
+        const m = out.main;
+        m.userAgent = nav.userAgent;
+        m.webdriver = nav.webdriver;
+        m.platform = nav.platform;
+        m.languages = nav.languages;
+        m.hardwareConcurrency = nav.hardwareConcurrency;
+        m.deviceMemory = nav.deviceMemory;
+        m.maxTouchPoints = nav.maxTouchPoints;
+        m.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        m.tzOffset = new Date().getTimezoneOffset();
+        m.screen = { w: screen.width, h: screen.height, dpr: devicePixelRatio };
+        m.screen.availW = screen.availWidth;
+        m.screen.availH = screen.availHeight;
+        m.screen.depth = screen.colorDepth;
+        m.navOwnProps = Object.getOwnPropertyNames(nav);
+        if (nav.userAgentData) {
+          m.uaData = {
+            brands: nav.userAgentData.brands.map((b) => ({ brand: b.brand, version: b.version })),
+            mobile: nav.userAgentData.mobile,
+            platform: nav.userAgentData.platform,
+            stableObject: nav.userAgentData === nav.userAgentData,
+          };
+          try {
+            m.uaDataHighEntropy = await nav.userAgentData.getHighEntropyValues([
+              'architecture',
+              'bitness',
+              'fullVersionList',
+              'model',
+              'platformVersion',
+              'uaFullVersion',
+              'wow64',
+            ]);
+          } catch (e) {
+            m.uaDataHighEntropy = 'err: ' + e.message;
+          }
+        }
+        try {
+          m.permissions = (await nav.permissions.query({ name: 'notifications' })).state;
+        } catch (e) {
+          m.permissions = 'err';
+        }
+        try {
+          const c = document.createElement('canvas');
+          const gl = c.getContext('webgl');
+          const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+          m.webgl = {
+            vendor: dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR),
+            renderer: dbg
+              ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)
+              : gl.getParameter(gl.RENDERER),
+          };
+        } catch (e) {
+          m.webgl = 'err';
+        }
+        try {
+          m.canvas = canvasProfile();
+          m.canvasHash = m.canvas.textureHash;
+        } catch (e) {
+          m.canvasHash = 'err';
+        }
+        try {
+          const ac = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(
+            1,
+            44100,
+            44100,
+          );
+          const osc = ac.createOscillator();
+          osc.type = 'triangle';
+          osc.frequency.value = 10000;
+          const comp = ac.createDynamicsCompressor();
+          osc.connect(comp);
+          comp.connect(ac.destination);
+          osc.start(0);
+          const buf = await ac.startRendering();
+          const d = buf.getChannelData(0);
+          let s = 0;
+          for (let i = 4500; i < 5000; i++) s += Math.abs(d[i]);
+          m.audioFp = s.toString();
+        } catch (e) {
+          m.audioFp = 'err';
+        }
+        m.traps = {
+          fnToString: Function.prototype.toString
+            .call(navigator.permissions.query)
+            .includes('[native code]'),
+          workerToString:
+            typeof Worker === 'function' ? Function.prototype.toString.call(Worker) : 'missing',
+          blobToString:
+            typeof Blob === 'function' ? Function.prototype.toString.call(Blob) : 'missing',
+          hasCDC: Object.keys(window).filter((k) => k.includes('cdc_') || k.includes('$cdc')),
+          navPropsCount: Object.getOwnPropertyNames(Navigator.prototype).length,
+        };
+        // Worker 世界
+        try {
+          out.worker = await new Promise((res) => {
+            const code = [
+              'try {',
+              '  const canvas = new OffscreenCanvas(16, 20);',
+              '  const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");',
+              '  const ext = gl && gl.getExtension("WEBGL_debug_renderer_info");',
+              '  postMessage(JSON.stringify({',
+              '    hc: navigator.hardwareConcurrency, ua: navigator.userAgent, platform: navigator.platform,',
+              '    langs: navigator.languages, navOwnProps: Object.getOwnPropertyNames(navigator),',
+              '    brands: navigator.userAgentData ? navigator.userAgentData.brands : null,',
+              '    gpu: ext ? [gl.getParameter(ext.UNMASKED_VENDOR_WEBGL), gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)] : null,',
+              '  }));',
+              '} catch (error) { postMessage(JSON.stringify({ error: String(error) })); }',
+            ].join('\n');
+            const w = new Worker(
+              URL.createObjectURL(new Blob([code], { type: 'application/javascript' })),
+            );
+            w.onmessage = (e) => res(JSON.parse(e.data));
+            setTimeout(() => res('timeout'), 5000);
+          });
+        } catch (e) {
+          out.worker = 'err: ' + e.message;
+        }
+        // WebRTC
+        out.webrtc = await new Promise((res) => {
+          const candidates = new Set();
+          let sdp = '';
+          try {
+            const pc = new RTCPeerConnection({
+              iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+            });
+            pc.createDataChannel('x');
+            pc.onicecandidate = (e) => {
+              if (e.candidate) {
+                const mm = e.candidate.candidate.match(/([^\s]+) \d+ typ (host|srflx)/);
+                if (mm)
+                  candidates.add(JSON.stringify({ type: mm[2], addressClass: ipClass(mm[1]) }));
+              }
+            };
+            pc.createOffer().then((o) => pc.setLocalDescription(o));
+            setTimeout(() => {
+              sdp = pc.localDescription?.sdp || '';
+              pc.close();
+              res({
+                candidates: [...candidates].map((x) => JSON.parse(x)),
+                sdp: summarizeSdp(sdp),
+              });
+            }, 3500);
+          } catch (e) {
+            res({ error: e.message });
+          }
+        });
+        // ServiceWorker
+        out.serviceWorker = navigator.serviceWorker ? '可用' : '不存在(被屏蔽)';
+        return out;
+      }
+      collect().then(async (data) => {
+        document.getElementById('out').textContent = JSON.stringify(data, null, 2);
+        const payload = JSON.stringify(data);
+        document.getElementById('status').textContent = '✅ 采集完成，正在回传。可以关闭本页。';
+
+        // file:// 页面直接 POST 可能被紫鸟的网络策略挂起；图片信标不依赖 CORS 预检。
+        const beacon = new Image();
+        beacon.src = 'http://127.0.0.1:9567/beacon?data=' + encodeURIComponent(payload);
+        try {
+          if (navigator.sendBeacon) navigator.sendBeacon('http://127.0.0.1:9567/report', payload);
+        } catch (_) {}
+        try {
+          const controller = new AbortController();
+          setTimeout(() => controller.abort(), 1500);
+          await fetch('http://127.0.0.1:9567/report', {
+            method: 'POST',
+            body: payload,
+            signal: controller.signal,
+          });
+        } catch (_) {}
+      });
+    </script>
+  </body>
 </html>

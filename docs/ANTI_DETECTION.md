@@ -36,7 +36,7 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 
 | 维度         | 拦截点                                                | 策略                                                             |
 | ------------ | ----------------------------------------------------- | ---------------------------------------------------------------- |
-| Canvas 2D    | `CanvasRenderingContext2D::getImageData`, `toDataURL` | 按 seed 对像素施加确定性微扰（±1 LSB），肉眼无差异但哈希稳定唯一 |
+| Canvas 2D    | `CanvasRenderingContext2D::getImageData`, `toDataURL` | 按 seed 对纹理像素施加确定性微扰；纯色块/边界保持原样，无落点时直接走原生编码 |
 | WebGL        | `WebGLRenderingContext::getParameter`                 | 替换 `VENDOR`/`RENDERER`/`UNMASKED_*`；`readPixels` 施加噪声     |
 | AudioContext | `AudioBuffer::getChannelData`, `AnalyserNode`         | 对浮点样本乘以 seed 派生的极小系数                               |
 | ClientRects  | `Element::getBoundingClientRect`                      | 对返回值加 seed 派生的亚像素偏移                                 |
@@ -90,10 +90,10 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 4. **隐蔽性** —— 第三方检测站（CreepJS / BrowserLeaks / Pixelscan 等）无自动化告警。
 5. **隔离性** —— 环境间 Cookie / Storage / IP 互不可见。
 
-## 6. 探针回归实测记录（2026-10-20，os1 德国双跳链路）
+## 6. 探针回归实测记录（2026-10-21，os1 德国双跳链路）
 
-基线报告：`experiments/probes/results/os1-final-1792469080283.json`，seed `ps-test`。
-通过 `pnpm probe -- --seed ps-test --proxy os1 --label os1-final` 复现，结果为 **27/27**。
+基线报告：`experiments/probes/results/os1-final-20261021-1792546993130.json`，seed `ps-test`。
+通过 `pnpm probe -- --seed ps-test --proxy os1 --label os1-final-20261021` 复现，结果为 **27/27**。
 
 | 观测点                                   | 结果                                                                       |
 | ---------------------------------------- | -------------------------------------------------------------------------- |
@@ -110,15 +110,24 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 | ------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | Worker 源码读取失败 | Pixelscan 禁止同步 XHR 读取 `blob:` URL，旧包装静默回退，Worker 暴露真实 `Chrome/156 + Apple M4` | 在 `Blob` 构造与 `URL.createObjectURL()` 时登记源码，Worker 构造直接取用；不再依赖 XHR                    |
 | Worker GPU 裸奔     | Worker 无 `WebGLRenderingContext` 全局构造器，OffscreenCanvas 返回的上下文未被覆盖               | 包装 `OffscreenCanvas.prototype.getContext`，从实例原型套用 WebGL spoof；兼容 `WorkerNavigator.prototype` |
-| Canvas 噪声可被回读 | 持久修改原画布会让重复读取累积漂移，并可能破坏纯色检测块                                         | `toDataURL` 在临时画布加噪；`getImageData` 只改返回副本；仅扰动 3×3 邻域颜色种类 ≥3 的纹理像素            |
+| Canvas 噪声可被回读 | 持久修改原画布会让重复读取累积漂移，并可能破坏纯色检测块                                         | `toDataURL` 先做 8×8 网格纯色采样；纯色直接原生编码；纹理才复制到临时画布，并只在 5×5 邻域颜色数 ≥5 的位置落点；`getImageData` 只改返回副本 |
 | UA / UA-CH 不一致   | HTTP Client Hints 不受页面 JS 注入影响，服务端看到内核真实版本                                   | `buildClientHintHeaders()` 覆盖 `sec-ch-ua*`；页面侧 `userAgentData` 与 UA 同源、稳定对象、高熵接口补齐   |
 | Navigator 伪造痕迹  | 属性挂在 `navigator` 实例上，`Object.getOwnPropertyNames(navigator)` 非空                        | 全部属性定义到 `Navigator.prototype` / `WorkerNavigator.prototype`                                        |
-| SDP 候选泄漏        | 只过滤 ICE 事件时，`localDescription.sdp` 仍含 host/srflx IP                                     | 同步过滤 `c=` 与 `a=candidate` 行，并按模式改写或删除                                                     |
-| 包装函数 toString   | Worker / SharedWorker 包装器暴露源码                                                             | 统一 `_nativeFn()` 恢复原生 `toString()` 形态                                                             |
+| SDP 候选泄漏        | 只过滤 ICE 事件时，`localDescription.sdp` 仍含 host/srflx IP；mDNS 候选因正则只认 IP 字符集而漏删 | 同步过滤 `c=` 与 `a=candidate` 行；地址匹配改为 `[^\s]+`，覆盖带连字符的 mDNS；`0.0.0.0` / `::` 归为 unspecified |
+| 包装函数 toString   | Worker / SharedWorker 包装器暴露源码；Proxy 默认返回 32 字符匿名原生串，Pixelscan C14 直接判失败   | Proxy 增加 `toString` / `name` get 陷阱：`fn.toString()` 返回带名原生串（`toDataURL` 为 38 字符），`Function.prototype.toString.call` 仍不泄漏源码 |
+| Worker 注入中断     | Canvas 噪声代码在 Worker 中引用不存在的 `CanvasRenderingContext2D`，整段 Worker 注入抛错并超时    | 给 Canvas 原型方法循环加 `typeof CanvasRenderingContext2D !== "undefined"` 守卫                              |
 
 修复后 Worker 实测与画像一致：UA `Chrome/131`、UA-CH `Chromium/Google Chrome 131`、
 `hardwareConcurrency = 12`、GPU `Google Inc. (Apple) / Apple M1 Pro`、`navigator` 无自有属性；
-同一 seed 重复读取 Canvas 与像素结果稳定。
+同一 seed 重复读取 Canvas 与像素结果稳定，纯色块像素严格保持 `255,0,0,255`。
+
+Pixelscan 的 `checkFingerprintMasking()` 组合判定已逐项核对：固定红块哈希、Worker 跨世界、
+UA / Client Hints、平台 / 语言 / 硬件合理性、字体与 OS 匹配、纯色 Canvas 噪声检测均通过。
+其中 C14 `canvasNoiseOn2d()` 会校验 `toDataURL.toString()` 长度必须为 38/42，并读取 14 个纯色块；
+这两点分别由「命名 toString」与「纯色保护」修复。
 
 **已知边界**：嵌套 Worker（Worker 里再建 Worker）不递归注入；ServiceWorker 仍通过屏蔽迫使探针回退；
-数据中心代理会被 Pixelscan 单独标为 `Proxy detected`，这属于代理质量而非指纹伪装失败；与紫鸟 EngTk2 的完整对照仍待补测。
+`Function.prototype.toString.call(Worker/Blob)` 仍是匿名原生串（紫鸟为带名原生串），
+全局补丁 `Function.prototype.toString` 会让 CreepJS stealth 升到 20%，已放弃 JS 层方案，留待 C++ 内核层；
+数据中心代理会被 Pixelscan 单独标为 `Proxy detected`，这属于代理质量而非指纹伪装失败；
+住宅代理凭据尚未提供，住宅代理复跑 Pixelscan 仍被外部依赖阻塞。

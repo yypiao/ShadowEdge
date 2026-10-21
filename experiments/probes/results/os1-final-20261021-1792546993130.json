@@ -1,0 +1,411 @@
+{
+  "label": "os1-final-20261021",
+  "seed": "ps-test",
+  "proxy": "os1",
+  "at": "2026-10-21T01:43:13.125Z",
+  "fingerprint": {
+    "seed": "ps-test",
+    "platform": "macos",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "userAgentData": {
+      "brands": [
+        {
+          "brand": "Chromium",
+          "version": "131"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Not?A_Brand",
+          "version": "99"
+        }
+      ],
+      "platform": "macOS",
+      "platformVersion": "14_6",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "fullVersion": "131.0.6778.86",
+      "mobile": false
+    },
+    "screen": {
+      "width": 2560,
+      "height": 1440,
+      "availWidth": 2560,
+      "availHeight": 1400,
+      "colorDepth": 30,
+      "pixelRatio": 1
+    },
+    "viewport": {
+      "width": 2560,
+      "height": 1400
+    },
+    "languages": [
+      "de-DE",
+      "de",
+      "en-US"
+    ],
+    "timezone": "Europe/Berlin",
+    "hardware": {
+      "deviceMemoryGb": 4,
+      "hardwareConcurrency": 12,
+      "maxTouchPoints": 0
+    },
+    "webgl": {
+      "vendor": "Google Inc. (Apple)",
+      "renderer": "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)",
+      "noise": "noise"
+    },
+    "canvas": "noise",
+    "audio": "noise",
+    "clientRects": "noise",
+    "fonts": {
+      "mode": "whitelist",
+      "families": [
+        "Monaco",
+        "Trebuchet MS",
+        "Verdana",
+        "Menlo",
+        "Times New Roman",
+        "Lucida Grande",
+        "Arial",
+        "Courier"
+      ]
+    },
+    "webrtc": {
+      "mode": "replace"
+    },
+    "media": {
+      "audioInputs": 1,
+      "videoInputs": 1,
+      "audioOutputs": 1
+    },
+    "disabledFeatures": [],
+    "geolocation": {
+      "latitude": 50.13549,
+      "longitude": 8.68328,
+      "accuracy": 50
+    }
+  },
+  "expectedGeo": {
+    "exitIp": "82.198.243.159",
+    "timezone": "Europe/Berlin",
+    "countryCode": "DE",
+    "latitude": 50.1169,
+    "longitude": 8.6837
+  },
+  "local": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "webdriver": false,
+    "platform": "MacIntel",
+    "languages": [
+      "de-DE",
+      "de",
+      "en-US"
+    ],
+    "hardwareConcurrency": 12,
+    "deviceMemory": 4,
+    "maxTouchPoints": 0,
+    "vendor": "Google Inc.",
+    "screen": {
+      "width": 2560,
+      "height": 1440,
+      "availWidth": 2560,
+      "availHeight": 1400,
+      "colorDepth": 30,
+      "pixelRatio": 1
+    },
+    "timezone": "Europe/Berlin",
+    "tzOffset": -120,
+    "chromeObj": "object",
+    "permissions": "denied",
+    "plugins": 5,
+    "mimeTypes": 2,
+    "uaData": {
+      "brands": [
+        {
+          "brand": "Chromium",
+          "version": "131"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Not?A_Brand",
+          "version": "99"
+        }
+      ],
+      "mobile": false,
+      "platform": "macOS",
+      "stableObject": true
+    },
+    "uaDataHighEntropy": {
+      "brands": [
+        {
+          "brand": "Chromium",
+          "version": "131"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Not?A_Brand",
+          "version": "99"
+        }
+      ],
+      "mobile": false,
+      "platform": "macOS",
+      "architecture": "x86",
+      "bitness": "64",
+      "fullVersionList": [
+        {
+          "brand": "Chromium",
+          "version": "131.0.6778.86"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131.0.6778.86"
+        },
+        {
+          "brand": "Not?A_Brand",
+          "version": "99.0.0.0"
+        }
+      ],
+      "model": "",
+      "platformVersion": "14_6",
+      "uaFullVersion": "131.0.6778.86",
+      "wow64": false
+    },
+    "webgl": {
+      "vendor": "Google Inc. (Apple)",
+      "renderer": "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)",
+      "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)"
+    },
+    "canvasHash": "d9fa3cb8",
+    "audioFp": "172.6716536004751",
+    "traps": {
+      "fnToString": true,
+      "errorStack": 3,
+      "navPropsCount": 39,
+      "navOwnProps": [],
+      "hasCDC": []
+    }
+  },
+  "webrtc": {
+    "candidates": [],
+    "sdpCandidates": []
+  },
+  "workerGl": {
+    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "hc": 12,
+    "brands": [
+      {
+        "brand": "Chromium",
+        "version": "131"
+      },
+      {
+        "brand": "Google Chrome",
+        "version": "131"
+      },
+      {
+        "brand": "Not?A_Brand",
+        "version": "99"
+      }
+    ],
+    "navOwnProps": [],
+    "gpu": [
+      "Google Inc. (Apple)",
+      "ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)"
+    ]
+  },
+  "creep": {
+    "ratings": {
+      "headless": "0% headless: 52defe05",
+      "headlessPercent": 0,
+      "likeHeadless": "38% like headless: b68729d9",
+      "likeHeadlessPercent": 38,
+      "stealth": "0% stealth: 0c019315",
+      "stealthPercent": 0
+    },
+    "fingerprintId": "64f0a3a5b902d2683b5b56c6afbedfdcdf2a72e984ee30e9c808e3fa97ea737e",
+    "liesMentions": 0,
+    "elapsedMs": 48612,
+    "bodySnippet": "FP ID: 64f0a3a5b902d2683b5b56c6afbedfdcdf2a72e984ee30e9c808e3fa97ea737e\nFuzzy: af5f1816df2566a98db543e03cedb9a1dfb9941f788627bf2d1f000000000000\n788.90 ms\nWebRTCf630e922\nhost connection:\nblocked\nfoundation/ip:\nunsupported\nblocked\nsdp capabilities: 52dcc46c\nstun connection:\nblocked\ndevices (3):\nmic, audio, webcam\n2.00ms\nTimezone48a54f48\nMitteleuropäische Sommerzeit\nEurope, Berlin\n-27028688008000\n-120\n10.10ms\nIntl8ea4509e\nde-DE\nJuli um Mitteleuropäische Sommerzeit\nEnglisch (Vereinigte Staaten)\n21 Millionen\nnächstes Jahr\n0 oder 1\none\n9.20ms\nHeadless80dbd45b\nchromium: true\n38% like headless: b68729d9\n0% headless: 52defe05\n0% stealth: 0c019315\nplatform hints:\nArial\n9:82:91:100:82\n\n0.20ms\nResistance3f5e7588\nprivacy: unknown\nsecurity: unknown\nmode: unknown\nextension: b31b4967\n503.00ms\nSharedWorkerGlobalScope\nWorker6799c2fe\nlang/timezone:\nen-US (\n1 US-Dollar\n)\nde-DE\n\nEurope/Berlin (-120)\nconfidence: high\ngpu:\nGoogle Inc. (Apple)\nANGLE (Apple, Apple M1 Pro, OpenGL 4.1)\nuserAgent:\nMozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\ndevice:\nMac (MacIntel)\nIntel Mac OS X 14_6\ncores: 12, ram: 4\nuserAgentData:\nGoogle Chrome 131 (131.0.6778.86)\nmacOS 14_6 x86_64\n29.20ms\nWebGLaf2c4cce\nimages:06f91e45\npixels:4c72f7ab\nparams (78): ead2966a\nexts (75): 901d2431\ngpu:\nconfidence: high\nGoogle Inc. (Apple)\nANGLE (Apple, Apple M1 Pro, OpenGL 4.1)\n0.20ms\nScreen995541f7\n...screen: 2560 x 1440\n....avail: 2560 x 1400\ntouch: false\ndepth: 30|30\nviewport:\n1450\n2560\n2560\n846\n1400\n1400\nbrowser\nlandscape\nlandscape-primary\n1\n48.90ms\nCanvas 2d5fa2700b\ndata: e073ccde\nrendering:\ntextMetrics:\n0.025521647332310677\n😀☺♨...☑✴🅰\n62.70ms\nFontsfa39f4dc\nload (18/51): Like undefined\napps: unsupported\n\"American Typewriter Semibold\", \"Apple SD Gothic Neo ExtraBold\", \"Futura Bold\", \"Helvetica Neue\", \"InaiMathi Bold\", \"Kohinoor Devanagari Medium\", \"MuktaMahee Regular\", \"Noto Sans Canadian Aboriginal Regular\", \"Noto Sans Gunjala Gondi Regular\", \"Noto Sans M"
+  },
+  "browserleaks": {
+    "remoteIp": "82.198.243.159",
+    "webrtcIps": [],
+    "publicIps": [],
+    "leakedPublicIps": [],
+    "webrtcSection": "Your WebRTC IP\nWebRTC Leak Test\t\nLocal IP Address\t-\nPublic IP Address\t-\nSession Description\nSDP Log\t\n\nMedia Devices\nAPI Support\t\n✔\nTrue\nAudio Permissions\t\n!\nGranted Permanently\nVideo Permissions\t\n!\nGranted Permanently\nMedia Devices\t    kind: audioinput\n   label: Microphone 1\ndeviceId: shadowedge-audioinput-0\n groupId: shadowedge-group-0\n\n    kind: videoinput\n   label: Camera 1\ndeviceId: shadowedge-videoinput-0\n groupId: shadowedge-group-0\n\n    kind: audiooutput\n   label: Speaker 1\ndeviceId: shadowedge-audiooutput-0\n groupId: shadowedge-group-0\n\nHow to Disable WebRTC\nFurther Reading\nLeave a Comment (236)\nBrowserLeaks © 2011-2026 All Rights Reserved\nmoc.skaelresworb@tcatnoc:otliam",
+    "elapsedMs": 25237,
+    "bodySnippet": "Home Page\nIP Address\nJavaScript\nWebRTC Leak Test\nCanvas Fingerprint\nWebGL Report\nFont Fingerprinting\nGeolocation API\nFeatures Detection\nTLS Client Test\nContent Filters\nMore Tools\nSettings\nWebRTC Leak Test\nYour Remote IP\nIPv4 Address\t82.198.243.159\nIPv6 Address\t\nWebRTC Support Detection\nRTCPeerConnection\t\n✔\nTrue\nRTCDataChannel\t\n✔\nTrue\nYour WebRTC IP\nWebRTC Leak Test\t\nLocal IP Address\t-\nPublic IP Address\t-\nSession Description\nSDP Log\t\n\nMedia Devices\nAPI Support\t\n✔\nTrue\nAudio Permissions\t\n!\nGranted Permanently\nVideo Permissions\t\n!\nGranted Permanently\nMedia Devices\t    kind: audioinput\n   label: Microphone 1\ndeviceId: shadowedge-audioinput-0\n groupId: shadowedge-group-0\n\n    kind: videoinput\n   label: Camera 1\ndeviceId: shadowedge-videoinput-0\n groupId: shadowedge-group-0\n\n    kind: audiooutput\n   label: Speaker 1\ndeviceId: shadowedge-audiooutput-0\n groupId: shadowedge-group-0\n\nHow to Disable WebRTC\nFurther Reading\nLeave a Comment (236)\nBrowserLeaks © 2011-2026 All Rights Reserved\nmoc.skaelresworb@tcatnoc:otliam"
+  },
+  "pixelscan": {
+    "verdict": "inconsistent",
+    "consistent": false,
+    "statusState": "error",
+    "cards": [
+      {
+        "label": "Browser",
+        "value": "Chrome 131.0.0.0 on Mac OS",
+        "failed": false
+      },
+      {
+        "label": "Location",
+        "value": "Germany / Frankfurt am Main",
+        "failed": false
+      },
+      {
+        "label": "Proxy",
+        "value": "Proxy detected",
+        "failed": true
+      },
+      {
+        "label": "Fingerprint",
+        "value": "No masking detected",
+        "failed": false
+      },
+      {
+        "label": "Bot check",
+        "value": "No automated behavior detected",
+        "failed": false
+      }
+    ],
+    "reportedBrowser": "Chrome 131.0.0.0 on Mac OS",
+    "browserOk": true,
+    "geoApi": "Germany / Frankfurt am Main",
+    "locationOk": true,
+    "proxyDetected": true,
+    "proxyOk": false,
+    "maskingDetected": false,
+    "fingerprintOk": true,
+    "automatedBehavior": false,
+    "botCheckOk": true,
+    "observedHeaders": {
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "secUA": "\"Chromium\";v=\"131\", \"Google Chrome\";v=\"131\", \"Not?A_Brand\";v=\"99\"",
+      "secPlatform": "\"macOS\"",
+      "acceptLanguage": "de-DE"
+    },
+    "headerConsistent": true,
+    "elapsedMs": 23008,
+    "bodySnippet": "Fingerprint Scan\nRestart\n\nYour Browser Fingerprint is inconsistent\n\nHow to Fix it?\n\nChrome 131.0.0.0 on Mac OS\n\nBrowser\n\nChrome-29-0,Opera-16-0,Edge-79-0,MIUI Browser-0-0,Yandex-0-0,Safari-7-0,Mobile Safari-7-0,Facebook-0-0,m-firefox-30-0,m-Edge-45-0,m-Opera Touch-0-0\n\nGermany / Frankfurt am Main\n\nLocation\n\nProxy detected\n\nProxy\n\nBest proxy providers\n\nNo masking detected\n\nFingerprint\n\nNo automated behavior detected\n\nBot check\n\nScroll Down for More Info",
+    "nonProxyConsistent": true
+  },
+  "expectations": [
+    {
+      "name": "userAgent 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "UA-CH 品牌与画像一致",
+      "ok": true
+    },
+    {
+      "name": "UA-CH 高熵版本与画像一致",
+      "ok": true
+    },
+    {
+      "name": "timezone 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "hardwareConcurrency 一致",
+      "ok": true
+    },
+    {
+      "name": "deviceMemory 一致",
+      "ok": true
+    },
+    {
+      "name": "maxTouchPoints=0(桌面)",
+      "ok": true
+    },
+    {
+      "name": "webdriver 未暴露",
+      "ok": true
+    },
+    {
+      "name": "无 cdc_$cdc 变量",
+      "ok": true
+    },
+    {
+      "name": "permissions.query 为原生",
+      "ok": true
+    },
+    {
+      "name": "WebGL renderer 一致",
+      "ok": true
+    },
+    {
+      "name": "navigator 无自有属性",
+      "ok": true
+    },
+    {
+      "name": "WebRTC 无本机/真实出口 candidate",
+      "ok": true
+    },
+    {
+      "name": "WebRTC SDP 无真实 host/srflx/relay IP",
+      "ok": true
+    },
+    {
+      "name": "Worker UA 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "Worker UA-CH 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "Worker hardwareConcurrency 一致",
+      "ok": true
+    },
+    {
+      "name": "Worker OffscreenCanvas GPU 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "Worker navigator 无自有属性",
+      "ok": true
+    },
+    {
+      "name": "WebRTC 未泄漏（candidate 为空或仅 mDNS）",
+      "ok": true
+    },
+    {
+      "name": "CreepJS headless 评级 = 0%",
+      "ok": true
+    },
+    {
+      "name": "CreepJS stealth 评级 = 0%",
+      "ok": true
+    },
+    {
+      "name": "BrowserLeaks 未泄漏非出口公网 IP",
+      "ok": true
+    },
+    {
+      "name": "Pixelscan 服务端 UA-CH 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "Pixelscan Browser 卡片通过",
+      "ok": true
+    },
+    {
+      "name": "Pixelscan Fingerprint 卡片通过",
+      "ok": true
+    },
+    {
+      "name": "Pixelscan 非代理因素全部通过",
+      "ok": true
+    }
+  ],
+  "score": "27/27"
+}
