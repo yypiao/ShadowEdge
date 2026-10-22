@@ -18,7 +18,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "rimraf \"{apps,packages}/*/dist\" \"{apps,packages}/*/*.tsbuildinfo\"",
-    "probe": "node experiments/probes/run.mjs"
+    "probe": "node experiments/probes/run.mjs",
+    "update-ua-catalog": "pnpm --filter @shadowedge/fingerprint build && pnpm --filter @shadowedge/fingerprint update-catalog"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

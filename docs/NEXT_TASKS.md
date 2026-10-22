@@ -29,7 +29,12 @@
 
 ---
 
-## T2 — 指纹一致性交叉校验
+## T2 — 指纹一致性交叉校验 ✅（2026-10-22 完成）
+
+> 已落地：`packages/fingerprint/src/consistency.ts`，覆盖 UA 操作系统 / UA-CH platform、
+> Chrome/Edge 主版本与 brands/fullVersion、屏幕可用区差值、桌面触摸点、内存 2 的幂、
+> Apple/D3D11/SwiftShader GPU 矛盾、平台字体子集；已接入 `auditFingerprint()` 与启动闸门。
+> 13 个正反例测试见 `packages/fingerprint/test/consistency.test.ts`。
 
 **背景**：`auditFingerprint()` 目前只校验「能否由 seed 复现」，没校验各维度之间是否自相矛盾。这是风控最容易抓的点，见 `docs/ANTI_DETECTION.md` §2.3。
 
@@ -219,6 +224,36 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 
 **后续优先级**：
 
-1. 评估 Chromium 内核层补丁：ServiceWorker 注入 + 带名原生 `Function.prototype.toString`，对标紫鸟 C++ 能力。
-2. 建立 UA / UA-CH 库更新机制，避免画像版本长期停留在 Chrome 130/131。
-3. 探针纳入 CI 夜间回归，Patchright/Chromium 升级前必须全绿。
+1. 按 `docs/KERNEL_PATCH_PLAN.md` 推进 Chromium 内核层补丁：ServiceWorker 注入 + 带名原生 `Function.prototype.toString`。
+2. 把 catalog 版本写入 `FingerprintProfile` 持久化字段，让历史环境审计自动选对素材快照。
+3. 配置 `shadowedge-probe` 自托管 runner 与 `SHADOWEDGE_TEST_PROXIES_JSON` secret，启用夜间回归。
+
+---
+
+## T10 — UA / UA-CH 素材目录更新机制 ✅（2026-10-22）
+
+**产出**：
+
+- `packages/fingerprint/src/catalog.ts`：版本化 `FingerprintCatalog`、运行时校验、`catalogToGeneratorDb()`。
+- `packages/fingerprint/src/catalog-cli.ts`：从 Chrome for Testing stable 通道生成三平台 UA/UA-CH 快照。
+- `pnpm update-ua-catalog`：联网更新；离线可用 `--version <fullVersion> --out <path>`。
+- `generateFingerprint({ db })` 修复为真正合并 userAgents / uaDatas / screens / fonts / webglVendors。
+- `auditFingerprint(current, { db, overrides })` 可用同一套素材复现并审计。
+
+**漂移规则**：catalog 生成新快照，不修改旧快照；历史环境必须记录自己使用的 catalog 版本。
+详见 `packages/fingerprint/catalog/README.md`。
+
+---
+
+## 运维 — 探针夜间回归 🟡（工作流已落地，待 runner）
+
+`.github/workflows/probe-nightly.yml` 每天 18:00 UTC（新加坡 02:00）在
+`[self-hosted, macOS, shadowedge-probe]` runner 上跑 os1/os2 全量探针，
+`--fail-under 27` 低于阈值直接失败，并上传 JSON 报告。
+
+启用前需要：
+
+1. 自托管 macOS runner（必须有图形会话，headful Chromium 才能跑）。
+2. GitHub secret `SHADOWEDGE_TEST_PROXIES_JSON`，内容与本地
+   `experiments/.secrets/test-proxies.json` 相同。
+3. 仓库变量 `SHADOWEDGE_PROBE_UPSTREAM`（可选，默认 `http://127.0.0.1:7897`）。

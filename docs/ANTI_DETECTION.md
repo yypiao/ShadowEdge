@@ -34,21 +34,21 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 
 ### 2.2 指纹维度伪造
 
-| 维度         | 拦截点                                                | 策略                                                             |
-| ------------ | ----------------------------------------------------- | ---------------------------------------------------------------- |
+| 维度         | 拦截点                                                | 策略                                                                          |
+| ------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
 | Canvas 2D    | `CanvasRenderingContext2D::getImageData`, `toDataURL` | 按 seed 对纹理像素施加确定性微扰；纯色块/边界保持原样，无落点时直接走原生编码 |
-| WebGL        | `WebGLRenderingContext::getParameter`                 | 替换 `VENDOR`/`RENDERER`/`UNMASKED_*`；`readPixels` 施加噪声     |
-| AudioContext | `AudioBuffer::getChannelData`, `AnalyserNode`         | 对浮点样本乘以 seed 派生的极小系数                               |
-| ClientRects  | `Element::getBoundingClientRect`                      | 对返回值加 seed 派生的亚像素偏移                                 |
-| 字体枚举     | `FontCache::GetFontData`                              | 仅命中白名单字体，其余回退默认字体                               |
-| WebRTC       | `PeerConnection` ICE 候选生成                         | 用代理出口 IP 替换本地候选，或完全禁用 mDNS 候选                 |
-| 时区         | `blink::TimeZoneController`                           | 从环境配置读取，不读系统时区                                     |
-| 语言         | `Navigator::languages`                                | 从环境配置读取                                                   |
-| 地理位置     | Geolocation service                                   | 返回代理出口 IP 对应坐标                                         |
-| 硬件参数     | `Navigator::hardwareConcurrency`, `deviceMemory`      | 从环境配置读取                                                   |
-| 媒体设备     | `MediaDevices::enumerateDevices`                      | 返回配置的虚拟设备列表，deviceId 由 seed 派生                    |
-| Battery      | `BatteryManager`                                      | 返回配置值                                                       |
-| Screen       | `Screen::width` 等                                    | 从环境配置读取，且 `availHeight` 需减去合理任务栏高度            |
+| WebGL        | `WebGLRenderingContext::getParameter`                 | 替换 `VENDOR`/`RENDERER`/`UNMASKED_*`；`readPixels` 施加噪声                  |
+| AudioContext | `AudioBuffer::getChannelData`, `AnalyserNode`         | 对浮点样本乘以 seed 派生的极小系数                                            |
+| ClientRects  | `Element::getBoundingClientRect`                      | 对返回值加 seed 派生的亚像素偏移                                              |
+| 字体枚举     | `FontCache::GetFontData`                              | 仅命中白名单字体，其余回退默认字体                                            |
+| WebRTC       | `PeerConnection` ICE 候选生成                         | 用代理出口 IP 替换本地候选，或完全禁用 mDNS 候选                              |
+| 时区         | `blink::TimeZoneController`                           | 从环境配置读取，不读系统时区                                                  |
+| 语言         | `Navigator::languages`                                | 从环境配置读取                                                                |
+| 地理位置     | Geolocation service                                   | 返回代理出口 IP 对应坐标                                                      |
+| 硬件参数     | `Navigator::hardwareConcurrency`, `deviceMemory`      | 从环境配置读取                                                                |
+| 媒体设备     | `MediaDevices::enumerateDevices`                      | 返回配置的虚拟设备列表，deviceId 由 seed 派生                                 |
+| Battery      | `BatteryManager`                                      | 返回配置值                                                                    |
+| Screen       | `Screen::width` 等                                    | 从环境配置读取，且 `availHeight` 需减去合理任务栏高度                         |
 
 ### 2.3 一致性闸门
 
@@ -62,6 +62,10 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 - `maxTouchPoints > 0` 但 macOS 平台 → 异常。
 
 `auditFingerprint()` 在启动前强制校验这些交叉约束，不通过则拒绝启动并抛 `E_FINGERPRINT_INCONSISTENT`。这是相对竞品的关键增强 —— 宁可不启动，也不要用一个自相矛盾的身份去登录。
+
+实现位于 `packages/fingerprint/src/consistency.ts`，同时校验 UA/UA-CH 版本同源、
+屏幕可用区差值、macOS 触摸点、内存 2 的幂、Apple/D3D11/SwiftShader GPU 矛盾与平台字体子集。
+使用版本化 UA catalog 的环境，审计时必须传入与生成时相同的 `db` / `overrides`。
 
 ## 3. 代理与网络层
 
@@ -93,38 +97,39 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 ## 6. 探针回归实测记录（2026-10-21，os1 德国双跳链路）
 
 基线报告：
+
 - os1 德国：`experiments/probes/results/os1-final-audit-1792553903844.json`，seed `ps-final-audit`，**27/27**。
 - os2 英国：`experiments/probes/results/os2-final-audit-1792554019160.json`，seed `ps-final-audit`，**27/27**。
 
 通过 `pnpm probe -- --seed <seed> --proxy os1|os2 --label <name>` 复现。
 
-| 观测点                                   | 结果                                                                       |
-| ---------------------------------------- | -------------------------------------------------------------------------- |
-| CreepJS                                  | `0% headless`、`38% like headless`、`0% stealth`、`lies = 0`               |
-| BrowserLeaks                             | 无 WebRTC 本机 IP 或非出口公网 IP 泄漏                                     |
-| Pixelscan Browser / Location / Bot check | 全部通过                                                                   |
-| Pixelscan Fingerprint                    | `No masking detected`                                                      |
+| 观测点                                   | 结果                                                                                                                                    |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| CreepJS                                  | `0% headless`、`38% like headless`、`0% stealth`、`lies = 0`                                                                            |
+| BrowserLeaks                             | 无 WebRTC 本机 IP 或非出口公网 IP 泄漏                                                                                                  |
+| Pixelscan Browser / Location / Bot check | 全部通过                                                                                                                                |
+| Pixelscan Fingerprint                    | `No masking detected`                                                                                                                   |
 | Pixelscan Proxy                          | `Proxy detected`：os1/os2 为静态住宅/ISP 代理，ip-api 显示 `hosting=false`、`proxy=false`；Pixelscan 仍按代理检测库单独标记，不伪造绕过 |
-| Pixelscan 综合                           | `nonProxyConsistent = true`（除代理类型外所有非代理因素一致）              |
+| Pixelscan 综合                           | `nonProxyConsistent = true`（除代理类型外所有非代理因素一致）                                                                           |
 
 本轮修复的深层问题：
 
-| 漏洞                | 现象                                                                                             | 修复                                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| Worker 源码读取失败 | Pixelscan 禁止同步 XHR 读取 `blob:` URL，旧包装静默回退，Worker 暴露真实 `Chrome/156 + Apple M4` | 在 `Blob` 构造与 `URL.createObjectURL()` 时登记源码，Worker 构造直接取用；不再依赖 XHR                    |
-| Worker GPU 裸奔     | Worker 无 `WebGLRenderingContext` 全局构造器，OffscreenCanvas 返回的上下文未被覆盖               | 包装 `OffscreenCanvas.prototype.getContext`，从实例原型套用 WebGL spoof；兼容 `WorkerNavigator.prototype` |
-| Canvas 噪声可被回读 | 持久修改原画布会让重复读取累积漂移，并可能破坏纯色检测块                                         | `toDataURL` 先做 8×8 网格纯色采样；纯色直接原生编码；纹理才复制到临时画布，并只在 5×5 邻域颜色数 ≥5 的位置落点；`getImageData` 只改返回副本 |
-| UA / UA-CH 不一致   | HTTP Client Hints 不受页面 JS 注入影响，服务端看到内核真实版本                                   | `buildClientHintHeaders()` 覆盖 `sec-ch-ua*`；页面侧 `userAgentData` 与 UA 同源、稳定对象、高熵接口补齐   |
-| Navigator 伪造痕迹  | 属性挂在 `navigator` 实例上，`Object.getOwnPropertyNames(navigator)` 非空                        | 全部属性定义到 `Navigator.prototype` / `WorkerNavigator.prototype`                                        |
-| SDP 候选泄漏        | 只过滤 ICE 事件时，`localDescription.sdp` 仍含 host/srflx IP；mDNS 候选因正则只认 IP 字符集而漏删 | 同步过滤 `c=` 与 `a=candidate` 行；地址匹配改为 `[^\s]+`，覆盖带连字符的 mDNS；`0.0.0.0` / `::` 归为 unspecified |
-| 包装函数 toString   | Worker / SharedWorker 包装器暴露源码；Proxy 默认返回 32 字符匿名原生串，Pixelscan C14 直接判失败   | Proxy 增加 `toString` / `name` get 陷阱：`fn.toString()` 返回带名原生串（`toDataURL` 为 38 字符），`Function.prototype.toString.call` 仍不泄漏源码 |
-| Worker 注入中断     | Canvas 噪声代码在 Worker 中引用不存在的 `CanvasRenderingContext2D`，整段 Worker 注入抛错并超时    | 给 Canvas 原型方法循环加 `typeof CanvasRenderingContext2D !== "undefined"` 守卫                              |
-| Screen 实例属性     | `screen` 被挂成实例自有属性，`Object.getOwnPropertyNames(screen)` 从 `[]` 变成 5 项               | 改挂 `Screen.prototype`；实例自有属性恢复为空                                                              |
-| screen 位深矛盾     | `colorDepth` 被改成 24，但 `pixelDepth` 仍是宿主机的 30                                          | `pixelDepth` 与 `colorDepth` 同源返回画像值                                                                 |
-| DPR descriptor      | 只定义 `window.devicePixelRatio` getter，原生 setter 被覆盖成 `undefined`                         | 保留原生 descriptor 的 setter，并让 getter 继续返回画像值                                                   |
-| UA-CH 实例属性      | 手工构造的 `userAgentData` 带 `brands/mobile/platform/getHighEntropyValues` 自有属性               | 返回原生对象，getter/method 全部落在 `NavigatorUAData.prototype`；`brands` 每次返回新的冻结数组              |
-| MediaDevices 源码   | `enumerateDevices` 挂成实例方法，`toString()` 直接输出注入用 async 源码                            | 改为 `MediaDevices.prototype` 上的 Proxy 方法，实例无自有属性，`toString()` 为原生串                         |
-| WebRTC / Battery    | WebRTC 包装把 `addEventListener` / `onicecandidate` / `localDescription` 挂到连接实例；battery 同样落到实例 | WebRTC 改为原型级拦截（构造器保持原生）；BatteryManager 属性改挂原型；实测实例自有属性均为空               |
+| 漏洞                | 现象                                                                                                        | 修复                                                                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Worker 源码读取失败 | Pixelscan 禁止同步 XHR 读取 `blob:` URL，旧包装静默回退，Worker 暴露真实 `Chrome/156 + Apple M4`            | 在 `Blob` 构造与 `URL.createObjectURL()` 时登记源码，Worker 构造直接取用；不再依赖 XHR                                                             |
+| Worker GPU 裸奔     | Worker 无 `WebGLRenderingContext` 全局构造器，OffscreenCanvas 返回的上下文未被覆盖                          | 包装 `OffscreenCanvas.prototype.getContext`，从实例原型套用 WebGL spoof；兼容 `WorkerNavigator.prototype`                                          |
+| Canvas 噪声可被回读 | 持久修改原画布会让重复读取累积漂移，并可能破坏纯色检测块                                                    | `toDataURL` 先做 8×8 网格纯色采样；纯色直接原生编码；纹理才复制到临时画布，并只在 5×5 邻域颜色数 ≥5 的位置落点；`getImageData` 只改返回副本        |
+| UA / UA-CH 不一致   | HTTP Client Hints 不受页面 JS 注入影响，服务端看到内核真实版本                                              | `buildClientHintHeaders()` 覆盖 `sec-ch-ua*`；页面侧 `userAgentData` 与 UA 同源、稳定对象、高熵接口补齐                                            |
+| Navigator 伪造痕迹  | 属性挂在 `navigator` 实例上，`Object.getOwnPropertyNames(navigator)` 非空                                   | 全部属性定义到 `Navigator.prototype` / `WorkerNavigator.prototype`                                                                                 |
+| SDP 候选泄漏        | 只过滤 ICE 事件时，`localDescription.sdp` 仍含 host/srflx IP；mDNS 候选因正则只认 IP 字符集而漏删           | 同步过滤 `c=` 与 `a=candidate` 行；地址匹配改为 `[^\s]+`，覆盖带连字符的 mDNS；`0.0.0.0` / `::` 归为 unspecified                                   |
+| 包装函数 toString   | Worker / SharedWorker 包装器暴露源码；Proxy 默认返回 32 字符匿名原生串，Pixelscan C14 直接判失败            | Proxy 增加 `toString` / `name` get 陷阱：`fn.toString()` 返回带名原生串（`toDataURL` 为 38 字符），`Function.prototype.toString.call` 仍不泄漏源码 |
+| Worker 注入中断     | Canvas 噪声代码在 Worker 中引用不存在的 `CanvasRenderingContext2D`，整段 Worker 注入抛错并超时              | 给 Canvas 原型方法循环加 `typeof CanvasRenderingContext2D !== "undefined"` 守卫                                                                    |
+| Screen 实例属性     | `screen` 被挂成实例自有属性，`Object.getOwnPropertyNames(screen)` 从 `[]` 变成 5 项                         | 改挂 `Screen.prototype`；实例自有属性恢复为空                                                                                                      |
+| screen 位深矛盾     | `colorDepth` 被改成 24，但 `pixelDepth` 仍是宿主机的 30                                                     | `pixelDepth` 与 `colorDepth` 同源返回画像值                                                                                                        |
+| DPR descriptor      | 只定义 `window.devicePixelRatio` getter，原生 setter 被覆盖成 `undefined`                                   | 保留原生 descriptor 的 setter，并让 getter 继续返回画像值                                                                                          |
+| UA-CH 实例属性      | 手工构造的 `userAgentData` 带 `brands/mobile/platform/getHighEntropyValues` 自有属性                        | 返回原生对象，getter/method 全部落在 `NavigatorUAData.prototype`；`brands` 每次返回新的冻结数组                                                    |
+| MediaDevices 源码   | `enumerateDevices` 挂成实例方法，`toString()` 直接输出注入用 async 源码                                     | 改为 `MediaDevices.prototype` 上的 Proxy 方法，实例无自有属性，`toString()` 为原生串                                                               |
+| WebRTC / Battery    | WebRTC 包装把 `addEventListener` / `onicecandidate` / `localDescription` 挂到连接实例；battery 同样落到实例 | WebRTC 改为原型级拦截（构造器保持原生）；BatteryManager 属性改挂原型；实测实例自有属性均为空                                                       |
 
 修复后 Worker 实测与画像一致：UA `Chrome/131`、UA-CH `Chromium/Google Chrome 131`、
 `hardwareConcurrency = 12`、GPU `Google Inc. (Apple) / Apple M1 Pro`、`navigator` 无自有属性；

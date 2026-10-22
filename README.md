@@ -6,14 +6,14 @@
 
 紫鸟的核心价值是「一台电脑管理数百个店铺账号且不被平台关联封号」。它的短板集中在：
 
-| 维度 | 紫鸟现状 | ShadowEdge 目标 |
-| --- | --- | --- |
-| 指纹方案 | JS 层 hook 为主，部分维度可被 CDP 探针识破 | Chromium C++ 层补丁，`navigator.webdriver` 等痕迹从源码消除 |
-| 指纹一致性 | UA / Client Hints / 时区 / 语言偶有互相矛盾 | 单一 seed 确定性生成 + 启动前一致性审计闸门 |
-| 代理能力 | 单跳为主 | 链式代理、出口地理与时区自动对齐、IP 质量风控 |
-| 自动化 | 内置 RPA 功能有限，扩展性弱 | 图形化 DSL + CDP 开放端口 + OpenAPI SDK，可接 Playwright |
-| 协作安全 | 账号密码托管，权限粒度粗 | 密码永不落到操作员手上，RBAC + 资源级 ACL + 哈希链审计 |
-| 跨平台 | Windows 为主 | Windows / macOS / Linux 同等支持 |
+| 维度       | 紫鸟现状                                    | ShadowEdge 目标                                             |
+| ---------- | ------------------------------------------- | ----------------------------------------------------------- |
+| 指纹方案   | JS 层 hook 为主，部分维度可被 CDP 探针识破  | Chromium C++ 层补丁，`navigator.webdriver` 等痕迹从源码消除 |
+| 指纹一致性 | UA / Client Hints / 时区 / 语言偶有互相矛盾 | 单一 seed 确定性生成 + 启动前一致性审计闸门                 |
+| 代理能力   | 单跳为主                                    | 链式代理、出口地理与时区自动对齐、IP 质量风控               |
+| 自动化     | 内置 RPA 功能有限，扩展性弱                 | 图形化 DSL + CDP 开放端口 + OpenAPI SDK，可接 Playwright    |
+| 协作安全   | 账号密码托管，权限粒度粗                    | 密码永不落到操作员手上，RBAC + 资源级 ACL + 哈希链审计      |
+| 跨平台     | Windows 为主                                | Windows / macOS / Linux 同等支持                            |
 
 ## 架构总览
 
@@ -44,13 +44,19 @@ pnpm build          # 构建所有 packages
 pnpm dev:desktop    # 启动桌面客户端
 pnpm dev:server     # 启动后端服务
 pnpm typecheck      # 全量类型检查
+pnpm update-ua-catalog  # 更新 Chrome stable UA/UA-CH 素材快照
+pnpm probe -- --seed demo --proxy os1 --label manual  # 手动跑全量探针
 ```
+
+夜间探针回归见 `.github/workflows/probe-nightly.yml`；UA 素材目录的版本化规则见
+`packages/fingerprint/catalog/README.md`。
 
 ## 文档
 
 - `docs/ARCHITECTURE.md` — 分层架构、模块边界、数据流
 - `docs/ROADMAP.md` — 分阶段交付计划
 - `docs/ANTI_DETECTION.md` — 反检测技术方案与验证矩阵
+- `docs/KERNEL_PATCH_PLAN.md` — Chromium 内核补丁与构建流水线
 - `docs/SECURITY.md` — 威胁模型与安全基线
 - `AGENTS.md` — AI 协作开发规范（改代码前必读）
 

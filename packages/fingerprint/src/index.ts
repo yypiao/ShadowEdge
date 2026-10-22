@@ -1,12 +1,13 @@
 import type { FingerprintProfile, Platform } from '@shadowedge/core';
 import { SeededRandom } from '@shadowedge/core';
+import { checkFingerprintConsistency } from './consistency.js';
 
 /* ------------------------------------------------------------------ */
 /*  指纹画像生成器：基于 seed 确定性产出所有指纹维度。               */
 /*  内部维护一份随时更新的真实浏览器指纹库作为素材池。               */
 /* ------------------------------------------------------------------ */
 
-interface FingerprintDatabase {
+export interface FingerprintDatabase {
   userAgents: Record<Platform, string[]>;
   uaDatas: Record<Platform, FingerprintProfile['userAgentData'][]>;
   screens: FingerprintProfile['screen'][];
@@ -185,6 +186,13 @@ export interface FingerprintGeneratorOptions {
   db?: Partial<FingerprintDatabase>;
 }
 
+export interface FingerprintAuditOptions {
+  /** 与生成时相同的素材覆盖；使用版本化 catalog 的环境必须一并传入。 */
+  db?: Partial<FingerprintDatabase>;
+  /** 与生成时相同的显式覆写（平台/GPU 等）。 */
+  overrides?: Partial<FingerprintProfile>;
+}
+
 export function generateFingerprint(options: FingerprintGeneratorOptions): FingerprintProfile {
   const { seed, overrides, db: dbOverrides } = options;
   const followHost = options.platform === 'host';
@@ -290,6 +298,20 @@ function mergeDb(overrides?: Partial<FingerprintDatabase>): FingerprintDatabase 
       merged.userAgents[key] = [...(merged.userAgents[key] ?? []), ...overrides.userAgents[key]!];
     }
   }
+  if (overrides.uaDatas) {
+    for (const key of Object.keys(overrides.uaDatas) as Platform[]) {
+      merged.uaDatas[key] = [...(merged.uaDatas[key] ?? []), ...overrides.uaDatas[key]!];
+    }
+  }
+  if (overrides.screens) merged.screens = [...merged.screens, ...overrides.screens];
+  if (overrides.fonts) {
+    for (const key of Object.keys(overrides.fonts) as Platform[]) {
+      merged.fonts[key] = [...(merged.fonts[key] ?? []), ...overrides.fonts[key]!];
+    }
+  }
+  if (overrides.webglVendors) {
+    merged.webglVendors = [...merged.webglVendors, ...overrides.webglVendors];
+  }
   return merged;
 }
 
@@ -319,33 +341,54 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** 一致性审计：检查指定种子是否可复现已有指纹。 */
-export function auditFingerprint(current: FingerprintProfile): {
+export function auditFingerprint(
+  current: FingerprintProfile,
+  options: FingerprintAuditOptions = {},
+): {
   consistent: boolean;
   issues: string[];
 } {
   const issues: string[] = [];
-  const regenerated = generateFingerprint({ seed: current.seed, platform: current.platform });
+  const regenerated = generateFingerprint({
+    seed: current.seed,
+    platform: current.platform,
+    db: options.db,
+    overrides: options.overrides,
+  });
   if (regenerated.userAgent !== current.userAgent) issues.push('userAgent 与 seed 不匹配');
   const syncedUaData = syncUserAgentData(current.userAgent, current.userAgentData);
   if (JSON.stringify(syncedUaData) !== JSON.stringify(current.userAgentData)) {
     issues.push('userAgentData 品牌/版本与 userAgent 不一致');
   }
-  const uaPlatform = current.userAgent.includes('Windows NT')
-    ? 'Windows'
-    : current.userAgent.includes('Macintosh')
-      ? 'macOS'
-      : current.userAgent.includes('Linux')
-        ? 'Linux'
-        : null;
-  if (uaPlatform && current.userAgentData.platform !== uaPlatform) {
-    issues.push('userAgentData.platform 与 userAgent 不一致');
-  }
   if (regenerated.screen.width !== current.screen.width) issues.push('屏幕宽度与 seed 不匹配');
   if (regenerated.webgl.vendor !== current.webgl.vendor) issues.push('WebGL vendor 与 seed 不匹配');
+  const crossCheck = checkFingerprintConsistency(current, {
+    allowedFonts: options.db?.fonts?.[current.platform] ?? DEFAULT_DB.fonts[current.platform],
+  });
+  issues.push(...crossCheck.issues);
   return { consistent: issues.length === 0, issues };
 }
 
 export { buildInjectionScript } from './inject.js';
 export { buildClientHintHeaders } from './client-hints.js';
+export {
+  checkFingerprintConsistency,
+  detectUserAgentPlatform,
+  detectUserAgentVersion,
+} from './consistency.js';
+export type { ConsistencyOptions, ConsistencyResult } from './consistency.js';
+export {
+  buildChromeCatalog,
+  catalogPlatforms,
+  catalogToGeneratorDb,
+  parseChromeStableVersion,
+  parseFingerprintCatalog,
+} from './catalog.js';
+export type {
+  CatalogGeneratorDb,
+  ChromeCatalogMeta,
+  FingerprintCatalog,
+  FingerprintCatalogEntry,
+} from './catalog.js';
 export { deriveGeoOverrides } from './geo-follow.js';
 export type { GeoInput } from './geo-follow.js';

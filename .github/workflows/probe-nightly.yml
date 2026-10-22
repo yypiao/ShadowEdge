@@ -1,0 +1,56 @@
+name: Probe Nightly
+
+on:
+  schedule:
+    # 18:00 UTC = 02:00 Asia/Singapore
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: [self-hosted, macOS, shadowedge-probe]
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        proxy: [os1, os2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Write probe credentials
+        env:
+          PROXIES_JSON: ${{ secrets.SHADOWEDGE_TEST_PROXIES_JSON }}
+        run: |
+          if [ -z "$PROXIES_JSON" ]; then
+            echo "::error::缺少 SHADOWEDGE_TEST_PROXIES_JSON secret"
+            exit 1
+          fi
+          mkdir -p experiments/.secrets
+          printf '%s' "$PROXIES_JSON" > experiments/.secrets/test-proxies.json
+          chmod 600 experiments/.secrets/test-proxies.json
+      - name: Run full probe
+        env:
+          SHADOWEDGE_PROBE_UPSTREAM: ${{ vars.SHADOWEDGE_PROBE_UPSTREAM || 'http://127.0.0.1:7897' }}
+        run: >-
+          pnpm probe -- --seed "nightly-${{ github.run_id }}-${{ matrix.proxy }}"
+          --proxy "${{ matrix.proxy }}" --label "nightly-${{ matrix.proxy }}"
+          --fail-under 27
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-nightly-${{ matrix.proxy }}
+          path: experiments/probes/results/nightly-${{ matrix.proxy }}-*.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Remove probe credentials
+        if: always()
+        run: rm -f experiments/.secrets/test-proxies.json

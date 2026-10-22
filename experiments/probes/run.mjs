@@ -30,6 +30,12 @@ const args = Object.fromEntries(
 const SEED = args.seed ?? 'probe-demo';
 const LABEL = args.label ?? new Date().toISOString().slice(0, 10);
 const PROXY_ID = args.proxy; // experiments/.secrets/test-proxies.json 里的 id
+const UPSTREAM_RAW =
+  args.upstream ?? process.env.SHADOWEDGE_PROBE_UPSTREAM ?? 'http://127.0.0.1:7897';
+const FAIL_UNDER = Number(args['fail-under'] ?? (PROXY_ID ? 27 : 0));
+if (!Number.isInteger(FAIL_UNDER) || FAIL_UNDER < 0) {
+  throw new Error(`--fail-under 必须是非负整数，收到 ${args['fail-under']}`);
+}
 const CREEPJS = 'https://abrahamjuliot.github.io/creepjs/';
 const BROWSERLEAKS = 'https://browserleaks.com/webrtc';
 const PIXELSCAN = 'https://pixelscan.net/';
@@ -62,6 +68,12 @@ const readSelectorText = async (page, selector) => {
   }
 };
 
+const parseUpstream = (value) => {
+  const url = new URL(value);
+  if (url.protocol !== 'http:') throw new Error(`上游必须是 http://，收到 ${url.protocol}`);
+  return { protocol: 'http', host: url.hostname, port: Number(url.port || 80) };
+};
+
 // ---- 1. 代理与中继（可选）----
 let relay, expectedGeo;
 if (PROXY_ID) {
@@ -70,7 +82,7 @@ if (PROXY_ID) {
   );
   const p = secrets.find((x) => x.id === PROXY_ID);
   if (!p) throw new Error(`代理 ${PROXY_ID} 不在 secrets 文件里`);
-  const upstream = { protocol: 'http', host: '127.0.0.1', port: 7897 };
+  const upstream = parseUpstream(UPSTREAM_RAW);
   const cred = {
     id: p.id,
     orgId: 'local',
@@ -459,6 +471,7 @@ const report = {
   pixelscan,
   expectations: expectations.map(([name, ok]) => ({ name, ok })),
   score: `${passed}/${expectations.length}`,
+  failUnder: FAIL_UNDER,
 };
 mkdirSync(join(HERE, 'results'), { recursive: true });
 const outFile = join(HERE, 'results', `${LABEL}-${Date.now()}.json`);
@@ -470,4 +483,8 @@ console.log(`得分: ${passed}/${expectations.length}  报告: ${outFile}`);
 
 await context.close();
 await relay?.close();
+if (passed < FAIL_UNDER) {
+  console.error(`探针得分低于阈值: ${passed}/${expectations.length} < ${FAIL_UNDER}`);
+  process.exit(1);
+}
 process.exit(0);
