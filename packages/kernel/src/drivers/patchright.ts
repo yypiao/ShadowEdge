@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { chromium, type BrowserContext } from 'patchright';
 import { ShadowEdgeError } from '@shadowedge/core';
-import { buildClientHintHeaders, buildInjectionScript } from '@shadowedge/fingerprint';
+import { buildClientHintHeaders, buildInjectionScript, type InjectionOptions } from '@shadowedge/fingerprint';
 import type { KernelDriver, KernelLaunchSpec, RunningInstance } from '../driver.js';
 
 /** T0 实验结论：禁止非代理 UDP，否则 WebRTC 泄漏真实出口 IP。 */
@@ -22,7 +22,7 @@ export async function findFreePort(): Promise<number> {
 }
 
 /** 组装持久化上下文的启动参数与上下文选项。独立导出以便单测覆盖，不必真开浏览器。 */
-export function buildLaunchConfig(spec: KernelLaunchSpec, cdpPort?: number) {
+export function buildLaunchConfig(spec: KernelLaunchSpec, cdpPort?: number, injectOpts?: InjectionOptions) {
   const fp = spec.profile.fingerprint;
 
   if (spec.options.headless) {
@@ -69,7 +69,7 @@ export function buildLaunchConfig(spec: KernelLaunchSpec, cdpPort?: number) {
       : undefined,
   };
 
-  return { args, contextOptions, injectionScript: buildInjectionScript(fp) };
+  return { args, contextOptions, injectionScript: buildInjectionScript(fp, injectOpts) };
 }
 
 /** Patchright 主驱动（ADR 0004 方案 A）：持久化目录隔离 + 主世界确定性指纹注入。 */

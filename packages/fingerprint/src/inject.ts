@@ -5,7 +5,18 @@ import type { FingerprintProfile } from '@shadowedge/core';
  * 同一 profile（含 seed）必须产出逐字节一致的脚本 —— 这是指纹零漂移的根基，
  * 因此脚本内禁止出现 Math.random()/Date.now() 等非确定源。
  */
-export function buildInjectionScript(fp: FingerprintProfile): string {
+export interface InjectionOptions {
+  /**
+   * ServiceWorker 策略：
+   * - 'shield'（默认）：屏蔽 navigator.serviceWorker，迫使探针回退到可注入的 Worker。
+   *   用于 Patchright 等无法触达 SW 作用域的驱动。
+   * - 'kernel'：保留 ServiceWorker 能力，由内核补丁 0003 把本脚本注入 SW 全局作用域。
+   *   仅 chromium-cdp 驱动使用。
+   */
+  serviceWorker?: 'shield' | 'kernel';
+}
+
+export function buildInjectionScript(fp: FingerprintProfile, opts: InjectionOptions = {}): string {
   const noiseSeed = fnv1a(fp.seed);
   const lines: string[] = [
     '/* shadowedge-fingerprint: deterministic injection, seed=' + fp.seed + ' */',
@@ -459,7 +470,10 @@ export function buildInjectionScript(fp: FingerprintProfile): string {
   // 包装 Worker：同源脚本同步拉源码、前置本注入、转 blob 启动。
   // 另：CreepJS 优先选 ServiceWorker（register 直拉 URL 无法注入），屏蔽之迫使其
   // 回退到 Shared/Dedicated（均可包装）；这是反检测浏览器的通行做法。
-  lines.push(`_def(_navProto, 'serviceWorker', () => undefined);`);
+  // 内核驱动下 SW 由补丁 0003 注入，无需屏蔽；屏蔽本身是探针可见的能力缺口。
+  if ((opts.serviceWorker ?? 'shield') === 'shield') {
+    lines.push(`_def(_navProto, 'serviceWorker', () => undefined);`);
+  }
   lines.push(
     'if (_w.Worker) {',
     // Pixelscan 等站点会禁用同步 XHR 读取 blob: URL，导致源码拉取失败、Worker 裸奔。

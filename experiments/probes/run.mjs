@@ -9,6 +9,7 @@
  * 产出：experiments/probes/results/<label>-<ts>.json + 控制台摘要
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -116,12 +117,24 @@ const fp = generateFingerprint({ seed: SEED, platform: 'host', overrides });
 const clientHints = buildClientHintHeaders(fp);
 log('画像:', fp.platform, fp.timezone, fp.languages[0]);
 
+// 设 SHADOWEDGE_KERNEL_EXECUTABLE 时用自研内核跑探针（T13 验收口径）：
+// 追加 --shadowedge-fingerprint 画像入口，与 ChromiumCdpDriver 行为一致。
+const KERNEL_BIN = process.env.SHADOWEDGE_KERNEL_EXECUTABLE;
+if (KERNEL_BIN) log('使用自研内核:', KERNEL_BIN);
+
 const context = await chromium.launchPersistentContext(join(HERE, '.probe-profile'), {
   headless: false,
+  ...(KERNEL_BIN ? { executablePath: KERNEL_BIN } : {}),
   args: [
     '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
     '--disable-quic',
     '--disable-blink-features=AutomationControlled',
+    ...(KERNEL_BIN
+      ? [
+          `--shadowedge-fingerprint=${Buffer.from(JSON.stringify(fp), 'utf8').toString('base64')}`,
+          `--shadowedge-init-script=${Buffer.from(buildInjectionScript(fp, { serviceWorker: 'kernel' }), 'utf8').toString('base64')}`,
+        ]
+      : []),
   ],
   userAgent: fp.userAgent,
   extraHTTPHeaders: clientHints,
@@ -139,7 +152,7 @@ const context = await chromium.launchPersistentContext(join(HERE, '.probe-profil
   permissions: fp.geolocation ? ['geolocation'] : [],
   proxy: relay ? { server: relay.server } : undefined,
 });
-await context.addInitScript({ content: buildInjectionScript(fp) });
+await context.addInitScript({ content: buildInjectionScript(fp, KERNEL_BIN ? { serviceWorker: 'kernel' } : undefined) });
 const page = context.pages()[0] ?? (await context.newPage());
 
 // ---- 3. 本地采集（主世界，裸 CDP）----
@@ -208,6 +221,51 @@ const workerGl = await mainEval(`(async () => {
   });
 })()`);
 log('Worker:', JSON.stringify(workerGl));
+
+// ---- 3c. ServiceWorker 穿透（T14：内核 0003 注入 SW 作用域；shield 模式验证屏蔽策略）----
+// SW 注册必须有 HTTP origin，探针主页面在 about:blank，故临时起本地源。
+const swServer = createServer((req, res) => {
+  // 经代理时请求行是 absolute-form（GET http://host/sw.js），需归一化再匹配。
+  const path = new URL(req.url, 'http://127.0.0.1').pathname;
+  if (path === '/sw.js') {
+    res.setHeader('content-type', 'text/javascript');
+    res.end(`
+      self.addEventListener('install', () => self.skipWaiting());
+      self.addEventListener('activate', (e) => e.waitUntil(clients.claim()));
+      self.addEventListener('message', (e) => {
+        e.source.postMessage(JSON.stringify({
+          ua: navigator.userAgent,
+          hc: navigator.hardwareConcurrency,
+          mem: navigator.deviceMemory,
+          brands: navigator.userAgentData ? navigator.userAgentData.brands : null,
+          navOwnProps: Object.getOwnPropertyNames(navigator),
+        }));
+      });`);
+  } else {
+    res.setHeader('content-type', 'text/html');
+    res.end('<html><body></body></html>');
+  }
+});
+await new Promise((r) => swServer.listen(0, '127.0.0.1', r));
+const swPort = swServer.address().port;
+await page.goto(`http://127.0.0.1:${swPort}/`);
+const swData = await mainEval(`(async () => {
+  if (!navigator.serviceWorker) return { shielded: true };
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ timeout: true }), 8000);
+      navigator.serviceWorker.addEventListener('message', (e) => {
+        clearTimeout(timer); resolve(JSON.parse(e.data));
+      }, { once: true });
+      (navigator.serviceWorker.controller || reg.active).postMessage('collect');
+    });
+  } catch (error) { return { error: String(error) }; }
+})()`);
+log('ServiceWorker:', JSON.stringify(swData));
+await page.goto('about:blank');
+swServer.close();
 
 // ---- 4. CreepJS（需外网）----
 let creep = null;
@@ -436,6 +494,21 @@ const expectations = [
     'Worker navigator 无自有属性',
     Array.isArray(workerGl?.navOwnProps) && workerGl.navOwnProps.length === 0,
   ],
+  ...(KERNEL_BIN
+    ? [
+        // 内核模式：SW 不被屏蔽，且画像由 0003 注入生效
+        ['ServiceWorker UA 与画像一致', swData?.ua === fp.userAgent],
+        ['ServiceWorker hardwareConcurrency 一致', swData?.hc === fp.hardware.hardwareConcurrency],
+        ['ServiceWorker deviceMemory 一致', swData?.mem === fp.hardware.deviceMemoryGb],
+        [
+          'ServiceWorker navigator 无自有属性',
+          Array.isArray(swData?.navOwnProps) && swData.navOwnProps.length === 0,
+        ],
+      ]
+    : [
+        // shield 模式：屏蔽是既定回退策略，验证它确实生效
+        ['ServiceWorker 已按回退策略屏蔽', swData?.shielded === true],
+      ]),
 ];
 if (expectedGeo)
   expectations.push([

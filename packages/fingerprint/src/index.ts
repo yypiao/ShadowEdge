@@ -370,6 +370,7 @@ export function auditFingerprint(
 }
 
 export { buildInjectionScript } from './inject.js';
+export type { InjectionOptions } from './inject.js';
 export { buildClientHintHeaders } from './client-hints.js';
 export {
   checkFingerprintConsistency,

@@ -193,6 +193,11 @@ export interface LaunchResult {
   pid: number;
   wsEndpoint?: string;
   startedAt: IsoDateTime;
+  /**
+   * 实际承载本次会话的内核驱动名（如 chromium-cdp / patchright-chromium）。
+   * 自研内核不可用时回退 Patchright 必须在此显式标记，不允许静默降级。
+   */
+  kernelUsed?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -3,9 +3,12 @@ import { ShadowEdgeError } from '@shadowedge/core';
 import { startRelay, type RelayHandle } from '@shadowedge/proxy';
 import type { KernelDriver, ResolvedProxy, ResolvedUpstreamProxy, RunningInstance } from './driver.js';
 import { PatchrightDriver } from './drivers/patchright.js';
+import { ChromiumCdpDriver } from './drivers/chromium-cdp.js';
 
 export type { KernelDriver, KernelLaunchSpec, ResolvedProxy, ResolvedUpstreamProxy, RunningInstance } from './driver.js';
 export { PatchrightDriver, buildLaunchConfig } from './drivers/patchright.js';
+export { ChromiumCdpDriver, encodeFingerprintPortrait, resolveKernelExecutable } from './drivers/chromium-cdp.js';
+export type { ChromiumCdpDriverOptions } from './drivers/chromium-cdp.js';
 
 export interface BrowserKernelDeps {
   /** 按 proxyId 解析出可用代理（含已解封凭据）。由 handlers 层从加密仓储提供。 */
@@ -24,7 +27,8 @@ export class BrowserKernel {
   private running = new Map<Uuid, RunningInstance>();
 
   constructor(deps: BrowserKernelDeps = {}) {
-    this.drivers = deps.drivers ?? [new PatchrightDriver()];
+    // 默认自研内核优先；内核二进制未就绪时 ChromiumCdpDriver 内部回退 Patchright 并标记。
+    this.drivers = deps.drivers ?? [new ChromiumCdpDriver()];
     this.resolveProxy = deps.resolveProxy;
   }
 
@@ -71,6 +75,7 @@ export class BrowserKernel {
       pid: instance.pid,
       wsEndpoint: instance.wsEndpoint,
       startedAt: instance.startedAt,
+      kernelUsed: instance.kernelUsed ?? driver.name,
     };
   }
 

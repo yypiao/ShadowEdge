@@ -1,0 +1,298 @@
+{
+  "label": "patchright-sw-regression",
+  "seed": "kernel-check",
+  "proxy": null,
+  "at": "2026-10-29T06:33:45.225Z",
+  "fingerprint": {
+    "seed": "kernel-check",
+    "platform": "macos",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "userAgentData": {
+      "brands": [
+        {
+          "brand": "Chromium",
+          "version": "131"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Not?A_Brand",
+          "version": "99"
+        }
+      ],
+      "platform": "macOS",
+      "platformVersion": "14_6",
+      "architecture": "x86",
+      "bitness": "64",
+      "model": "",
+      "fullVersion": "131.0.6778.86",
+      "mobile": false
+    },
+    "screen": {
+      "width": 1920,
+      "height": 1080,
+      "availWidth": 1920,
+      "availHeight": 1040,
+      "colorDepth": 24,
+      "pixelRatio": 1
+    },
+    "viewport": {
+      "width": 1920,
+      "height": 1040
+    },
+    "languages": [
+      "en-GB",
+      "en"
+    ],
+    "timezone": "Asia/Shanghai",
+    "hardware": {
+      "deviceMemoryGb": 4,
+      "hardwareConcurrency": 4,
+      "maxTouchPoints": 0
+    },
+    "webgl": {
+      "vendor": "Google Inc. (AMD)",
+      "renderer": "ANGLE (AMD, AMD Radeon Pro 5500M, OpenGL 4.1)",
+      "noise": "noise"
+    },
+    "canvas": "noise",
+    "audio": "noise",
+    "clientRects": "noise",
+    "fonts": {
+      "mode": "whitelist",
+      "families": [
+        "Menlo",
+        "Verdana",
+        "Helvetica",
+        "Georgia",
+        "Monaco",
+        "Arial",
+        "Lucida Grande",
+        "Courier"
+      ]
+    },
+    "webrtc": {
+      "mode": "replace"
+    },
+    "media": {
+      "audioInputs": 1,
+      "videoInputs": 1,
+      "audioOutputs": 1
+    },
+    "disabledFeatures": []
+  },
+  "local": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "webdriver": false,
+    "platform": "MacIntel",
+    "languages": [
+      "en-GB",
+      "en"
+    ],
+    "hardwareConcurrency": 4,
+    "deviceMemory": 4,
+    "maxTouchPoints": 0,
+    "vendor": "Google Inc.",
+    "screen": {
+      "width": 1920,
+      "height": 1080,
+      "availWidth": 1920,
+      "availHeight": 1040,
+      "colorDepth": 24,
+      "pixelRatio": 1
+    },
+    "timezone": "Asia/Shanghai",
+    "tzOffset": -480,
+    "chromeObj": "object",
+    "permissions": "denied",
+    "plugins": 5,
+    "mimeTypes": 2,
+    "uaData": {
+      "brands": [
+        {
+          "brand": "Chromium",
+          "version": "131"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Not?A_Brand",
+          "version": "99"
+        }
+      ],
+      "mobile": false,
+      "platform": "macOS",
+      "stableObject": true
+    },
+    "uaDataHighEntropy": {
+      "brands": [
+        {
+          "brand": "Chromium",
+          "version": "131"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131"
+        },
+        {
+          "brand": "Not?A_Brand",
+          "version": "99"
+        }
+      ],
+      "mobile": false,
+      "platform": "macOS",
+      "architecture": "x86",
+      "bitness": "64",
+      "fullVersionList": [
+        {
+          "brand": "Chromium",
+          "version": "131.0.6778.86"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "131.0.6778.86"
+        },
+        {
+          "brand": "Not?A_Brand",
+          "version": "99.0.0.0"
+        }
+      ],
+      "model": "",
+      "platformVersion": "14_6",
+      "uaFullVersion": "131.0.6778.86",
+      "wow64": false
+    },
+    "webgl": {
+      "vendor": "Google Inc. (AMD)",
+      "renderer": "ANGLE (AMD, AMD Radeon Pro 5500M, OpenGL 4.1)",
+      "version": "WebGL 1.0 (OpenGL ES 2.0 Chromium)"
+    },
+    "canvasHash": "69e79530",
+    "audioFp": "172.67165047123126",
+    "traps": {
+      "fnToString": true,
+      "errorStack": 3,
+      "navPropsCount": 39,
+      "navOwnProps": [],
+      "hasCDC": []
+    }
+  },
+  "webrtc": {
+    "candidates": [],
+    "sdpCandidates": []
+  },
+  "workerGl": {
+    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "hc": 4,
+    "brands": [
+      {
+        "brand": "Chromium",
+        "version": "131"
+      },
+      {
+        "brand": "Google Chrome",
+        "version": "131"
+      },
+      {
+        "brand": "Not?A_Brand",
+        "version": "99"
+      }
+    ],
+    "navOwnProps": [],
+    "gpu": [
+      "Google Inc. (AMD)",
+      "ANGLE (AMD, AMD Radeon Pro 5500M, OpenGL 4.1)"
+    ]
+  },
+  "creep": null,
+  "browserleaks": null,
+  "pixelscan": null,
+  "expectations": [
+    {
+      "name": "userAgent 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "UA-CH 品牌与画像一致",
+      "ok": true
+    },
+    {
+      "name": "UA-CH 高熵版本与画像一致",
+      "ok": true
+    },
+    {
+      "name": "timezone 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "hardwareConcurrency 一致",
+      "ok": true
+    },
+    {
+      "name": "deviceMemory 一致",
+      "ok": true
+    },
+    {
+      "name": "maxTouchPoints=0(桌面)",
+      "ok": true
+    },
+    {
+      "name": "webdriver 未暴露",
+      "ok": true
+    },
+    {
+      "name": "无 cdc_$cdc 变量",
+      "ok": true
+    },
+    {
+      "name": "permissions.query 为原生",
+      "ok": true
+    },
+    {
+      "name": "WebGL renderer 一致",
+      "ok": true
+    },
+    {
+      "name": "navigator 无自有属性",
+      "ok": true
+    },
+    {
+      "name": "WebRTC 无本机/真实出口 candidate",
+      "ok": true
+    },
+    {
+      "name": "WebRTC SDP 无真实 host/srflx/relay IP",
+      "ok": true
+    },
+    {
+      "name": "Worker UA 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "Worker UA-CH 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "Worker hardwareConcurrency 一致",
+      "ok": true
+    },
+    {
+      "name": "Worker OffscreenCanvas GPU 与画像一致",
+      "ok": true
+    },
+    {
+      "name": "Worker navigator 无自有属性",
+      "ok": true
+    },
+    {
+      "name": "ServiceWorker 已按回退策略屏蔽",
+      "ok": true
+    }
+  ],
+  "score": "20/20",
+  "failUnder": 0
+}

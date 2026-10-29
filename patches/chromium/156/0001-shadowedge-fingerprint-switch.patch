@@ -1,0 +1,83 @@
+diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
+index 0559ec1a95..2ae005d8e9 100644
+--- a/content/browser/browser_main_loop.cc
++++ b/content/browser/browser_main_loop.cc
+@@ -15,7 +15,9 @@
+ 
+ #include "base/base_switches.h"
+ #include "base/callback_list.h"
++#include "base/base64.h"
+ #include "base/command_line.h"
++#include "base/json/json_reader.h"
+ #include "base/debug/leak_annotations.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+@@ -503,6 +505,26 @@ BrowserMainLoop::~BrowserMainLoop() {
+ void BrowserMainLoop::Init() {
+   TRACE_EVENT0("startup", "BrowserMainLoop::Init");
+ 
++  // ShadowEdge: a malformed fingerprint portrait must abort startup here,
++  // rather than letting a half-configured identity reach any page.
++  {
++    const base::CommandLine& command_line =
++        *base::CommandLine::ForCurrentProcess();
++    if (command_line.HasSwitch(switches::kShadowEdgeFingerprint)) {
++      std::string decoded;
++      bool decoded_ok = base::Base64Decode(
++          command_line.GetSwitchValueASCII(switches::kShadowEdgeFingerprint),
++          &decoded, base::Base64DecodePolicy::kForgiving);
++      std::optional<base::DictValue> portrait =
++          decoded_ok
++              ? base::JSONReader::ReadDict(decoded, base::JSON_PARSE_RFC)
++              : std::nullopt;
++      CHECK(decoded_ok && portrait.has_value())
++          << "FATAL: --shadowedge-fingerprint is not a base64-encoded JSON "
++             "object; refusing to start";
++    }
++  }
++
+   if (parameters_.startup_data) {
+     StartupDataImpl* startup_data =
+         static_cast<StartupDataImpl*>(parameters_.startup_data.get());
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 22bf8ff115..793da7ee4d 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3863,6 +3863,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+   // with any associated values) if present in the browser command line.
+   static const char* const kSwitchNames[] = {
+       switches::kDisableInProcessStackTraces,
++      // ShadowEdge: the fingerprint portrait must reach every renderer
++      // process (pages, dedicated/shared/service workers alike).
++      switches::kShadowEdgeFingerprint,
+       sandbox::policy::switches::kDisableLandlockSandbox,
+       sandbox::policy::switches::kDisableSeccompFilterSandbox,
+       sandbox::policy::switches::kNoSandbox,
+diff --git a/content/public/common/content_switches.cc b/content/public/common/content_switches.cc
+index 2ad794823d..fc80e9b09c 100644
+--- a/content/public/common/content_switches.cc
++++ b/content/public/common/content_switches.cc
+@@ -926,6 +926,9 @@ const char kEnableAggressiveDOMStorageFlushing[] =
+ // Enable indication that browser is controlled by automation.
+ const char kEnableAutomation[] = "enable-automation";
+ 
++// ShadowEdge fingerprint portrait as base64-encoded JSON.
++const char kShadowEdgeFingerprint[] = "shadowedge-fingerprint";
++
+ #if BUILDFLAG(IS_IOS)
+ // For mobile devices, tests should include a viewport meta tag to specify page
+ // dimension adjustments. Omitting the tag can lead to automatic resizing to
+diff --git a/content/public/common/content_switches.h b/content/public/common/content_switches.h
+index 16ad0ce01f..af04ccc7e2 100644
+--- a/content/public/common/content_switches.h
++++ b/content/public/common/content_switches.h
+@@ -98,6 +98,9 @@ extern const char kDisable2dCanvasClipAntialiasing[];
+ CONTENT_EXPORT extern const char kEnableAggressiveDOMStorageFlushing[];
+ CONTENT_EXPORT extern const char kEnableAutomation[];
+ CONTENT_EXPORT extern const char kEnableBlinkFeatures[];
++// ShadowEdge fingerprint portrait as base64-encoded JSON. Parsed and
++// validated in the browser process; an invalid value aborts startup.
++CONTENT_EXPORT extern const char kShadowEdgeFingerprint[];
+ CONTENT_EXPORT extern const char kEnableCaretBrowsing[];
+ CONTENT_EXPORT extern const char kEnableDisplayList2dCanvas[];
+ CONTENT_EXPORT extern const char kEnableExperimentalCookieFeatures[];

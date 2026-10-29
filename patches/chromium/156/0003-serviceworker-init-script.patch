@@ -1,0 +1,114 @@
+diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
+index 2ae005d8e9..3801b654b5 100644
+--- a/content/browser/browser_main_loop.cc
++++ b/content/browser/browser_main_loop.cc
+@@ -523,6 +523,14 @@ void BrowserMainLoop::Init() {
+           << "FATAL: --shadowedge-fingerprint is not a base64-encoded JSON "
+              "object; refusing to start";
+     }
++    if (command_line.HasSwitch(switches::kShadowEdgeInitScript)) {
++      std::string script;
++      CHECK(base::Base64Decode(
++          command_line.GetSwitchValueASCII(switches::kShadowEdgeInitScript),
++          &script, base::Base64DecodePolicy::kForgiving))
++          << "FATAL: --shadowedge-init-script is not valid base64; "
++             "refusing to start";
++    }
+   }
+ 
+   if (parameters_.startup_data) {
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 793da7ee4d..3f910fb827 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3866,6 +3866,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       // ShadowEdge: the fingerprint portrait must reach every renderer
+       // process (pages, dedicated/shared/service workers alike).
+       switches::kShadowEdgeFingerprint,
++      switches::kShadowEdgeInitScript,
+       sandbox::policy::switches::kDisableLandlockSandbox,
+       sandbox::policy::switches::kDisableSeccompFilterSandbox,
+       sandbox::policy::switches::kNoSandbox,
+diff --git a/content/public/common/content_switches.cc b/content/public/common/content_switches.cc
+index fc80e9b09c..1a2dbaf1c1 100644
+--- a/content/public/common/content_switches.cc
++++ b/content/public/common/content_switches.cc
+@@ -929,6 +929,9 @@ const char kEnableAutomation[] = "enable-automation";
+ // ShadowEdge fingerprint portrait as base64-encoded JSON.
+ const char kShadowEdgeFingerprint[] = "shadowedge-fingerprint";
+ 
++// ShadowEdge JS init script as base64; consumed in Blink worker scopes.
++const char kShadowEdgeInitScript[] = "shadowedge-init-script";
++
+ #if BUILDFLAG(IS_IOS)
+ // For mobile devices, tests should include a viewport meta tag to specify page
+ // dimension adjustments. Omitting the tag can lead to automatic resizing to
+diff --git a/content/public/common/content_switches.h b/content/public/common/content_switches.h
+index af04ccc7e2..b6525cb8e3 100644
+--- a/content/public/common/content_switches.h
++++ b/content/public/common/content_switches.h
+@@ -101,6 +101,9 @@ CONTENT_EXPORT extern const char kEnableBlinkFeatures[];
+ // ShadowEdge fingerprint portrait as base64-encoded JSON. Parsed and
+ // validated in the browser process; an invalid value aborts startup.
+ CONTENT_EXPORT extern const char kShadowEdgeFingerprint[];
++// ShadowEdge JS init script (base64-encoded), evaluated by the kernel in
++// ServiceWorker global scopes before the worker's own script runs.
++CONTENT_EXPORT extern const char kShadowEdgeInitScript[];
+ CONTENT_EXPORT extern const char kEnableCaretBrowsing[];
+ CONTENT_EXPORT extern const char kEnableDisplayList2dCanvas[];
+ CONTENT_EXPORT extern const char kEnableExperimentalCookieFeatures[];
+diff --git a/third_party/blink/renderer/core/workers/worker_global_scope.cc b/third_party/blink/renderer/core/workers/worker_global_scope.cc
+index 32c00e338a..9c9c487a83 100644
+--- a/third_party/blink/renderer/core/workers/worker_global_scope.cc
++++ b/third_party/blink/renderer/core/workers/worker_global_scope.cc
+@@ -27,7 +27,10 @@
+ 
+ #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
+ 
++#include "base/base64.h"
++#include "base/command_line.h"
+ #include "base/memory/scoped_refptr.h"
++#include "base/no_destructor.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/trace_event/typed_macros.h"
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+@@ -763,6 +766,39 @@ void WorkerGlobalScope::RunWorkerScript() {
+       task_attribution_resource_timing_scope =
+           SetTaskStateVariable(resource_timing_context, GetExecutionContext());
+     }
++    // ShadowEdge: ServiceWorker global scopes cannot be reached by
++    // renderer-level init scripts; evaluate the kernel-provided init script
++    // here so fingerprint overrides live before the worker's own code runs.
++    // Blink cannot depend on //content, so the switch name is kept as a local
++    // literal mirroring content::switches::kShadowEdgeInitScript.
++    if (IsServiceWorkerGlobalScope()) {
++      static const base::NoDestructor<std::string> shadowedge_init_script([] {
++        const base::CommandLine& cmd = *base::CommandLine::ForCurrentProcess();
++        if (!cmd.HasSwitch("shadowedge-init-script"))
++          return std::string();
++        std::string decoded;
++        if (!base::Base64Decode(cmd.GetSwitchValueASCII("shadowedge-init-script"),
++                                &decoded, base::Base64DecodePolicy::kForgiving))
++          return std::string();
++        return decoded;
++      }());
++      if (!shadowedge_init_script->empty()) {
++        v8::Isolate* isolate = script_state->GetIsolate();
++        ScriptState::Scope script_scope(script_state);
++        v8::Local<v8::Context> v8_context = script_state->GetContext();
++        v8::TryCatch try_catch(isolate);
++        v8::Local<v8::String> source =
++            v8::String::NewFromUtf8(isolate, shadowedge_init_script->data(),
++                                    v8::NewStringType::kNormal,
++                                    static_cast<int>(shadowedge_init_script->size()))
++                .ToLocalChecked();
++        v8::Local<v8::Script> compiled;
++        // 注入失败不阻断 SW 安装：宁可裸奔也不破坏站点功能（可观测性靠探针）。
++        if (v8::Script::Compile(v8_context, source).ToLocal(&compiled))
++          std::ignore = compiled->Run(v8_context);
++      }
++    }
++
+     ScriptEvaluationResult result =
+         std::move(worker_script_)
+             ->RunScriptOnScriptStateAndReturnValue(script_state);

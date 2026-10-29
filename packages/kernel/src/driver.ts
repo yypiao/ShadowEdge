@@ -36,6 +36,8 @@ export interface RunningInstance {
   pid: number;
   wsEndpoint?: string;
   startedAt: string;
+  /** 实际承载内核（回退时必须显式标记，见 KERNEL_PATCH_PLAN §5）。 */
+  kernelUsed?: string;
   close(): Promise<void>;
 }
 

@@ -140,7 +140,9 @@ UA / Client Hints、平台 / 语言 / 硬件合理性、字体与 OS 匹配、�
 其中 C14 `canvasNoiseOn2d()` 会校验 `toDataURL.toString()` 长度必须为 38/42，并读取 14 个纯色块；
 这两点分别由「命名 toString」与「纯色保护」修复。
 
-**已知边界**：嵌套 Worker（Worker 里再建 Worker）不递归注入；ServiceWorker 仍通过屏蔽迫使探针回退；
+**已知边界**：嵌套 Worker（Worker 里再建 Worker）不递归注入；
+ServiceWorker 在 chromium-cdp 内核驱动下已由补丁 0003 注入覆盖（探针矩阵含 4 项 SW 检查）；
+Patchright 驱动下仍通过屏蔽迫使探针回退；
 `Function.prototype.toString.call(Worker/Blob)` 仍是匿名原生串（紫鸟为带名原生串），
 全局补丁 `Function.prototype.toString` 会让 CreepJS stealth 升到 20%，已放弃 JS 层方案，留待 C++ 内核层；
 静态住宅/ISP 代理仍会被 Pixelscan 单独标为 `Proxy detected`，这属于代理检测而非指纹伪装失败；
