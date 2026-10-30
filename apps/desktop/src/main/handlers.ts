@@ -10,13 +10,14 @@ import type {
   Uuid,
 } from '@shadowedge/core';
 import { ShadowEdgeError } from '@shadowedge/core';
-import { auditFingerprint, deriveGeoOverrides, generateFingerprint } from '@shadowedge/fingerprint';
-import { BrowserKernel } from '@shadowedge/kernel';
+import { auditFingerprint, CURRENT_CATALOG_VERSION, deriveGeoOverrides, generateFingerprint } from '@shadowedge/fingerprint';
+import { BrowserKernel, ChromiumCdpDriver } from '@shadowedge/kernel';
 import { ProxyManager } from '@shadowedge/proxy';
 import { RpaEngine } from '@shadowedge/rpa';
 import type { ProfileRepository } from './services/profile-repository.js';
 import type { ProxyRepository } from './services/proxy-repository.js';
 import type { AuditLog, SessionRepository } from './services/local-records.js';
+import type { KernelRuntimeService } from './services/kernel-runtime.js';
 import { runLaunchGate } from './services/launch-gate.js';
 
 export interface HandlerDeps {
@@ -26,6 +27,7 @@ export interface HandlerDeps {
   proxyRepo: ProxyRepository;
   audit: AuditLog;
   sessions: SessionRepository;
+  kernelRuntime: KernelRuntimeService;
 }
 
 /** 主进程 IPC 处理器集合。类型与 IpcApi 严格对齐，新增通道会立即产生编译错误。 */
@@ -35,6 +37,7 @@ export type Handlers = {
 
 export function createHandlers(deps: HandlerDeps): Handlers {
   const kernel = new BrowserKernel({
+    drivers: [new ChromiumCdpDriver(deps.kernelRuntime.driverOptions())],
     resolveProxy: async (proxyId) => {
       const credential = deps.proxyRepo.get(proxyId);
       if (!credential) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${proxyId} 不存在`);
@@ -126,7 +129,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         platformTag: input.platformTag,
         kernel: 'chromium-patched',
         // 缺省跟随宿主机平台（紫鸟式同系微调哲学）；显式指定则尊重用户选择
-        fingerprint: generateFingerprint({ seed, platform: input.platform ?? 'host', overrides }),
+        fingerprint: generateFingerprint({ seed, platform: input.platform ?? 'host', overrides, catalogVersion: CURRENT_CATALOG_VERSION }),
         proxyId: input.proxyId,
         ownerId: 'local-user',
         sharedWith: [],
@@ -184,9 +187,20 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     },
 
     'fingerprint:preview': async ({ seed, proxyId, platform, overrides }) =>
-      generateFingerprint({ seed, platform: platform ?? 'host', overrides: await geoFollowOverrides(proxyId, overrides) }),
+      generateFingerprint({ seed, platform: platform ?? 'host', overrides: await geoFollowOverrides(proxyId, overrides), catalogVersion: CURRENT_CATALOG_VERSION }),
 
     'fingerprint:audit': async (id) => auditFingerprint(requireProfile(id).fingerprint),
+
+    'kernel:getStatus': async () => deps.kernelRuntime.getStatus(),
+    'kernel:configure': async (input) => {
+      const status = deps.kernelRuntime.configure(input);
+      deps.audit.record('kernel:configure', 'kernel', undefined, {
+        source: status.source,
+        available: status.available,
+        fallbackPolicy: status.fallbackPolicy,
+      });
+      return status;
+    },
 
     'proxy:list': async () => deps.proxyRepo.list(),
     'proxy:upsert': async (input) => {

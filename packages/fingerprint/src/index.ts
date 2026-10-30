@@ -1,6 +1,7 @@
 import type { FingerprintProfile, Platform } from '@shadowedge/core';
 import { SeededRandom } from '@shadowedge/core';
 import { checkFingerprintConsistency } from './consistency.js';
+import { LEGACY_CATALOG_VERSION, loadFingerprintCatalog } from './catalog-store.js';
 
 /* ------------------------------------------------------------------ */
 /*  指纹画像生成器：基于 seed 确定性产出所有指纹维度。               */
@@ -184,6 +185,10 @@ export interface FingerprintGeneratorOptions {
   platform?: Platform | 'host';
   overrides?: Partial<FingerprintProfile>;
   db?: Partial<FingerprintDatabase>;
+  /** 显式选择不可变素材快照；版本化调用会替换默认 UA 池而非追加。 */
+  catalogVersion?: string;
+  /** 审计旧 host 画像时重放同平台 GPU 过滤；新生成通常无需显式传入。 */
+  enforcePlatformGpu?: boolean;
 }
 
 export interface FingerprintAuditOptions {
@@ -194,11 +199,15 @@ export interface FingerprintAuditOptions {
 }
 
 export function generateFingerprint(options: FingerprintGeneratorOptions): FingerprintProfile {
-  const { seed, overrides, db: dbOverrides } = options;
+  const { seed, overrides } = options;
+  const catalogVersion = options.catalogVersion ?? (options.db ? 'custom' : LEGACY_CATALOG_VERSION);
+  const versionedDb = options.catalogVersion && !options.db
+    ? loadFingerprintCatalog(options.catalogVersion).db
+    : options.db;
   const followHost = options.platform === 'host';
   const platform = resolvePlatform(options.platform ?? 'windows');
   const rng = new SeededRandom(seed);
-  const db = mergeDb(dbOverrides);
+  const db = mergeDb(versionedDb, options.catalogVersion !== undefined && options.catalogVersion !== 'custom');
 
   const ua = rng.pick(db.userAgents[platform]);
   // Client Hints 必须由 UA 派生：UA 与 UA-CH 互相打脸是最常见的判定点
@@ -206,7 +215,9 @@ export function generateFingerprint(options: FingerprintGeneratorOptions): Finge
   const uaData = syncUserAgentData(ua, rng.pick(db.uaDatas[platform]));
   const screen = rng.pick(db.screens);
   // 跟随宿主机时 GPU 限定同系（Mac 不出 NVIDIA D3D11）；显式平台维持旧候选集防历史环境漂移
-  const webglPool = followHost
+  const enforcePlatformGpu = options.enforcePlatformGpu ?? (followHost ||
+    (options.catalogVersion !== undefined && ![LEGACY_CATALOG_VERSION, 'custom'].includes(catalogVersion)));
+  const webglPool = enforcePlatformGpu
     ? db.webglVendors.filter((g) => !g.platforms || g.platforms.includes(platform))
     : db.webglVendors;
   // 平台素材缺失时（如 linux）回退全量，宁可跨系也不空集
@@ -214,6 +225,7 @@ export function generateFingerprint(options: FingerprintGeneratorOptions): Finge
   const fontPool = db.fonts[platform];
 
   const profile: FingerprintProfile = {
+    catalogVersion,
     seed,
     platform,
     userAgent: ua,
@@ -256,7 +268,10 @@ export function generateFingerprint(options: FingerprintGeneratorOptions): Finge
     disabledFeatures: [],
   };
 
-  return overrides ? applyOverrides(profile, overrides) : profile;
+  const result = overrides ? applyOverrides(profile, overrides) : profile;
+  // catalogVersion 由生成入口控制，不能被业务 overrides 偷换，否则审计会加载错误快照。
+  result.catalogVersion = catalogVersion;
+  return result;
 }
 
 /**
@@ -284,7 +299,7 @@ export function syncUserAgentData(
   };
 }
 
-function mergeDb(overrides?: Partial<FingerprintDatabase>): FingerprintDatabase {
+function mergeDb(overrides?: Partial<FingerprintDatabase>, replaceUaPools = false): FingerprintDatabase {
   if (!overrides) return DEFAULT_DB;
   const merged: FingerprintDatabase = {
     userAgents: { ...DEFAULT_DB.userAgents },
@@ -295,12 +310,16 @@ function mergeDb(overrides?: Partial<FingerprintDatabase>): FingerprintDatabase 
   };
   if (overrides.userAgents) {
     for (const key of Object.keys(overrides.userAgents) as Platform[]) {
-      merged.userAgents[key] = [...(merged.userAgents[key] ?? []), ...overrides.userAgents[key]!];
+      merged.userAgents[key] = replaceUaPools
+        ? [...overrides.userAgents[key]!]
+        : [...(merged.userAgents[key] ?? []), ...overrides.userAgents[key]!];
     }
   }
   if (overrides.uaDatas) {
     for (const key of Object.keys(overrides.uaDatas) as Platform[]) {
-      merged.uaDatas[key] = [...(merged.uaDatas[key] ?? []), ...overrides.uaDatas[key]!];
+      merged.uaDatas[key] = replaceUaPools
+        ? [...overrides.uaDatas[key]!]
+        : [...(merged.uaDatas[key] ?? []), ...overrides.uaDatas[key]!];
     }
   }
   if (overrides.screens) merged.screens = [...merged.screens, ...overrides.screens];
@@ -349,19 +368,26 @@ export function auditFingerprint(
   issues: string[];
 } {
   const issues: string[] = [];
-  const regenerated = generateFingerprint({
+  const regenerateOptions = {
     seed: current.seed,
     platform: current.platform,
     db: options.db,
+    catalogVersion: current.catalogVersion ?? LEGACY_CATALOG_VERSION,
     overrides: options.overrides,
-  });
-  if (regenerated.userAgent !== current.userAgent) issues.push('userAgent 与 seed 不匹配');
+  };
+  // host 生成与显式平台生成在历史版本中使用不同 GPU 候选池。两种都按画像内
+  // 固定平台重放，不读取当前审计机器，兼顾跨机器确定性与旧 host 环境兼容。
+  const regenerated = [
+    generateFingerprint(regenerateOptions),
+    generateFingerprint({ ...regenerateOptions, enforcePlatformGpu: true }),
+  ];
+  if (!regenerated.some((fp) => fp.userAgent === current.userAgent)) issues.push('userAgent 与 seed 不匹配');
   const syncedUaData = syncUserAgentData(current.userAgent, current.userAgentData);
   if (JSON.stringify(syncedUaData) !== JSON.stringify(current.userAgentData)) {
     issues.push('userAgentData 品牌/版本与 userAgent 不一致');
   }
-  if (regenerated.screen.width !== current.screen.width) issues.push('屏幕宽度与 seed 不匹配');
-  if (regenerated.webgl.vendor !== current.webgl.vendor) issues.push('WebGL vendor 与 seed 不匹配');
+  if (!regenerated.some((fp) => fp.screen.width === current.screen.width)) issues.push('屏幕宽度与 seed 不匹配');
+  if (!regenerated.some((fp) => fp.webgl.vendor === current.webgl.vendor)) issues.push('WebGL vendor 与 seed 不匹配');
   const crossCheck = checkFingerprintConsistency(current, {
     allowedFonts: options.db?.fonts?.[current.platform] ?? DEFAULT_DB.fonts[current.platform],
   });
@@ -391,5 +417,10 @@ export type {
   FingerprintCatalog,
   FingerprintCatalogEntry,
 } from './catalog.js';
+export {
+  CURRENT_CATALOG_VERSION,
+  LEGACY_CATALOG_VERSION,
+  loadFingerprintCatalog,
+} from './catalog-store.js';
 export { deriveGeoOverrides } from './geo-follow.js';
 export type { GeoInput } from './geo-follow.js';

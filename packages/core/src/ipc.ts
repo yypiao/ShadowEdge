@@ -1,6 +1,8 @@
 import type {
   BrowserProfile,
   FingerprintProfile,
+  KernelRuntimeConfig,
+  KernelRuntimeStatus,
   LaunchOptions,
   LaunchResult,
   Platform,
@@ -35,6 +37,9 @@ export interface IpcApi {
   /** 预览画像；传 proxyId 时时区/语言/地理自动跟随代理出口（T9），显式 overrides 优先。 */
   'fingerprint:preview': (input: { seed: string; proxyId?: Uuid; platform?: Platform | 'host'; overrides?: Partial<FingerprintProfile> }) => FingerprintProfile;
   'fingerprint:audit': (id: Uuid) => { consistent: boolean; issues: string[] };
+
+  'kernel:getStatus': () => KernelRuntimeStatus;
+  'kernel:configure': (input: KernelRuntimeConfig) => KernelRuntimeStatus;
 
   'proxy:list': () => ProxyCredential[];
   'proxy:upsert': (input: ProxyCredential & { password?: string }) => ProxyCredential;
@@ -76,6 +81,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'profile:close',
   'fingerprint:preview',
   'fingerprint:audit',
+  'kernel:getStatus',
+  'kernel:configure',
   'proxy:list',
   'proxy:upsert',
   'proxy:check',

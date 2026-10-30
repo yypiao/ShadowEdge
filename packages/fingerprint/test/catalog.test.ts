@@ -70,3 +70,52 @@ describe('UA/UA-CH catalog', () => {
     expect(() => parseChromeStableVersion({ channels: {} })).toThrow();
   });
 });
+
+describe('画像绑定不可变 catalog 快照', () => {
+  it('默认历史画像与显式 131 快照逐字节一致', () => {
+    for (const seed of ['legacy-a', 'legacy-b', 'legacy-c']) {
+      const historical = generateFingerprint({ seed, platform: 'host' });
+      const restored = generateFingerprint({ seed, platform: 'host', catalogVersion: '131.0.6778.86' });
+      expect(historical.catalogVersion).toBe('131.0.6778.86');
+      expect(JSON.stringify(restored)).toBe(JSON.stringify(historical));
+      expect(auditFingerprint(historical).consistent).toBe(true);
+    }
+  });
+
+  it('新画像使用 156 且可按自身版本审计，不影响 131 画像', async () => {
+    const { CURRENT_CATALOG_VERSION } = await import('../src/index.js');
+    const current = generateFingerprint({ seed: 'catalog-seed', platform: 'host', catalogVersion: CURRENT_CATALOG_VERSION });
+    const historical = generateFingerprint({ seed: 'catalog-seed', platform: 'host' });
+    expect(current.userAgent).toContain('Chrome/156.0.0.0');
+    expect(current.userAgentData.fullVersion).toBe('156.0.8078.73');
+    expect(current.catalogVersion).toBe(CURRENT_CATALOG_VERSION);
+    expect(auditFingerprint(current).consistent).toBe(true);
+    expect(historical.userAgent).not.toBe(current.userAgent);
+    expect(auditFingerprint(historical).consistent).toBe(true);
+  });
+
+  it('缺失快照明确报错，生成与审计均不静默回退', () => {
+    expect(() => generateFingerprint({ seed: 'missing', catalogVersion: '999.0.0.0' }))
+      .toThrowError(expect.objectContaining({ code: 'E_CATALOG_SNAPSHOT_MISSING' }));
+    const current = generateFingerprint({ seed: 'missing', catalogVersion: '156.0.8078.73' });
+    expect(() => auditFingerprint({ ...current, catalogVersion: '999.0.0.0' }))
+      .toThrowError(expect.objectContaining({ code: 'E_CATALOG_SNAPSHOT_MISSING' }));
+  });
+
+  it('业务 overrides 不能偷换 catalog 版本', () => {
+    const current = generateFingerprint({
+      seed: 'override-version',
+      catalogVersion: '156.0.8078.73',
+      overrides: { catalogVersion: '999.0.0.0' },
+    });
+    expect(current.catalogVersion).toBe('156.0.8078.73');
+  });
+});
+
+it('156 显式平台也不会生成跨系 GPU', () => {
+  for (const seed of ['legacy-a', 'legacy-b', 'legacy-c', 'catalog-seed']) {
+    const fp = generateFingerprint({ seed, platform: 'macos', catalogVersion: '156.0.8078.73' });
+    expect(fp.webgl.renderer).not.toContain('D3D11');
+    expect(auditFingerprint(fp).consistent).toBe(true);
+  }
+});

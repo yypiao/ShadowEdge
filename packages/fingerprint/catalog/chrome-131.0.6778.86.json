@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "channel": "stable",
+  "chromeVersion": "131.0.6778.86",
+  "generatedAt": "2026-10-22T00:00:00.000Z",
+  "source": "ShadowEdge DEFAULT_DB immutable snapshot",
+  "platforms": {
+    "windows": [
+      {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "userAgentData": {
+          "brands": [
+            {
+              "brand": "Chromium",
+              "version": "131"
+            },
+            {
+              "brand": "Google Chrome",
+              "version": "131"
+            },
+            {
+              "brand": "Not?A_Brand",
+              "version": "99"
+            }
+          ],
+          "platform": "Windows",
+          "platformVersion": "15.0.0",
+          "architecture": "x86",
+          "bitness": "64",
+          "model": "",
+          "fullVersion": "131.0.6778.86",
+          "mobile": false
+        }
+      },
+      {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+        "userAgentData": {
+          "brands": [
+            {
+              "brand": "Chromium",
+              "version": "131"
+            },
+            {
+              "brand": "Google Chrome",
+              "version": "131"
+            },
+            {
+              "brand": "Not?A_Brand",
+              "version": "99"
+            }
+          ],
+          "platform": "Windows",
+          "platformVersion": "15.0.0",
+          "architecture": "x86",
+          "bitness": "64",
+          "model": "",
+          "fullVersion": "131.0.6778.86",
+          "mobile": false
+        }
+      }
+    ],
+    "macos": [
+      {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "userAgentData": {
+          "brands": [
+            {
+              "brand": "Chromium",
+              "version": "131"
+            },
+            {
+              "brand": "Google Chrome",
+              "version": "131"
+            },
+            {
+              "brand": "Not?A_Brand",
+              "version": "99"
+            }
+          ],
+          "platform": "macOS",
+          "platformVersion": "14_6",
+          "architecture": "x86",
+          "bitness": "64",
+          "model": "",
+          "fullVersion": "131.0.6778.86",
+          "mobile": false
+        }
+      },
+      {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "userAgentData": {
+          "brands": [
+            {
+              "brand": "Chromium",
+              "version": "131"
+            },
+            {
+              "brand": "Google Chrome",
+              "version": "131"
+            },
+            {
+              "brand": "Not?A_Brand",
+              "version": "99"
+            }
+          ],
+          "platform": "macOS",
+          "platformVersion": "14_6",
+          "architecture": "x86",
+          "bitness": "64",
+          "model": "",
+          "fullVersion": "131.0.6778.86",
+          "mobile": false
+        }
+      }
+    ],
+    "linux": [
+      {
+        "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "userAgentData": {
+          "brands": [
+            {
+              "brand": "Chromium",
+              "version": "131"
+            },
+            {
+              "brand": "Google Chrome",
+              "version": "131"
+            },
+            {
+              "brand": "Not?A_Brand",
+              "version": "99"
+            }
+          ],
+          "platform": "Linux",
+          "platformVersion": "",
+          "architecture": "x86",
+          "bitness": "64",
+          "model": "",
+          "fullVersion": "131.0.6778.86",
+          "mobile": false
+        }
+      }
+    ]
+  }
+}

@@ -282,6 +282,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 > T13 → T14 → T15 按序合并；T16 是独立研究项可并行；T17/T18 在 T11 之后启动。
 >
 > **通用约束**（每张卡都适用）：
+>
 > - 补丁只读画像，禁止 `Math.random()` / `Date.now()` 参与指纹值（AGENTS.md §4 同源要求）。
 > - Chromium 源码与构建产物不进仓库；主仓库只存补丁、构建参数、校验脚本。
 > - 补丁内不得引入网络请求、遥测或账号数据。
@@ -293,6 +294,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 ## T11 — Chromium 构建流水线（一切内核工作的前置）✅ dev 链路完成（2026-10-29）
 
 > 进展：
+>
 > - 已落地：`chromium.version`（锁定 156.0.8078.73 stable）、`scripts/build-chromium.sh`
 >   （dev/release 双模式、tag 锁定校验、补丁全量 --check 后应用）、`scripts/verify-kernel.sh`
 >   （版本串 + headless CDP 冒烟）、`patches/chromium/156/README.md`、`docs/KERNEL_BUILD.md`。
@@ -301,7 +303,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 > - 网络：googlesource 需走 `http://127.0.0.1:7897` 代理（git 与 cipd/gsutil 都要）。
 > - 源码拉取中（fetch --no-history，~35GB）。
 > - ~~阻塞项：无完整 Xcode~~ 已解决：Xcode 27.1 已安装；用 `DEVELOPER_DIR=/Applications/
->   Xcode.app/Contents/Developer` 环境变量切换（无需 sudo 改 xcode-select）。
+Xcode.app/Contents/Developer` 环境变量切换（无需 sudo 改 xcode-select）。
 > - 踩坑：Xcode 27 的 Metal Toolchain 是独立按需组件，ANGLE Metal shader 编译报
 >   `missing Metal Toolchain`；修复 `xcodebuild -downloadComponent MetalToolchain`（839MB）。
 > - 源码已锁定 `156.0.8078.73`（commit 2f9a1109…，已回填 chromium.version）；
@@ -334,7 +336,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 **16GB 内存策略**（当前构建机只有 16GB，实测可行但要分两档）：
 
 - **dev 模式（日常补丁迭代，本机跑）**：`is_debug=false is_component_build=true
-  symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成上百个
+symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成上百个
   小 dylib 链接，单任务内存峰值从 ~20GB 降到 ~2GB，代价是产物启动慢、体积大，
   但补丁功能验证完全够用。并发限制 `autoninja -j6`（M 系 8–10 核时），
   编译期关掉浏览器/Docker 等吃内存应用。
@@ -356,7 +358,23 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 
 ---
 
-## T12 — catalog 版本写入 FingerprintProfile（独立小任务，先做）
+## T12 — catalog 版本写入 FingerprintProfile ✅（2026-10-31）
+
+> 已落地 131/156 不可变快照与 `catalog-store`，画像生成、审计、桌面及 server 新建环境
+> 均按版本取素材；业务 overrides 不能修改版本，缺失/损坏快照明确抛
+> `E_CATALOG_SNAPSHOT_MISSING`。DB migration id=2 给老环境回填 131 并写审计日志，
+> 新环境固定为与内核一致的 156。桌面 IPC 创建 → SQLite → 重启恢复 → 审计全链路有测试。
+>
+> 真机验收：131、156 直连探针分别 **32/32**；156 + os1 全量 **40/40**，
+> CreepJS **0% headless / 0% stealth**。报告：
+> `kernel-131-catalog-1793376469745.json`、`kernel-156-catalog-1793376482008.json`、
+> `kernel-156-catalog-os1-1793377130858.json`。
+>
+> 同期完成桌面内核配置 UI、原子持久化、严格禁止回退模式及实际 `kernelUsed` 展示。
+> 多环境真实内核验收通过：并行 Cookie/localStorage/指纹隔离、os1+t1 双代理出口隔离、
+> 同环境连续重启 20 次数据与画像稳定（65.3 秒）。测试见
+> `apps/desktop/test/profile-isolation-smoke.test.ts`。os2 当前 SOCKS5 认证失败，
+> 需更新外部测试凭据；没有用跳过测试掩盖该外部状态。
 
 **背景**：T10 遗留项。catalog 按「只增不改」滚动新快照后，`auditFingerprint()`
 默认加载最新素材，对历史环境复现必然误报漂移。历史环境必须记录自己出生时的 catalog 版本。
@@ -364,7 +382,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 **产出**：
 
 - `packages/core/src/types.ts`：`FingerprintProfile` 增加 `catalogVersion: string`。
-- `apps/desktop/src/main/services/db.ts`：新增迁移，老数据回填为当前 catalog 版本
+- `apps/desktop/src/main/services/db.ts`：新增迁移，老数据回填为历史 131 catalog 版本
   （回填值写入迁移日志，便于事后核对）。
 - `profile-repository.ts`：创建环境时写入当前 catalog 版本。
 - `packages/fingerprint`：生成与审计链路默认按画像记录的版本加载对应快照；
@@ -379,6 +397,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 ## T13 — 内核补丁 P0+P1：画像入口与自动化痕迹 ✅ 驱动链路完成（2026-10-29）
 
 > 已完成：
+>
 > - 内核补丁 `0001`（`--shadowedge-fingerprint` 开关、校验拒启、renderer 下发）+
 >   `0002`（webdriver C++ 层恒 false）。冒烟：垃圾画像 FATAL 拒启 / 合法画像正常 /
 >   plugins 原生 5 项结构（无需补丁）。
@@ -392,6 +411,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 >   `SHADOWEDGE_KERNEL_EXECUTABLE` 切换内核。报告 `kernel-156-direct-1793254219171.json`。
 >
 > 遗留：
+>
 > 1. ~~带代理全量回归缺 secrets~~ 已恢复并跑通（见 T14 全量基线）。
 > 2. 「无画像参数裸启拒绝」属 T17 启动令牌范畴，0001 只拒绝非法画像。
 
@@ -422,6 +442,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 > 开关名在 Blink 侧用本地字面量镜像（注释已说明）。
 >
 > 落地：
+>
 > - 补丁 `0003-serviceworker-init-script.patch`（开关+下发+base64 校验+SW 求值）。
 > - `buildInjectionScript(fp, { serviceWorker: 'shield'|'kernel' })`：kernel 模式不再屏蔽 SW；
 >   chromium-cdp 驱动传 kernel 模式并携带 init-script 开关；Patchright 维持 shield。
@@ -461,9 +482,10 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 > 已完成 0004/0005，补丁序列 0001–0005 可复现（按序 apply 零冲突）；
 > 最终 os1 全量探针 **31/31**（`kernel-156-t15-final-1793282828077.json`），
 > CreepJS **0% headless / 0% stealth**，Pixelscan Browser/Fingerprint 与非代理项通过：
+>
 > - **0004 Screen+WebGL**：新增 `platform/shadowedge_fingerprint.h`（header-only 画像访问器
->   + Fnv1a）。Screen 五值 + colorDepth 返回画像；WebGL vendor/renderer 返回画像
->   （Worker OffscreenCanvas 同分支，天然跨世界一致，比 JS 包装更彻底）。
+>   - Fnv1a）。Screen 五值 + colorDepth 返回画像；WebGL vendor/renderer 返回画像
+>     （Worker OffscreenCanvas 同分支，天然跨世界一致，比 JS 包装更彻底）。
 > - **0005 Audio**：getChannelData 的 IDL 入口重载叠加 xorshift 微噪声。
 >   同 156 内核下 JS 与 C++ 注入 audioFp **逐值一致**（172.67165166332416）。
 > - JS 让位机制：`InjectionOptions.coveredByKernel`，chromium-cdp 驱动声明
@@ -536,7 +558,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 **产出**：
 
 - 打包：`scripts/package-kernel.sh` 产出 `shadowedge-kernel_<ver>_<os>_<arch>.zip`
-  + 清单（文件级 sha256 + 总签名）。
+  - 清单（文件级 sha256 + 总签名）。
 - 更新器（desktop 主进程）：下载 → 校验签名与哈希 → 解压到
   `Application Support/shadowedge/kernels/<ver>/` → 原子切换软链；多版本并存，
   支持按环境固定版本与全局回滚。

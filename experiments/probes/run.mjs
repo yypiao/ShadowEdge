@@ -5,6 +5,7 @@
  * 用法：
  *   node experiments/probes/run.mjs --seed demo-1 --proxy os1 --label baseline
  *   node experiments/probes/run.mjs --seed demo-1            # 直连（仅本地采集，跳过 CreepJS）
+ *   node experiments/probes/run.mjs --seed demo-1 --catalog-version 156.0.8078.73
  *
  * 产出：experiments/probes/results/<label>-<ts>.json + 控制台摘要
  */
@@ -31,6 +32,7 @@ const args = Object.fromEntries(
 const SEED = args.seed ?? 'probe-demo';
 const LABEL = args.label ?? new Date().toISOString().slice(0, 10);
 const PROXY_ID = args.proxy; // experiments/.secrets/test-proxies.json 里的 id
+const CATALOG_VERSION = args['catalog-version'];
 const UPSTREAM_RAW =
   args.upstream ?? process.env.SHADOWEDGE_PROBE_UPSTREAM ?? 'http://127.0.0.1:7897';
 const FAIL_UNDER = Number(
@@ -115,9 +117,14 @@ if (PROXY_ID) {
 // ---- 2. 指纹与启动（复刻内核配置）----
 const overrides = expectedGeo ? deriveGeoOverrides(expectedGeo) : undefined;
 // 与新建环境默认值一致：跟随宿主机平台，避免探针自身制造跨平台矛盾。
-const fp = generateFingerprint({ seed: SEED, platform: 'host', overrides });
+const fp = generateFingerprint({
+  seed: SEED,
+  platform: 'host',
+  overrides,
+  ...(CATALOG_VERSION ? { catalogVersion: CATALOG_VERSION } : {}),
+});
 const clientHints = buildClientHintHeaders(fp);
-log('画像:', fp.platform, fp.timezone, fp.languages[0]);
+log('画像:', fp.catalogVersion, fp.platform, fp.timezone, fp.languages[0]);
 
 // 设 SHADOWEDGE_KERNEL_EXECUTABLE 时用自研内核跑探针（T13 验收口径）：
 // 追加 --shadowedge-fingerprint 画像入口，与 ChromiumCdpDriver 行为一致。
@@ -154,7 +161,14 @@ const context = await chromium.launchPersistentContext(join(HERE, '.probe-profil
   permissions: fp.geolocation ? ['geolocation'] : [],
   proxy: relay ? { server: relay.server } : undefined,
 });
-await context.addInitScript({ content: buildInjectionScript(fp, KERNEL_BIN ? { serviceWorker: 'kernel', coveredByKernel: ['screen', 'webgl', 'audio'] } : undefined) });
+await context.addInitScript({
+  content: buildInjectionScript(
+    fp,
+    KERNEL_BIN
+      ? { serviceWorker: 'kernel', coveredByKernel: ['screen', 'webgl', 'audio'] }
+      : undefined,
+  ),
+});
 const page = context.pages()[0] ?? (await context.newPage());
 
 // ---- 3. 本地采集（主世界，裸 CDP）----
@@ -533,15 +547,42 @@ const expectations = [
           'ServiceWorker navigator 无自有属性',
           Array.isArray(swData?.navOwnProps) && swData.navOwnProps.length === 0,
         ],
-        ['Worker 返回带名原生 toString', nativeToString?.worker === 'function Worker() { [native code] }'],
-        ['Blob 返回带名原生 toString', nativeToString?.blob === 'function Blob() { [native code] }'],
-        ['Canvas 返回带名原生 toString', nativeToString?.toDataURL === 'function toDataURL() { [native code] }'],
-        ['未包装原生函数保持原名', nativeToString?.nativeArray === 'function Array() { [native code] }'],
-        ['普通原生 Proxy 保持匿名原生串', nativeToString?.ordinaryNativeProxy === 'function () { [native code] }'],
-        ['普通 JS Proxy 不泄漏源码', nativeToString?.ordinaryJsProxy === 'function () { [native code] }'],
-        ['Object.prototype 污染不能改变普通 Proxy', nativeToString?.prototypePollutedProxy === 'function () { [native code] }'],
-        ['Revoked Proxy 不改变原生行为', nativeToString?.revokedProxy === 'function () { [native code] }'],
-        ['handler 标记不暴露在 Proxy 自有属性', !nativeToString?.workerOwnProperties?.includes('__shadowedge_native_proxy__')],
+        [
+          'Worker 返回带名原生 toString',
+          nativeToString?.worker === 'function Worker() { [native code] }',
+        ],
+        [
+          'Blob 返回带名原生 toString',
+          nativeToString?.blob === 'function Blob() { [native code] }',
+        ],
+        [
+          'Canvas 返回带名原生 toString',
+          nativeToString?.toDataURL === 'function toDataURL() { [native code] }',
+        ],
+        [
+          '未包装原生函数保持原名',
+          nativeToString?.nativeArray === 'function Array() { [native code] }',
+        ],
+        [
+          '普通原生 Proxy 保持匿名原生串',
+          nativeToString?.ordinaryNativeProxy === 'function () { [native code] }',
+        ],
+        [
+          '普通 JS Proxy 不泄漏源码',
+          nativeToString?.ordinaryJsProxy === 'function () { [native code] }',
+        ],
+        [
+          'Object.prototype 污染不能改变普通 Proxy',
+          nativeToString?.prototypePollutedProxy === 'function () { [native code] }',
+        ],
+        [
+          'Revoked Proxy 不改变原生行为',
+          nativeToString?.revokedProxy === 'function () { [native code] }',
+        ],
+        [
+          'handler 标记不暴露在 Proxy 自有属性',
+          !nativeToString?.workerOwnProperties?.includes('__shadowedge_native_proxy__'),
+        ],
       ]
     : [
         // shield 模式：屏蔽是既定回退策略，验证它确实生效

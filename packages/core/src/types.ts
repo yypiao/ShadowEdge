@@ -59,6 +59,8 @@ export interface Member {
 export type NoiseMode = 'off' | 'noise' | 'block' | 'real';
 
 export interface FingerprintProfile {
+  /** 生成此画像的不可变 UA/UA-CH 素材快照版本，审计必须加载同一版本。 */
+  catalogVersion: string;
   /** 画像种子。相同种子必须产出完全一致的指纹，保证环境可复现。 */
   seed: string;
   platform: Platform;
@@ -185,6 +187,21 @@ export interface LaunchOptions {
   /** 忽略代理健康检查强制启动，仅用于排障。 */
   ignoreProxyCheck?: boolean;
   extraArgs?: string[];
+}
+
+export type KernelFallbackPolicy = 'allow-patchright' | 'require-chromium-cdp';
+
+export interface KernelRuntimeConfig {
+  /** 用户显式配置的自研内核可执行文件；缺省时使用环境变量或标准安装目录。 */
+  executablePath?: string;
+  fallbackPolicy: KernelFallbackPolicy;
+}
+
+export interface KernelRuntimeStatus extends KernelRuntimeConfig {
+  /** 本次实际解析到的路径，与 configured executablePath 分开避免覆盖用户配置。 */
+  resolvedExecutablePath?: string;
+  source: 'configured' | 'environment' | 'installed' | 'none';
+  available: boolean;
 }
 
 export interface LaunchResult {

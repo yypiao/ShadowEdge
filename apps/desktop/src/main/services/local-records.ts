@@ -5,7 +5,7 @@ import type { ShadowEdgeDb } from './db.js';
 export class AuditLog {
   constructor(private readonly handle: ShadowEdgeDb) {}
 
-  record(action: string, targetType: 'profile' | 'proxy' | 'session' | 'rpa' | 'sync', targetId?: string, detail?: unknown): void {
+  record(action: string, targetType: 'profile' | 'proxy' | 'session' | 'rpa' | 'sync' | 'kernel', targetId?: string, detail?: unknown): void {
     this.handle.db
       .prepare('INSERT INTO audit_local (at, actor, action, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?, ?)')
       .run(new Date().toISOString(), 'local-user', action, targetType, targetId ?? null, detail === undefined ? null : JSON.stringify(detail));

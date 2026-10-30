@@ -30,6 +30,7 @@ interface Migration {
   id: number;
   name: string;
   sql: string;
+  after?: (db: DatabaseSync) => void;
 }
 
 const MIGRATIONS: Migration[] = [
@@ -102,6 +103,41 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_audit_target ON audit_local(target_type, target_id);
     `,
   },
+  {
+    id: 2,
+    name: 'fingerprint_catalog_version',
+    sql: `ALTER TABLE profiles ADD COLUMN catalog_version TEXT;`,
+    after: (db) => {
+      const rows = allRows<{ id: string; fingerprint: string }>(
+        db,
+        'SELECT id, fingerprint FROM profiles',
+      );
+      const update = db.prepare(
+        'UPDATE profiles SET fingerprint = ?, catalog_version = ? WHERE id = ?',
+      );
+      const log = db.prepare(
+        "INSERT INTO audit_local (at, actor, action, target_type, target_id, detail) VALUES (?, 'system', 'migration:catalog-version', 'profile', ?, ?)",
+      );
+      for (const row of rows) {
+        const value: unknown = JSON.parse(row.fingerprint);
+        if (typeof value !== 'object' || value === null || Array.isArray(value)) continue;
+        const fingerprint = value as Record<string, unknown>;
+        if (typeof fingerprint.catalogVersion === 'string') {
+          update.run(row.fingerprint, fingerprint.catalogVersion, row.id);
+          continue;
+        }
+        const catalogVersion = '131.0.6778.86';
+        fingerprint.catalogVersion = catalogVersion;
+        const serialized = JSON.stringify(fingerprint);
+        update.run(serialized, catalogVersion, row.id);
+        log.run(
+          new Date().toISOString(),
+          row.id,
+          JSON.stringify({ catalogVersion }),
+        );
+      }
+    },
+  },
 ];
 
 function tx(db: DatabaseSync, fn: () => void): void {
@@ -128,6 +164,7 @@ export function openDatabase(path: string): ShadowEdgeDb {
     if (applied.has(m.id)) continue;
     tx(db, () => {
       db.exec(m.sql);
+      m.after?.(db);
       insert.run(m.id, m.name, new Date().toISOString());
     });
   }

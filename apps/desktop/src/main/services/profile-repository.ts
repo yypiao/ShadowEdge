@@ -9,6 +9,7 @@ interface ProfileRow {
   group_id: string | null;
   kernel: string;
   fingerprint: string;
+  catalog_version: string | null;
   proxy_id: string | null;
   owner_id: string;
   shared_with: string;
@@ -29,7 +30,7 @@ function rowToProfile(row: ProfileRow): BrowserProfile {
     platformTag: row.platform_tag ?? undefined,
     groupId: row.group_id ?? undefined,
     kernel: row.kernel as BrowserProfile['kernel'],
-    fingerprint: JSON.parse(row.fingerprint) as BrowserProfile['fingerprint'],
+    fingerprint: rowToFingerprint(row),
     proxyId: row.proxy_id ?? undefined,
     ownerId: row.owner_id,
     sharedWith: JSON.parse(row.shared_with) as BrowserProfile['sharedWith'],
@@ -41,6 +42,13 @@ function rowToProfile(row: ProfileRow): BrowserProfile {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function rowToFingerprint(row: ProfileRow): BrowserProfile['fingerprint'] {
+  const fingerprint = JSON.parse(row.fingerprint) as BrowserProfile['fingerprint'];
+  // 迁移前的极端旧快照兜底；正常迁移已在 DB 层完成并记录日志。
+  fingerprint.catalogVersion ??= row.catalog_version ?? '131.0.6778.86';
+  return fingerprint;
 }
 
 /** 环境仓储：BrowserProfile 的 SQLite 持久化。fingerprint 整列 JSON 存储，保证逐字节可复现。 */
@@ -66,13 +74,13 @@ export class ProfileRepository {
   save(profile: BrowserProfile): void {
     this.handle.db
       .prepare(
-        `INSERT INTO profiles (id, org_id, name, platform_tag, group_id, kernel, fingerprint, proxy_id,
+        `INSERT INTO profiles (id, org_id, name, platform_tag, group_id, kernel, fingerprint, catalog_version, proxy_id,
            owner_id, shared_with, storage, startup_urls, notes, status, last_used_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            org_id=excluded.org_id, name=excluded.name, platform_tag=excluded.platform_tag,
            group_id=excluded.group_id, kernel=excluded.kernel, fingerprint=excluded.fingerprint,
-           proxy_id=excluded.proxy_id, owner_id=excluded.owner_id, shared_with=excluded.shared_with,
+           catalog_version=excluded.catalog_version, proxy_id=excluded.proxy_id, owner_id=excluded.owner_id, shared_with=excluded.shared_with,
            storage=excluded.storage, startup_urls=excluded.startup_urls, notes=excluded.notes,
            status=excluded.status, last_used_at=excluded.last_used_at, updated_at=excluded.updated_at`,
       )
@@ -84,6 +92,7 @@ export class ProfileRepository {
         profile.groupId ?? null,
         profile.kernel,
         JSON.stringify(profile.fingerprint),
+        profile.fingerprint.catalogVersion,
         profile.proxyId ?? null,
         profile.ownerId,
         JSON.stringify(profile.sharedWith),

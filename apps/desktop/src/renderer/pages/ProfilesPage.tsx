@@ -12,6 +12,7 @@ const STATUS_COLOR: Record<string, string> = {
 export function ProfilesPage() {
   const { profiles, proxies, setProfiles } = useStore();
   const [creating, setCreating] = useState(false);
+  const [kernels, setKernels] = useState<Record<string, string | undefined>>({});
 
   const refresh = async () => {
     setProfiles(await window.shadowedge.api['profile:list'](undefined));
@@ -19,7 +20,11 @@ export function ProfilesPage() {
 
   const launch = async (profileId: string) => {
     try {
-      await window.shadowedge.api['profile:launch']({ profileId });
+      const result = await window.shadowedge.api['profile:launch']({ profileId });
+      setKernels((current) => ({ ...current, [profileId]: result.kernelUsed }));
+      if (result.kernelUsed === 'patchright-chromium') {
+        useStore.getState().toast('warn', '自研内核不可用，本次已明确回退 Patchright');
+      }
     } catch (error) {
       toastError(error);
     }
@@ -62,6 +67,7 @@ export function ProfilesPage() {
               </div>
               <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
                 {profile.platformTag ?? '通用'} · {proxyLabel(profile.proxyId) ?? '直连'}
+                {kernels[profile.id] && <span> · 内核：{kernels[profile.id]}</span>}
               </div>
               <div style={{ fontSize: 11, color: '#999', marginTop: 6, wordBreak: 'break-all' }}>
                 {profile.fingerprint.userAgent}

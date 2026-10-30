@@ -6,9 +6,9 @@ import type { KernelDriver, KernelLaunchSpec, RunningInstance } from '../driver.
 
 export interface ChromiumCdpDriverOptions {
   /** 自构建内核可执行文件路径；缺省读环境变量 SHADOWEDGE_KERNEL_EXECUTABLE。 */
-  executablePath?: string;
-  /** 内核缺失或启动失败时回退 Patchright（默认 true）。CI 严格模式可关。 */
-  fallbackToPatchright?: boolean;
+  executablePath?: string | (() => string | undefined);
+  /** 内核缺失或启动失败时回退 Patchright（默认 true）。函数形式支持运行时修改配置。 */
+  fallbackToPatchright?: boolean | (() => boolean);
   /** 回退驱动替换点（测试注入用，生产缺省 PatchrightDriver）。 */
   fallbackDriver?: KernelDriver;
 }
@@ -19,8 +19,11 @@ const log = createConsoleLogger({ driver: 'chromium-cdp' });
  * 解析自构建内核路径。不存在视为未就绪（返回 undefined 走回退），
  * 不允许拿着坏路径去启动再失败——回退决策必须发生在启动前。
  */
-export function resolveKernelExecutable(explicit?: string): string | undefined {
-  const candidate = explicit ?? process.env.SHADOWEDGE_KERNEL_EXECUTABLE;
+export function resolveKernelExecutable(
+  explicit?: string | (() => string | undefined),
+): string | undefined {
+  const configured = typeof explicit === 'function' ? explicit() : explicit;
+  const candidate = configured ?? process.env.SHADOWEDGE_KERNEL_EXECUTABLE;
   if (!candidate) return undefined;
   return existsSync(candidate) ? candidate : undefined;
 }
@@ -70,7 +73,7 @@ export class ChromiumCdpDriver implements KernelDriver {
         executablePath,
       });
     } catch (error) {
-      if (this.opts.fallbackToPatchright === false) {
+      if (this.fallbackDisabled()) {
         throw new ShadowEdgeError('E_KERNEL_LAUNCH_FAILED', `自研内核启动失败: ${(error as Error).message}`, {
           retryable: true,
           cause: error,
@@ -93,9 +96,15 @@ export class ChromiumCdpDriver implements KernelDriver {
     };
   }
 
+  private fallbackDisabled(): boolean {
+    return typeof this.opts.fallbackToPatchright === 'function'
+      ? !this.opts.fallbackToPatchright()
+      : this.opts.fallbackToPatchright === false;
+  }
+
   /** 回退路径：委托 Patchright，并在实例上显式标记 kernelUsed，禁止静默降级。 */
   protected async launchFallback(spec: KernelLaunchSpec, reason: string): Promise<RunningInstance> {
-    if (this.opts.fallbackToPatchright === false) {
+    if (this.fallbackDisabled()) {
       throw new ShadowEdgeError('E_KERNEL_LAUNCH_FAILED', `自研内核不可用且回退已禁用: ${reason}`, {
         details: { reason },
       });

@@ -33,9 +33,6 @@ const PLATFORMS: Platform[] = ['windows', 'macos', 'linux'];
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const isPlatform = (value: string): value is Platform =>
-  value === 'windows' || value === 'macos' || value === 'linux';
-
 function isBrand(value: unknown): value is { brand: string; version: string } {
   return isRecord(value) && typeof value.brand === 'string' && typeof value.version === 'string';
 }

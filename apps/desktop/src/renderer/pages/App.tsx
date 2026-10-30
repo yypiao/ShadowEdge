@@ -3,6 +3,7 @@ import { Toasts } from '../components/Toasts.js';
 import { useStore } from '../store.js';
 import { ProfilesPage } from './ProfilesPage.js';
 import { ProxiesPage } from './ProxiesPage.js';
+import { SettingsPage } from './SettingsPage.js';
 
 export function App() {
   const { sidebar, setSidebar, setProfiles, setProxies, setProxyHealth, toast } = useStore();
@@ -64,7 +65,7 @@ export function App() {
         {sidebar === 'profiles' && <ProfilesPage />}
         {sidebar === 'proxies' && <ProxiesPage />}
         {sidebar === 'rpa' && <p style={{ color: '#888' }}>自动化编排将在 T7 落地。</p>}
-        {sidebar === 'settings' && <p style={{ color: '#888' }}>设置页开发中。</p>}
+        {sidebar === 'settings' && <SettingsPage />}
       </main>
 
       <Toasts />

@@ -9,6 +9,7 @@ import { loadKeyring } from './services/keyring.js';
 import { ProfileRepository } from './services/profile-repository.js';
 import { ProxyRepository } from './services/proxy-repository.js';
 import { AuditLog, SessionRepository } from './services/local-records.js';
+import { KernelRuntimeService } from './services/kernel-runtime.js';
 
 const logger = createConsoleLogger({ component: 'main' });
 
@@ -83,6 +84,7 @@ function registerIpc(): void {
     proxyRepo: new ProxyRepository(handle, keyring),
     audit: new AuditLog(handle),
     sessions,
+    kernelRuntime: new KernelRuntimeService(dataDir),
   });
 
   for (const channel of IPC_CHANNELS) {
