@@ -1,0 +1,160 @@
+diff --git a/third_party/blink/renderer/core/frame/screen.cc b/third_party/blink/renderer/core/frame/screen.cc
+index ed5028943e..5e6bf820f3 100644
+--- a/third_party/blink/renderer/core/frame/screen.cc
++++ b/third_party/blink/renderer/core/frame/screen.cc
+@@ -35,6 +35,7 @@
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
++#include "third_party/blink/renderer/platform/shadowedge_fingerprint.h"
+ #include "third_party/blink/renderer/core/page/chrome_client.h"
+ #include "ui/display/screen_info.h"
+ #include "ui/display/screen_infos.h"
+@@ -88,18 +89,26 @@ bool Screen::AreWebExposedScreenPropertiesEqual(
+ }
+ 
+ int Screen::height() const {
++  // ShadowEdge：有内核画像时以画像为准，无画像走原生。
++  if (auto v = shadowedge::GetInt("screen.height"))
++    return *v;
+   if (!DomWindow())
+     return 0;
+   return GetRect(/*available=*/false).height();
+ }
+ 
+ int Screen::width() const {
++  if (auto v = shadowedge::GetInt("screen.width"))
++    return *v;
+   if (!DomWindow())
+     return 0;
+   return GetRect(/*available=*/false).width();
+ }
+ 
+ unsigned Screen::colorDepth() const {
++  // ShadowEdge：colorDepth/pixelDepth 同源（pixelDepth 直接调用本函数）。
++  if (auto v = shadowedge::GetInt("screen.colorDepth"))
++    return static_cast<unsigned>(*v);
+   // "If the user agent does not know the color depth or does not want to
+   // return it for privacy considerations, it should return 24."
+   //
+@@ -131,12 +140,16 @@ int Screen::availTop() const {
+ }
+ 
+ int Screen::availHeight() const {
++  if (auto v = shadowedge::GetInt("screen.availHeight"))
++    return *v;
+   if (!DomWindow())
+     return 0;
+   return GetRect(/*available=*/true).height();
+ }
+ 
+ int Screen::availWidth() const {
++  if (auto v = shadowedge::GetInt("screen.availWidth"))
++    return *v;
+   if (!DomWindow())
+     return 0;
+   return GetRect(/*available=*/true).width();
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index b17f336f90..c0e880eff6 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -140,6 +140,7 @@
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+ #include "third_party/blink/renderer/platform/bindings/script_state.h"
+ #include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
++#include "third_party/blink/renderer/platform/shadowedge_fingerprint.h"
+ #include "third_party/blink/renderer/platform/graphics/canvas_2d_resource_provider.h"
+ #include "third_party/blink/renderer/platform/graphics/canvas_non_2d_resource_provider.h"
+ #include "third_party/blink/renderer/platform/graphics/canvas_resource.h"
+@@ -4216,6 +4217,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+       return ScriptValue::CreateNull(script_state->GetIsolate());
+     case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
++        // ShadowEdge：Worker OffscreenCanvas 同走此分支，天然跨世界一致。
++        if (auto v = shadowedge::GetString("webgl.renderer"))
++          return WebGLAny(script_state, String::FromUtf8(*v));
+         return WebGLAny(script_state,
+                         String(ContextGL()->GetString(GL_RENDERER)));
+       }
+@@ -4225,6 +4229,8 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+       return ScriptValue::CreateNull(script_state->GetIsolate());
+     case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
++        if (auto v = shadowedge::GetString("webgl.vendor"))
++          return WebGLAny(script_state, String::FromUtf8(*v));
+         return WebGLAny(script_state,
+                         String(ContextGL()->GetString(GL_VENDOR)));
+       }
+diff --git a/third_party/blink/renderer/platform/shadowedge_fingerprint.h b/third_party/blink/renderer/platform/shadowedge_fingerprint.h
+new file mode 100644
+index 0000000000..16bccbfc76
+--- /dev/null
++++ b/third_party/blink/renderer/platform/shadowedge_fingerprint.h
+@@ -0,0 +1,67 @@
++#ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_SHADOWEDGE_FINGERPRINT_H_
++#define THIRD_PARTY_BLINK_RENDERER_PLATFORM_SHADOWEDGE_FINGERPRINT_H_
++
++#include <optional>
++#include <string>
++#include <string_view>
++
++#include "base/base64.h"
++#include "base/command_line.h"
++#include "base/json/json_reader.h"
++#include "base/no_destructor.h"
++#include "base/values.h"
++
++// ShadowEdge 内核画像访问器（T15，header-only 以免改动 BUILD.gn）。
++// 画像由 0001 的 --shadowedge-fingerprint 开关经浏览器进程下发到每个 renderer；
++// Blink 不能依赖 //content，开关名用本地字面量镜像。
++// 无画像或字段缺失时一律返回 nullopt，调用方回退原生行为。
++namespace blink::shadowedge {
++
++namespace internal {
++
++inline const base::DictValue* PortraitDict() {
++  static const base::NoDestructor<std::optional<base::DictValue>> portrait([] {
++    const base::CommandLine& cmd = *base::CommandLine::ForCurrentProcess();
++    if (!cmd.HasSwitch("shadowedge-fingerprint"))
++      return std::optional<base::DictValue>(std::nullopt);
++    std::string decoded;
++    if (!base::Base64Decode(cmd.GetSwitchValueASCII("shadowedge-fingerprint"),
++                            &decoded, base::Base64DecodePolicy::kForgiving))
++      return std::optional<base::DictValue>(std::nullopt);
++    auto dict = base::JSONReader::ReadDict(decoded, base::JSON_PARSE_RFC);
++    return dict ? std::optional<base::DictValue>(std::move(*dict))
++                : std::nullopt;
++  }());
++  return portrait->has_value() ? &portrait->value() : nullptr;
++}
++
++}  // namespace internal
++
++inline std::optional<std::string> GetString(std::string_view dotted_path) {
++  const auto* dict = internal::PortraitDict();
++  if (!dict)
++    return std::nullopt;
++  const std::string* value = dict->FindStringByDottedPath(dotted_path);
++  return value ? std::optional<std::string>(*value) : std::nullopt;
++}
++
++// 与 packages/fingerprint inject.ts 的 fnv1a 逐位一致（32 位 FNV-1a）。
++inline uint32_t Fnv1a(std::string_view input) {
++  uint32_t hash = 0x811c9dc5u;
++  for (char c : input) {
++    hash ^= static_cast<uint8_t>(c);
++    hash *= 0x01000193u;
++  }
++  return hash;
++}
++
++inline std::optional<int> GetInt(std::string_view dotted_path) {
++  const auto* dict = internal::PortraitDict();
++  if (!dict)
++    return std::nullopt;
++  return dict->FindIntByDottedPath(dotted_path);
++}
++
++}  // namespace blink::shadowedge
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_SHADOWEDGE_FINGERPRINT_H_

@@ -14,6 +14,11 @@ export interface InjectionOptions {
    *   仅 chromium-cdp 驱动使用。
    */
   serviceWorker?: 'shield' | 'kernel';
+  /**
+   * 已由内核 C++ 层覆盖的维度，JS 层让位避免双重噪声/双重包装。
+   * 仅 chromium-cdp 驱动声明；Patchright 路径恒为空（全 JS 注入）。
+   */
+  coveredByKernel?: Array<'screen' | 'webgl' | 'audio' | 'canvas'>;
 }
 
 export function buildInjectionScript(fp: FingerprintProfile, opts: InjectionOptions = {}): string {
@@ -108,6 +113,9 @@ export function buildInjectionScript(fp: FingerprintProfile, opts: InjectionOpti
   );
 
   // 屏幕与像素比（仅 Window 作用域存在）
+  const kernelCovered = new Set(opts.coveredByKernel ?? []);
+  if (!kernelCovered.has('screen')) {
+  // C++ 补丁 0004 覆盖时跳过本段：Screen:: 各方法直接返回画像值，JS 不再包装。
   lines.push(
     // screen 的属性必须落在 Screen.prototype；挂到实例上会让
     // Object.getOwnPropertyNames(screen) 从 [] 变成伪造特征。
@@ -120,6 +128,10 @@ export function buildInjectionScript(fp: FingerprintProfile, opts: InjectionOpti
     // colorDepth 与 pixelDepth 在真实设备上通常相同；只改 colorDepth 会留下 24 vs 30 的矛盾。
     `_def(Screen.prototype, 'pixelDepth', () => P.screen.colorDepth);`,
     '}',
+  );
+  }
+  // DPR 段独立于 Screen 让位：devicePixelRatio 由 context deviceScaleFactor + JS 兜底，不在 C++ 范围。
+  lines.push(
     'if (typeof window !== "undefined") {',
     // 原生的 window.devicePixelRatio 是自有 accessor 且带 setter；
     // 只定义 getter 会被 descriptor 对比抓到（set 从原生函数变成 undefined）。
@@ -135,7 +147,7 @@ export function buildInjectionScript(fp: FingerprintProfile, opts: InjectionOpti
   );
 
   // WebGL vendor/renderer（WebGL1 + WebGL2 双上下文）
-  if (fp.webgl.noise !== 'real') {
+  if (fp.webgl.noise !== 'real' && !kernelCovered.has('webgl')) {
     lines.push(
       'const _spoofedGlProtos = new WeakSet();',
       'const _spoofGl = (proto) => {',
@@ -310,8 +322,8 @@ export function buildInjectionScript(fp: FingerprintProfile, opts: InjectionOpti
     );
   }
 
-  // Audio 确定性微噪声
-  if (fp.audio === 'noise') {
+  // Audio 确定性微噪声（内核 0005 覆盖时让位）
+  if (fp.audio === 'noise' && !kernelCovered.has('audio')) {
     lines.push(
       'if (typeof AudioBuffer === "undefined") { /* worker 无 AudioBuffer 跳过 */ } else {',
       'const _origGetChannelData = AudioBuffer.prototype.getChannelData;',

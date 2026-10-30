@@ -1,0 +1,52 @@
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+index 7a899b0d8c..8704eaded4 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+@@ -36,6 +36,7 @@
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_buffer_options.h"
+ #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
+ #include "third_party/blink/renderer/platform/audio/audio_bus.h"
++#include "third_party/blink/renderer/platform/shadowedge_fingerprint.h"
+ #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+@@ -214,6 +215,26 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(
+     return NotShared<DOMFloat32Array>(nullptr);
+   }
+ 
++  // ShadowEdge：与 JS 注入层相同的 xorshift 微噪声（每 499 样本、±5e-6 幅度）。
++  // 关键：加噪只在 IDL 入口（本重载）执行——内部 C++ 路径（如 OfflineAudioContext
++  // 渲染结果拷贝）走无异常版，不会在空 buffer 上提前消耗噪声。只叠加一次，幂等。
++  if (!shadowedge_noise_applied_) {
++    if (auto seed = shadowedge::GetString("seed")) {
++      for (unsigned ch = 0; ch < channels_.size(); ++ch) {
++        uint32_t s = shadowedge::Fnv1a(*seed) + ch;
++        auto data = channels_[ch]->AsSpan();
++        for (size_t i = 0; i < data.size(); i += 499) {
++          s ^= s << 13;
++          s ^= s >> 17;
++          s ^= s << 5;
++          data[i] = static_cast<float>(
++              data[i] + ((static_cast<int>((s >> 8) % 1000) - 500) * 1e-8));
++        }
++      }
++    }
++    shadowedge_noise_applied_ = true;
++  }
++
+   return getChannelData(channel_index);
+ }
+ 
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.h b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
+index 0dd11f830e..8d6b25bafa 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.h
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
+@@ -123,6 +123,8 @@ class MODULES_EXPORT AudioBuffer final : public ScriptWrappable {
+   uint32_t length_;
+ 
+   HeapVector<Member<DOMFloat32Array>> channels_;
++  // ShadowEdge：确定性噪声只在首次读取时叠加一次，避免重复调用累积漂移。
++  bool shadowedge_noise_applied_ = false;
+ };
+ 
+ // Shared data that audio threads can hold onto.

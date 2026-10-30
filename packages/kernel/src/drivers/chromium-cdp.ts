@@ -51,6 +51,8 @@ export class ChromiumCdpDriver implements KernelDriver {
     // 内核模式下不屏蔽 ServiceWorker：由补丁 0003 把同一注入脚本送进 SW 作用域。
     const { contextOptions, injectionScript } = buildLaunchConfig(spec, cdpPort, {
       serviceWorker: 'kernel',
+      // 0004/0005 已下沉 Screen/WebGL/Audio；Canvas 保留 JS，见 ADR 0005。
+      coveredByKernel: ['screen', 'webgl', 'audio'],
     });
     const userDataDir = spec.profile.storage.userDataDir;
     mkdirSync(userDataDir, { recursive: true });
