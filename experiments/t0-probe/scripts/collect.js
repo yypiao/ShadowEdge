@@ -117,7 +117,7 @@ window.__collectFingerprint = async function () {
       .includes('[native code]'),
     errorStack: (() => {
       try {
-        null.x;
+        null.x();
       } catch (e) {
         return (e.stack || '').split('\n').length;
       }

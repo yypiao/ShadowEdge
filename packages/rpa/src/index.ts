@@ -2,8 +2,16 @@ import type { RpaRun, RpaWorkflow, Uuid } from '@shadowedge/core';
 
 /** RPA 节点类型枚举。 */
 export type RpaNodeKind =
-  | 'navigate' | 'click' | 'type' | 'wait' | 'extract'
-  | 'screenshot' | 'condition' | 'loop' | 'script' | 'http';
+  | 'navigate'
+  | 'click'
+  | 'type'
+  | 'wait'
+  | 'extract'
+  | 'screenshot'
+  | 'condition'
+  | 'loop'
+  | 'script'
+  | 'http';
 
 export interface RpaNode {
   id: string;
@@ -23,7 +31,7 @@ export interface RpaGraph {
 export class RpaEngine {
   private runs = new Map<Uuid, RpaRun>();
 
-  async run(workflow: RpaWorkflow, profileIds: Uuid[], inputs?: unknown): Promise<RpaRun[]> {
+  async run(workflow: RpaWorkflow, profileIds: Uuid[], _inputs?: unknown): Promise<RpaRun[]> {
     return profileIds.map((profileId) => {
       const run: RpaRun = {
         id: crypto.randomUUID() as Uuid,

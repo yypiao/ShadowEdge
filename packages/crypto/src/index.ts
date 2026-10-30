@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, createPrivateKey, createPublicKey, constants } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
 /** 密钥用途标签，防止同一密钥被用于不同目的。 */
 export type KeyPurpose = 'profile-cookie' | 'proxy-secret' | 'sync-payload' | 'auth-token';
@@ -15,7 +15,10 @@ export class EnvelopeCrypto {
   }
 
   /** 生成随机 DEK & 加密明文。 */
-  seal(plaintext: string, purpose: KeyPurpose): { ciphertext: string; wrappedKey: string; iv: string } {
+  seal(
+    plaintext: string,
+    purpose: KeyPurpose,
+  ): { ciphertext: string; wrappedKey: string; iv: string } {
     const dek = randomBytes(32);
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', dek, iv);

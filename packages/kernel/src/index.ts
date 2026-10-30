@@ -1,13 +1,27 @@
 import type { BrowserProfile, LaunchOptions, LaunchResult, Uuid } from '@shadowedge/core';
 import { ShadowEdgeError } from '@shadowedge/core';
 import { startRelay, type RelayHandle } from '@shadowedge/proxy';
-import type { KernelDriver, ResolvedProxy, ResolvedUpstreamProxy, RunningInstance } from './driver.js';
-import { PatchrightDriver } from './drivers/patchright.js';
+import type {
+  KernelDriver,
+  ResolvedProxy,
+  ResolvedUpstreamProxy,
+  RunningInstance,
+} from './driver.js';
 import { ChromiumCdpDriver } from './drivers/chromium-cdp.js';
 
-export type { KernelDriver, KernelLaunchSpec, ResolvedProxy, ResolvedUpstreamProxy, RunningInstance } from './driver.js';
+export type {
+  KernelDriver,
+  KernelLaunchSpec,
+  ResolvedProxy,
+  ResolvedUpstreamProxy,
+  RunningInstance,
+} from './driver.js';
 export { PatchrightDriver, buildLaunchConfig } from './drivers/patchright.js';
-export { ChromiumCdpDriver, encodeFingerprintPortrait, resolveKernelExecutable } from './drivers/chromium-cdp.js';
+export {
+  ChromiumCdpDriver,
+  encodeFingerprintPortrait,
+  resolveKernelExecutable,
+} from './drivers/chromium-cdp.js';
 export type { ChromiumCdpDriverOptions } from './drivers/chromium-cdp.js';
 
 export interface BrowserKernelDeps {

@@ -1,4 +1,4 @@
-import type { BrowserProfile, LaunchOptions, LaunchResult, Uuid } from '@shadowedge/core';
+import type { BrowserProfile, LaunchOptions, Uuid } from '@shadowedge/core';
 
 /** 给 Chromium 的代理配置：永远指向本机中继（T8），驱动不感知真实代理。 */
 export interface ResolvedProxy {
