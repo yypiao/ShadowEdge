@@ -1,0 +1,46 @@
+diff --git a/v8/src/builtins/builtins-function.cc b/v8/src/builtins/builtins-function.cc
+index f7ca5412601..630c6a55345 100644
+--- a/v8/src/builtins/builtins-function.cc
++++ b/v8/src/builtins/builtins-function.cc
+@@ -13,6 +13,7 @@
+ #include "src/numbers/conversions.h"
+ #include "src/objects/api-callbacks.h"
+ #include "src/objects/lookup.h"
++#include "src/objects/js-proxy-inl.h"
+ #include "src/objects/objects-inl.h"
+ #include "src/strings/string-builder-inl.h"
+ 
+@@ -301,6 +302,33 @@ BUILTIN(FunctionPrototypeToString) {
+   if (IsJSFunction(*receiver)) {
+     return *JSFunction::ToString(isolate, Cast<JSFunction>(receiver));
+   }
++  // ShadowEdge: only unwrap proxies explicitly marked by our init script.
++  // The marker lives on the unreachable handler object, not on the proxy, and
++  // ordinary proxies retain V8's anonymous native-code representation.
++  if (IsJSProxy(*receiver)) {
++    DirectHandle<JSProxy> proxy = Cast<JSProxy>(receiver);
++    if (IsJSReceiver(proxy->handler())) {
++      DirectHandle<JSReceiver> handler(Cast<JSReceiver>(proxy->handler()),
++                                       isolate);
++      DirectHandle<String> marker_name =
++          isolate->factory()->NewStringFromAsciiChecked(
++              "__shadowedge_native_proxy__");
++      // OWN is required: a page must not opt all proxies in by polluting
++      // Object.prototype with the marker name.
++      LookupIterator marker_lookup(isolate, handler, marker_name, handler,
++                                   LookupIterator::OWN);
++      DirectHandle<Object> marker =
++          JSReceiver::GetDataProperty(&marker_lookup, AllowAllocation{false});
++      if (IsTrue(*marker) && IsJSFunction(proxy->target())) {
++        DirectHandle<JSFunction> target(Cast<JSFunction>(proxy->target()),
++                                        isolate);
++        // Never reveal source for a proxy around user JavaScript.
++        if (!target->shared()->IsUserJavaScript()) {
++          return *JSFunction::ToString(isolate, target);
++        }
++      }
++    }
++  }
+   // With the revised toString behavior, all callable objects are valid
+   // receivers for this method.
+   if (IsJSReceiver(*receiver) &&

@@ -1,10 +1,12 @@
-# ShadowEdge × 紫鸟 EngTk2 对照报告（2026-10-21 更新）
+# ShadowEdge × 紫鸟 EngTk2 对照报告（2026-10-29 更新）
 
 - 方法：同一套 `probe-page.html` 采集主世界 / Worker / WebGL / Canvas / WebRTC，两侧使用同一口径。
 - ShadowEdge 侧：`experiments/probes/ziniao-compare/run-shadowedge.mjs`（seed `ziniao-compare`，跟随宿主机平台）。
 - 紫鸟侧：用户在本机 EngTk2 环境中通过 `file://` 打开探针页，UI 全选复制结果；
   原始报告 `experiments/probes/ziniao-compare/result-1792471246829.json`。
-- 最终回归基线：`experiments/probes/results/os1-final-audit-1792553903844.json`（德国，27/27）、
+- 2026-10-29 内核复测：0003 已覆盖 ServiceWorker，0006 已恢复 Worker/Blob/Canvas
+  带名原生 toString；最新 os1 全量 40/40，见 `kernel-156-t16-full-1793283724731.json`。
+- 2026-10-21 回归基线：`experiments/probes/results/os1-final-audit-1792553903844.json`（德国，27/27）、
   `experiments/probes/results/os2-final-audit-1792554019160.json`（英国，27/27）。
 
 ## 1. 逐项对比
@@ -22,13 +24,13 @@
 | Canvas 纯色块 | `39756b3c`，像素严格等于 `255,0,0,255` | `39756b3c`，像素严格等于 `255,0,0,255` | 关键：纯色检测块不能被噪声污染 |
 | Audio | `172.67165175`（微噪声） | `172.67165096`（较大噪声） | 量级不同，但都稳定 |
 | Worker 世界 | UA / UA-CH / 核数 / GPU 全部与主世界一致，`navOwnProps=[]` | 同样全部一致，`navOwnProps=[]` | 跨世界一致性已对齐 |
-| `Worker.toString` | `function () { [native code] }`（`Function.prototype.toString.call`） | `function Worker() { [native code] }` | 残余差异：Proxy 无法让引擎返回带名原生串 |
-| `Blob.toString` | `function () { [native code] }` | `function Blob() { [native code] }` | 同上 |
+| `Worker.toString` | `function Worker() { [native code] }`（0006，普通 Proxy 行为不变） | `function Worker() { [native code] }` | 已对齐 |
+| `Blob.toString` | `function Blob() { [native code] }` | `function Blob() { [native code] }` | 已对齐 |
 | WebRTC | candidate 为空；SDP `c=IN IP4` 被改写为 `0.0.0.0`（unspecified） | candidate 为空；旧探针把地址标成 `public` | 旧版 `ipClass()` 把 `0.0.0.0` 误判为 public；原始地址未落盘，需 BrowserLeaks 复测确认 |
-| ServiceWorker | **屏蔽** | **可用** | 紫鸟有内核层注入，我们目前用屏蔽迫使探针回退 |
+| ServiceWorker | **可用且画像一致**（chromium-cdp 0003；Patchright 回退仍屏蔽） | **可用** | 自研内核路径已对齐 |
 | webdriver / CDC / native | 干净 | 干净 | 一致 |
 | CreepJS | `0% headless / 0% stealth` | 未测（需其 API） | — |
-| Pixelscan | 27/27，`No masking detected`（os1 德国 / os2 英国静态住宅代理，Proxy 卡单独标 `Proxy detected`） | 未测 | 两组住宅代理均已复跑 |
+| Pixelscan | 最新 os1 全量 40/40，`No masking detected`（Proxy 卡单独标 `Proxy detected`） | 未测 | 非代理因素全部通过 |
 
 ## 2. 结论
 
@@ -42,14 +44,9 @@ UA-CH 与 HTTP 头同源、纯色检测块保护，这些紫鸟具备的维度 S
 2. **指纹跟随代理出口自动化**。紫鸟仍依赖环境里手工配置语言/时区；ShadowEdge 从代理
    `ProxyHealth.geo` 派生 timezone / languages / geolocation，并在启动前做一致性闸门。
 
-**两处仍需追赶**：
-
-1. **ServiceWorker 作用域**。紫鸟能在 ServiceWorker 内覆盖指纹（C++ 内核层能力），
-   我们尚未做到，只能屏蔽并迫使探针回退到 Dedicated/Shared Worker。
-2. **包装函数的带名原生 `toString`**。紫鸟的 `Function.prototype.toString.call(Worker)`
-   返回 `function Worker() { [native code] }`；Proxy 只能返回匿名原生串。
-   曾尝试全局补丁 `Function.prototype.toString`，但 CreepJS stealth 从 0% 升到 20%，已回退。
-   长期需要在 Chromium 内核层实现（C++ patch），而不是 JS 层。
+**此前两处内核差距已补齐**：0003 完成 ServiceWorker 同源注入；0006 以 handler 自有标记
+受控恢复带名原生 `toString`，没有改变普通 Proxy 行为。最新 CreepJS 仍为 0%/0%。
+历史上的 JS 全局补丁曾让 stealth 升到 20%，该方案继续禁用。
 
 **UA 库运营差距**：紫鸟 UA 150 与内核 150 同版，说明其 UA 库持续维护；我们的 `DEFAULT_DB`
 仍是 130/131，需要建立版本更新机制，否则时间越久越像“静止画像”。

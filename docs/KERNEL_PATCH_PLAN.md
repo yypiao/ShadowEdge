@@ -37,23 +37,24 @@
 验收：Worker / SharedWorker / ServiceWorker 内读取 UA、UA-CH、核数、GPU 与主世界一致，
 且 `Object.getOwnPropertyNames(navigator)` 为空。
 
-### P3 Canvas / Audio / WebGL / Screen
+### P3 Screen / WebGL / Audio（已完成）；Canvas（暂缓）
 
-- `third_party/blink/renderer/core/html/canvas/html_canvas_element.cc`：`toDataURL` 确定性噪声。
-- `third_party/blink/renderer/core/html/canvas/canvas_rendering_context_2d.cc`：`getImageData` 返回副本。
-- `third_party/blink/renderer/modules/webaudio/audio_buffer.cc`：浮点样本微扰。
-- `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc`：vendor/renderer。
-- `third_party/blink/renderer/core/frame/screen.cc`：宽高、可用区、色深、pixelDepth。
+- `third_party/blink/renderer/modules/webaudio/audio_buffer.cc`：浮点样本微扰（0005）。
+- `third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc`：vendor/renderer（0004）。
+- `third_party/blink/renderer/core/frame/screen.cc`：宽高、可用区、色深、pixelDepth（0004）。
+- **Canvas C++ 下沉暂不做**：`html_canvas_element.cc` / `canvas_rendering_context_2d.cc`
+  不下沉，保留现有确定性 JS 注入，不在 `coveredByKernel` 声明 `canvas`。
+  同内核专项对照 20/20；证据、收益边界及重新评估触发条件见 ADR 0005。
+  若未来重启，必须同时复现纯色保护、纹理判定、幂等缓存与 alpha 混合语义，
+  不能只实现随机像素扰动。
 
-### P4 带名原生 Function.prototype.toString
+### P4 带名原生 Function.prototype.toString（已完成，0006）
 
-这是独立研究项，不要在 JS 层全局 patch：
-
-- 入口在 V8 `Function.prototype.toString` 的 native 实现，Proxy 没有原生函数名。
-- 可行方向是给 ShadowEdge 包装的原生函数维护一张“原生名称表”，在 V8 序列化时回填名称；
-  或在 Blink 侧避免 Proxy，直接返回真正的原生函数对象并携带内部指纹上下文。
-- 验收：`Function.prototype.toString.call(Worker)` 返回 `function Worker() { [native code] }`，
-  且 CreepJS stealth 仍为 0%。
+- 入口：V8 `FunctionPrototypeToString`；禁止 JS 层全局 patch。
+- 采用 handler 自有标记 + 原生 target 受控解包，不做全局 Proxy 解包，不复制名称表。
+- `LookupIterator::OWN` 防原型污染；用户 JS target 永不解包，避免源码泄漏。
+- 验收已达：Worker 返回 `function Worker() { [native code] }`，普通/Revoked Proxy
+  保持匿名原生串，CreepJS 0%/0%，os1 全量 40/40。设计与报告见 ADR 0006。
 
 ## 3. 构建流水线
 
@@ -85,7 +86,7 @@ autoninja -C out/ShadowEdge chrome
 ## 4. 验证与发布门槛
 
 1. `pnpm typecheck && pnpm test` 全绿。
-2. `pnpm probe -- --seed kernel-check --proxy os1 --fail-under 27` 全绿。
+2. `pnpm probe -- --seed kernel-check --proxy os1 --fail-under 40` 全绿（Patchright 回退为 31）。
 3. CreepJS：`0% headless`、`0% stealth`。
 4. ServiceWorker 探针：UA/UA-CH/GPU/核数与主世界一致。
 5. `Function.prototype.toString.call` 命名原生串检查通过。

@@ -35,6 +35,7 @@ export function buildInjectionScript(fp: FingerprintProfile, opts: InjectionOpti
     // Proxy 的 Function.prototype.toString 只返回匿名的 "function () { [native code] }"（32 字符），
     // Pixelscan 会校验 toDataURL.toString() 必须是 38/42 字符的原生形态。用 get 陷阱返回
     // 带函数名的 toString，同时让 Function.prototype.toString.call 继续走 Proxy 内部、不泄漏源码。
+    // 原生 V8 在此处返回匿名串；0006 仅对下方 handler 标记的包装恢复 target 原生名称。
     'const _proxy = (target, handler, name) => { try {',
     '  if (!name) return new Proxy(target, handler);',
     '  try { Object.defineProperty(target, "name", { value: name, configurable: true }); } catch (_) {}',
@@ -44,6 +45,9 @@ export function buildInjectionScript(fp: FingerprintProfile, opts: InjectionOpti
     '    if (p === "name") return name;',
     '    return Reflect.get(t, p, r);',
     '  } });',
+    // 0006 只识别 handler 内部标记；页面无法从 Proxy 取回 handler，
+    // 普通 Proxy 不改变 V8 原生 toString 语义，Proxy 对象自身也不新增属性。
+    '  Object.defineProperty(h, "__shadowedge_native_proxy__", { value: true });',
     '  return new Proxy(target, h);',
     '} catch (_) { return target; } };',
     'const _def = (obj, key, get) => { try { const proxy = _proxy(get, { apply: (target, thisArg, args) => Reflect.apply(target, thisArg, args) }, "get " + key); Object.defineProperty(obj, key, { get: proxy, configurable: true, enumerable: true }); } catch (_) {} };',

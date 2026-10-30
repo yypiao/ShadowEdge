@@ -33,7 +33,9 @@ const LABEL = args.label ?? new Date().toISOString().slice(0, 10);
 const PROXY_ID = args.proxy; // experiments/.secrets/test-proxies.json 里的 id
 const UPSTREAM_RAW =
   args.upstream ?? process.env.SHADOWEDGE_PROBE_UPSTREAM ?? 'http://127.0.0.1:7897';
-const FAIL_UNDER = Number(args['fail-under'] ?? (PROXY_ID ? 27 : 0));
+const FAIL_UNDER = Number(
+  args['fail-under'] ?? (PROXY_ID ? (process.env.SHADOWEDGE_KERNEL_EXECUTABLE ? 40 : 31) : 0),
+);
 if (!Number.isInteger(FAIL_UNDER) || FAIL_UNDER < 0) {
   throw new Error(`--fail-under 必须是非负整数，收到 ${args['fail-under']}`);
 }
@@ -132,7 +134,7 @@ const context = await chromium.launchPersistentContext(join(HERE, '.probe-profil
     ...(KERNEL_BIN
       ? [
           `--shadowedge-fingerprint=${Buffer.from(JSON.stringify(fp), 'utf8').toString('base64')}`,
-          `--shadowedge-init-script=${Buffer.from(buildInjectionScript(fp, { serviceWorker: 'kernel' }), 'utf8').toString('base64')}`,
+          `--shadowedge-init-script=${Buffer.from(buildInjectionScript(fp, { serviceWorker: 'kernel', coveredByKernel: ['screen', 'webgl', 'audio'] }), 'utf8').toString('base64')}`,
         ]
       : []),
   ],
@@ -152,7 +154,7 @@ const context = await chromium.launchPersistentContext(join(HERE, '.probe-profil
   permissions: fp.geolocation ? ['geolocation'] : [],
   proxy: relay ? { server: relay.server } : undefined,
 });
-await context.addInitScript({ content: buildInjectionScript(fp, KERNEL_BIN ? { serviceWorker: 'kernel' } : undefined) });
+await context.addInitScript({ content: buildInjectionScript(fp, KERNEL_BIN ? { serviceWorker: 'kernel', coveredByKernel: ['screen', 'webgl', 'audio'] } : undefined) });
 const page = context.pages()[0] ?? (await context.newPage());
 
 // ---- 3. 本地采集（主世界，裸 CDP）----
@@ -174,6 +176,33 @@ const collectorSrc = readFileSync(
 await mainEval(collectorSrc);
 const local = await mainEval('window.__collectFingerprint()');
 log('本地采集完成, canvasHash=', local.canvasHash);
+
+// T16：ShadowEdge 标记 Proxy 返回带名原生串；普通 Proxy 语义保持不变。
+const nativeToString = await mainEval(`(() => {
+  const toString = Function.prototype.toString;
+  const ordinaryNativeProxy = new Proxy(Array, {});
+  const ordinaryJsProxy = new Proxy(function shadowEdgeSourceMustNotLeak() {}, { __shadowedge_native_proxy__: true });
+  Object.prototype.__shadowedge_native_proxy__ = true;
+  const prototypePollutedProxy = new Proxy(Array, {});
+  delete Object.prototype.__shadowedge_native_proxy__;
+  const revoked = Proxy.revocable(Array, {});
+  revoked.revoke();
+  const read = (fn) => {
+    try { return toString.call(fn); } catch (error) { return 'ERROR: ' + String(error); }
+  };
+  return {
+    worker: read(Worker),
+    blob: read(Blob),
+    toDataURL: read(HTMLCanvasElement.prototype.toDataURL),
+    nativeArray: read(Array),
+    ordinaryNativeProxy: read(ordinaryNativeProxy),
+    ordinaryJsProxy: read(ordinaryJsProxy),
+    prototypePollutedProxy: read(prototypePollutedProxy),
+    revokedProxy: read(revoked.proxy),
+    workerOwnProperties: Object.getOwnPropertyNames(Worker),
+  };
+})()`);
+log('原生 toString:', JSON.stringify(nativeToString));
 
 // WebRTC 泄漏检查
 const webrtc = await mainEval(`(async () => {
@@ -504,6 +533,15 @@ const expectations = [
           'ServiceWorker navigator 无自有属性',
           Array.isArray(swData?.navOwnProps) && swData.navOwnProps.length === 0,
         ],
+        ['Worker 返回带名原生 toString', nativeToString?.worker === 'function Worker() { [native code] }'],
+        ['Blob 返回带名原生 toString', nativeToString?.blob === 'function Blob() { [native code] }'],
+        ['Canvas 返回带名原生 toString', nativeToString?.toDataURL === 'function toDataURL() { [native code] }'],
+        ['未包装原生函数保持原名', nativeToString?.nativeArray === 'function Array() { [native code] }'],
+        ['普通原生 Proxy 保持匿名原生串', nativeToString?.ordinaryNativeProxy === 'function () { [native code] }'],
+        ['普通 JS Proxy 不泄漏源码', nativeToString?.ordinaryJsProxy === 'function () { [native code] }'],
+        ['Object.prototype 污染不能改变普通 Proxy', nativeToString?.prototypePollutedProxy === 'function () { [native code] }'],
+        ['Revoked Proxy 不改变原生行为', nativeToString?.revokedProxy === 'function () { [native code] }'],
+        ['handler 标记不暴露在 Proxy 自有属性', !nativeToString?.workerOwnProperties?.includes('__shadowedge_native_proxy__')],
       ]
     : [
         // shield 模式：屏蔽是既定回退策略，验证它确实生效
@@ -537,6 +575,7 @@ const report = {
   fingerprint: fp,
   expectedGeo,
   local,
+  nativeToString,
   webrtc,
   workerGl,
   creep,

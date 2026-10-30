@@ -220,7 +220,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 
 **已知边界**：os1/os2 为静态住宅/ISP 代理（ip-api `hosting=false`），Pixelscan 仍会单独显示 `Proxy detected`，不伪造绕过；
 嵌套 Worker 不递归注入；ServiceWorker 采用屏蔽+回退策略；
-`Function.prototype.toString.call(Worker/Blob)` 仍是匿名原生串（全局补丁会让 CreepJS stealth 升到 20%，已回退）。
+当时 `Function.prototype.toString.call(Worker/Blob)` 仍是匿名原生串；后续 T16 已在内核路径解决，Patchright 回退仍为匿名。
 
 **后续优先级**（已展开为阶段四任务卡，见文末）：
 
@@ -250,7 +250,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 
 `.github/workflows/probe-nightly.yml` 每天 18:00 UTC（新加坡 02:00）在
 `[self-hosted, macOS, shadowedge-probe]` runner 上跑 os1/os2 全量探针，
-`--fail-under 27` 低于阈值直接失败，并上传 JSON 报告。
+`--fail-under 40`（Patchright 回退 31）低于阈值直接失败，并上传 JSON 报告。
 
 启用操作清单（按序执行，预计 1–2 小时）：
 
@@ -456,28 +456,57 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 
 ---
 
-## T15 — 内核补丁 P3：Canvas / Audio / WebGL / Screen 下沉
+## T15 — 内核补丁 P3：Screen / WebGL / Audio 下沉 ✅（2026-10-29；Canvas 明确暂缓）
+
+> 已完成 0004/0005，补丁序列 0001–0005 可复现（按序 apply 零冲突）；
+> 最终 os1 全量探针 **31/31**（`kernel-156-t15-final-1793282828077.json`），
+> CreepJS **0% headless / 0% stealth**，Pixelscan Browser/Fingerprint 与非代理项通过：
+> - **0004 Screen+WebGL**：新增 `platform/shadowedge_fingerprint.h`（header-only 画像访问器
+>   + Fnv1a）。Screen 五值 + colorDepth 返回画像；WebGL vendor/renderer 返回画像
+>   （Worker OffscreenCanvas 同分支，天然跨世界一致，比 JS 包装更彻底）。
+> - **0005 Audio**：getChannelData 的 IDL 入口重载叠加 xorshift 微噪声。
+>   同 156 内核下 JS 与 C++ 注入 audioFp **逐值一致**（172.67165166332416）。
+> - JS 让位机制：`InjectionOptions.coveredByKernel`，chromium-cdp 驱动声明
+>   `['screen','webgl','audio']`，Patchright 全 JS 路径不变。
+>
+> 踩坑记录：① Audio 加噪必须放 IDL 入口（带 ExceptionState 重载）——内部 C++ 渲染拷贝
+> 走无异常版，在空 buffer 上提前加噪会被真实数据 memcpy 覆盖；② 组件构建用 `base::span`
+> 替代裸指针（-Wunsafe-buffer-usage）、`String::FromUtf8`（小写 tf）、`base::NoDestructor`。
+>
+> **Canvas C++ 下沉明确暂缓，不属于本次未完成遗漏**：保留现有 JS 注入，不声明
+> `coveredByKernel: ['canvas']`。同一 156 内核“原生 vs JS”专项对照 **20/20**，覆盖
+> 原生字符串/descriptor、纯色逐字节不变、纹理微扰、重读稳定及缓存失效；原始证据与
+> 重启条件见 `docs/adr/0005-canvas-stays-js-injection.md` 和
+> `experiments/probes/results/canvas-js-evidence-1793375676248.json`。
+> 当前收益是避免新增高复杂度 C++ 像素/GPU 回归面，而非宣称 JS 与 C++ 完全等价。
 
 **背景**：JS 注入层（574 行 `inject.ts`）本身就是攻击面——Proxy、descriptor 形态、
 实例自有属性都需要精心伪装。下沉到 C++ 后这些伪装需求整体消失。
 
 **产出**（补丁点见 `KERNEL_PATCH_PLAN.md` §2 P3）：
 
-- `html_canvas_element.cc` / `canvas_rendering_context_2d.cc`：确定性噪声 +
-  沿用现有纯色保护语义（纯色块逐字节不变、同 canvas 幂等）。
+- ~~`html_canvas_element.cc` / `canvas_rendering_context_2d.cc`~~：**暂缓，未实施**；
+  Canvas 保留 JS 路径，触发条件和证据见 ADR 0005。
 - `audio_buffer.cc`：浮点样本微扰，与 JS 版同 seed 同输出。
 - `webgl_rendering_context_base.cc`：vendor/renderer 按画像返回。
 - `screen.cc`：宽高、可用区、colorDepth/pixelDepth 同源。
 - `inject.ts` 改造：检测内核能力标记后对应维度让位，避免双重噪声叠加；
   保留 patchright 驱动的完整 JS 路径。
 
-**验收**：同一 seed 在内核路径与 JS 路径产出**完全相同**的画像值（§4 第 6 条）；
-探针 27/27（或 T14 后的新矩阵）在内核路径下全绿，含 `textureDiffBytes=0`、
-纯色块哈希、C14 字符串长度等既有断言。
+**验收**：Screen/WebGL/Audio 与画像同源，Audio 在同 156 内核的 JS/C++ 路径逐值一致；
+内核全量探针 31/31。Canvas 不列为 C++ 验收项，但现有 JS 路径须持续通过专项 20/20、
+纯色保护、纹理重读稳定与全量探针；若出现 Canvas 失分则按 ADR 0005 重估。
 
 ---
 
-## T16 — 内核补丁 P4：带名原生 Function.prototype.toString（独立研究项）
+## T16 — 内核补丁 P4：带名原生 Function.prototype.toString ✅（2026-10-29）
+
+> 已落地 0006 V8 补丁与 ADR 0006：只在 ShadowEdge handler 带自有标记且 target 为
+> 非用户 JS 时复用 target 的原生名称，不做全局 Proxy 解包或 JS 全局 toString 替换。
+> Worker/Blob/Canvas 均返回带名原生串；普通 Proxy、Object.prototype 污染、JS 源码防泄漏、
+> revoked Proxy 和 marker 不暴露等负例全部通过。直连 **32/32**，os1 全量 **40/40**，
+> CreepJS **0% headless / 0% stealth**；报告 `kernel-156-t16-full-1793283724731.json`。
+> 0001–0006 顺序 apply 重放与逐文件一致性检查通过。
 
 **背景**：JS Proxy 无法让 V8 返回带名原生串；全局补丁会让 CreepJS stealth 升到 20%
 （已回退，见 `COMPARISON_ZINIAO.md` §2）。这是紫鸟已具备而我们缺的最后一处指纹细节。
@@ -517,7 +546,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 - 内核升级后的指纹回归：升级通道必须先跑探针验证「旧环境 seed 画像不变」再放行。
 
 **验收**：断网时用已缓存内核正常启动；手工改一个字节的内核启动被拒；
-模拟升级内核后旧环境探针复跑 27/27（画像零漂移，AGENTS.md §4 硬需求）。
+模拟升级内核后旧环境探针复跑 40/40（画像零漂移，AGENTS.md §4 硬需求）。
 
 ---
 

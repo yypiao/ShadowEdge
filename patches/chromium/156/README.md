@@ -27,7 +27,22 @@
 
 | 0003 | 0003-serviceworker-init-script.patch | `--shadowedge-init-script=<base64-js>` 开关 + renderer 下发 + base64 校验；`WorkerGlobalScope::RunWorkerScript` 在 ServiceWorker 作用域内、SW 自身脚本前求值注入脚本（复用整套 JS 注入层，无第二套指纹逻辑） | SW 内 UA/hc/mem/UA-CH 与画像一致、自有属性为空、探针 SW 4 项全过 |
 
-后续：画像的消费（各维度读取）在 T15 补丁中按模块接入，统一从
-`CommandLine` 的 `kShadowEdgeFingerprint` 解析，不各自读文件。
+| 0004 | 0004-screen-webgl-kernel.patch | 新增 `platform/shadowedge_fingerprint.h`（header-only 画像访问器，含 Fnv1a）；`Screen::width/height/avail*/colorDepth` 返回画像值；WebGL `UNMASKED_VENDOR/RENDERER` 返回画像值（Worker OffscreenCanvas 同分支，天然跨世界一致） | 探针 23/23 |
+| 0005 | 0005-audio-kernel-noise.patch | `AudioBuffer::getChannelData` 的 **IDL 入口重载**叠加 xorshift 微噪声（每 499 样本、±5e-6），per-buffer 一次性 | 同 156 内核下 JS 与 C++ 注入 audioFp 逐值一致 |
+| 0006 | 0006-named-native-tostring.patch | V8 `FunctionPrototypeToString` 仅解包带 ShadowEdge handler 自有标记且 target 为非用户 JS 的 Proxy；普通 Proxy、原型污染、revoked Proxy 保持原行为 | Worker/Blob/Canvas 带名原生串；普通 Proxy 负例与 CreepJS 不回退 |
+
+**0005 关键教训**：加噪必须放在带 `ExceptionState` 的 IDL 入口重载，而非无异常版——
+内部 C++ 路径（如 OfflineAudioContext 渲染结果拷贝）走无异常版，若在空 buffer 上
+提前加噪，真实渲染数据 memcpy 时会连噪声一起覆盖，且一次性标记已被消耗。
+这对应 JS 版天然特性：proxy 只拦 JS 调用，不拦内部 C++ 调用。
+
+后续：画像的消费（各维度读取）统一从 `CommandLine` 的 `shadowedge-fingerprint`
+经 `platform/shadowedge_fingerprint.h` 读取，不各自解析。
 Dedicated/Shared Worker 仍走 JS 层 Worker 包装注入；0003 目前只对
 `IsServiceWorkerGlobalScope()` 生效，刻意控制爆炸半径。
+
+## Canvas 决策（T15 收口）
+
+不生成 Canvas C++ 补丁（0006 编号已用于 T16 V8 补丁）。Canvas 继续使用 JS 注入，Screen/WebGL/Audio 才由 0004/0005
+接管；不要在 `coveredByKernel` 中添加 `canvas`。同内核专项对照、残余风险和重启条件见
+`docs/adr/0005-canvas-stays-js-injection.md`。

@@ -46,6 +46,7 @@ describe('指纹注入脚本', () => {
     expect(script).toContain('_canvasVersion');
     expect(script).toContain('_imageDataCache');
     expect(script).toContain('if (p === "toString")');
+    expect(script).toContain('Object.defineProperty(h, "__shadowedge_native_proxy__"');
     expect(script).toContain('"toDataURL");');
     expect(script).toContain('"get " + key');
     expect(script).not.toContain('_nativeFn');
