@@ -1,8 +1,12 @@
 import { mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { chromium, type BrowserContext } from 'patchright';
+import { chromium, type BrowserContext, type CDPSession } from 'patchright';
 import { ShadowEdgeError } from '@shadowedge/core';
-import { buildClientHintHeaders, buildInjectionScript, type InjectionOptions } from '@shadowedge/fingerprint';
+import {
+  buildClientHintHeaders,
+  buildInjectionScript,
+  type InjectionOptions,
+} from '@shadowedge/fingerprint';
 import type { KernelDriver, KernelLaunchSpec, RunningInstance } from '../driver.js';
 
 /** T0 实验结论：禁止非代理 UDP，否则 WebRTC 泄漏真实出口 IP。 */
@@ -22,7 +26,11 @@ export async function findFreePort(): Promise<number> {
 }
 
 /** 组装持久化上下文的启动参数与上下文选项。独立导出以便单测覆盖，不必真开浏览器。 */
-export function buildLaunchConfig(spec: KernelLaunchSpec, cdpPort?: number, injectOpts?: InjectionOptions) {
+export function buildLaunchConfig(
+  spec: KernelLaunchSpec,
+  cdpPort?: number,
+  injectOpts?: InjectionOptions,
+) {
   const fp = spec.profile.fingerprint;
 
   if (spec.options.headless) {
@@ -72,6 +80,22 @@ export function buildLaunchConfig(spec: KernelLaunchSpec, cdpPort?: number, inje
   return { args, contextOptions, injectionScript: buildInjectionScript(fp, injectOpts) };
 }
 
+/** 从 browser target 获取真实主进程 PID；失败时省略，不再返回虚假的 0。 */
+export async function readBrowserProcessId(context: BrowserContext): Promise<number | undefined> {
+  const browser = context.browser();
+  if (!browser) return undefined;
+  let session: CDPSession | undefined;
+  try {
+    session = await browser.newBrowserCDPSession();
+    const { processInfo } = await session.send('SystemInfo.getProcessInfo');
+    return processInfo.find((process) => process.type === 'browser')?.id;
+  } catch {
+    return undefined;
+  } finally {
+    await session?.detach().catch(() => undefined);
+  }
+}
+
 /** Patchright 主驱动（ADR 0004 方案 A）：持久化目录隔离 + 主世界确定性指纹注入。 */
 export class PatchrightDriver implements KernelDriver {
   readonly name = 'patchright-chromium';
@@ -97,21 +121,15 @@ export class PatchrightDriver implements KernelDriver {
     }
     await context.addInitScript({ content: injectionScript });
 
-    // 说明：SystemInfo.getProcessInfo 仅 browser target 可用，而 patchright 持久化上下文
-    // 拿不到 browser target，pid 无法可靠获取。进程回收依赖 context.close()（内核随上下文退出），
-    // 因此 LaunchResult.pid 恒为 0，调用方不得依赖 pid 做进程管理。
-    const pid = 0;
+    const pid = await readBrowserProcessId(context);
     const startedAt = new Date().toISOString();
-
-    context.on('close', () => {
-      // 用户手动关窗时由 BrowserKernel 的 close 收口；这里只兜底防泄漏。
-    });
 
     return {
       profileId: spec.profile.id,
       pid,
       wsEndpoint: cdpPort ? `http://127.0.0.1:${cdpPort}` : undefined,
       startedAt,
+      onExit: (listener) => context.on('close', listener),
       close: async () => {
         await context.close().catch(() => undefined);
       },

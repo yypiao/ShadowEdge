@@ -91,7 +91,17 @@
 
 ---
 
-## T5 — Chromium 启动参数与真实进程
+## T5 — Chromium 启动参数与真实进程 ✅ 生命周期闭环完成（2026-11-01）
+
+> 实现沿用已验证的 Patchright persistent context，而非重复维护一套 `spawn` 启动器。
+> 现通过 browser target 的 `SystemInfo.getProcessInfo` 读取真实主进程 PID，无法获取时省略，
+> 不再返回 `pid: 0`。驱动统一上报 `onExit`，`BrowserKernel` 负责去重、清理运行记录及代理中继；
+> 桌面 handlers 同步更新 SQLite、会话和 `profile:status`，启动失败也会回滚为 idle。
+>
+> 真实内核验收：`Browser.close` 手动关窗与 `SIGKILL` 异常退出均自动回收，随后立即重启成功；
+> 三次启动均取得非零 PID，最终无未关闭会话。单元覆盖重复启动、幂等关闭、启动失败、
+> 自然退出后重启；测试见 `packages/kernel/test/browser-kernel.test.ts`、
+> `apps/desktop/test/profile-lifecycle.test.ts` 和 `kernel-runtime-smoke.test.ts`。
 
 **背景**：`BrowserKernel.launch()` 现在返回假的 `pid: 0`，没有真启动进程。
 

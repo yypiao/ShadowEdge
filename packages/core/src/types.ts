@@ -140,7 +140,16 @@ export interface ProxyHealth {
   reachable: boolean;
   latencyMs?: number;
   exitIp?: string;
-  geo?: { country: string; countryCode?: string; region?: string; city?: string; timezone?: string; asn?: string; latitude?: number; longitude?: number };
+  geo?: {
+    country: string;
+    countryCode?: string;
+    region?: string;
+    city?: string;
+    timezone?: string;
+    asn?: string;
+    latitude?: number;
+    longitude?: number;
+  };
   /** IP 质量画像：是否被标记为数据中心、代理或高风险。 */
   risk?: { score: number; isDatacenter: boolean; isProxy: boolean; blacklisted: boolean };
   error?: string;
@@ -207,7 +216,8 @@ export interface KernelRuntimeStatus extends KernelRuntimeConfig {
 export interface LaunchResult {
   profileId: Uuid;
   sessionId: Uuid;
-  pid: number;
+  /** 浏览器主进程 PID；驱动无法查询时省略，禁止用 0 冒充真实进程。 */
+  pid?: number;
   wsEndpoint?: string;
   startedAt: IsoDateTime;
   /**

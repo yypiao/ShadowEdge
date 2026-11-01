@@ -30,6 +30,6 @@ export const registerProfileRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post<{ Params: { id: string } }>('/:id/launch', async () => {
-    return { profileId: '', sessionId: '', pid: 0, startedAt: new Date().toISOString() };
+    return { profileId: '', sessionId: '', startedAt: new Date().toISOString() };
   });
 };

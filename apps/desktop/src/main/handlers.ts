@@ -10,7 +10,12 @@ import type {
   Uuid,
 } from '@shadowedge/core';
 import { ShadowEdgeError } from '@shadowedge/core';
-import { auditFingerprint, CURRENT_CATALOG_VERSION, deriveGeoOverrides, generateFingerprint } from '@shadowedge/fingerprint';
+import {
+  auditFingerprint,
+  CURRENT_CATALOG_VERSION,
+  deriveGeoOverrides,
+  generateFingerprint,
+} from '@shadowedge/fingerprint';
 import { BrowserKernel, ChromiumCdpDriver } from '@shadowedge/kernel';
 import { ProxyManager } from '@shadowedge/proxy';
 import { RpaEngine } from '@shadowedge/rpa';
@@ -38,14 +43,34 @@ export type Handlers = {
 export function createHandlers(deps: HandlerDeps): Handlers {
   const kernel = new BrowserKernel({
     drivers: [new ChromiumCdpDriver(deps.kernelRuntime.driverOptions())],
+    onExit: (profileId) => {
+      const profile = deps.profileRepo.get(profileId);
+      if (!profile) return;
+      deps.profileRepo.save({ ...profile, status: 'idle' });
+      deps.sessions.end(profileId);
+      deps.audit.record('profile:exit', 'profile', profileId);
+      deps.emit('profile:status', { profileId, status: 'idle' });
+    },
     resolveProxy: async (proxyId) => {
       const credential = deps.proxyRepo.get(proxyId);
       if (!credential) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${proxyId} 不存在`);
       const password = deps.proxyRepo.reveal(proxyId);
-      let upstream: { protocol: 'http' | 'socks5'; host: string; port: number; username?: string; password?: string } | undefined;
+      let upstream:
+        | {
+            protocol: 'http' | 'socks5';
+            host: string;
+            port: number;
+            username?: string;
+            password?: string;
+          }
+        | undefined;
       if (credential.upstreamId) {
         const upstreamCred = deps.proxyRepo.get(credential.upstreamId);
-        if (!upstreamCred) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `上游代理 ${credential.upstreamId} 不存在`);
+        if (!upstreamCred)
+          throw new ShadowEdgeError(
+            'E_PROXY_NOT_FOUND',
+            `上游代理 ${credential.upstreamId} 不存在`,
+          );
         upstream = {
           protocol: upstreamCred.protocol === 'socks5' ? 'socks5' : 'http',
           host: upstreamCred.host,
@@ -74,7 +99,8 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   const resolveUpstream = (upstreamId: Uuid | undefined) => {
     if (!upstreamId) return undefined;
     const upstreamCred = deps.proxyRepo.get(upstreamId);
-    if (!upstreamCred) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `上游代理 ${upstreamId} 不存在`);
+    if (!upstreamCred)
+      throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `上游代理 ${upstreamId} 不存在`);
     return {
       protocol: upstreamCred.protocol === 'socks5' ? ('socks5' as const) : ('http' as const),
       host: upstreamCred.host,
@@ -97,7 +123,10 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   };
 
   /** T9：显式 overrides 优先，缺省时由代理出口地理补齐时区/语言/坐标。 */
-  const geoFollowOverrides = async (proxyId: Uuid | undefined, overrides: Partial<FingerprintProfile> | undefined) => {
+  const geoFollowOverrides = async (
+    proxyId: Uuid | undefined,
+    overrides: Partial<FingerprintProfile> | undefined,
+  ) => {
     if (!proxyId) return overrides;
     const health = await getProxyHealth(proxyId);
     if (!health.geo) return overrides;
@@ -129,7 +158,12 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         platformTag: input.platformTag,
         kernel: 'chromium-patched',
         // 缺省跟随宿主机平台（紫鸟式同系微调哲学）；显式指定则尊重用户选择
-        fingerprint: generateFingerprint({ seed, platform: input.platform ?? 'host', overrides, catalogVersion: CURRENT_CATALOG_VERSION }),
+        fingerprint: generateFingerprint({
+          seed,
+          platform: input.platform ?? 'host',
+          overrides,
+          catalogVersion: CURRENT_CATALOG_VERSION,
+        }),
         proxyId: input.proxyId,
         ownerId: 'local-user',
         sharedWith: [],
@@ -147,7 +181,12 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     'profile:update': async ({ id, patch }) => {
       const profile = requireProfile(id);
-      const updated: BrowserProfile = { ...profile, ...patch, id, updatedAt: new Date().toISOString() };
+      const updated: BrowserProfile = {
+        ...profile,
+        ...patch,
+        id,
+        updatedAt: new Date().toISOString(),
+      };
       deps.profileRepo.save(updated);
       deps.audit.record('profile:update', 'profile', id, { fields: Object.keys(patch) });
       return updated;
@@ -169,25 +208,45 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         },
       );
       deps.emit('profile:status', { profileId: profile.id, status: 'launching' });
-      const result = await kernel.launch(profile, options);
-      deps.profileRepo.save({ ...profile, status: 'running', lastUsedAt: result.startedAt });
-      deps.sessions.start(result);
-      deps.audit.record('profile:launch', 'profile', profile.id, { sessionId: result.sessionId });
-      deps.emit('profile:status', { profileId: profile.id, status: 'running' });
-      return result;
+      try {
+        const result = await kernel.launch(profile, options);
+        if (!(await kernel.listRunning()).includes(profile.id)) {
+          throw new ShadowEdgeError('E_KERNEL_LAUNCH_FAILED', '浏览器在启动完成后立即退出', {
+            retryable: true,
+          });
+        }
+        deps.profileRepo.save({ ...profile, status: 'running', lastUsedAt: result.startedAt });
+        deps.sessions.start(result);
+        deps.audit.record('profile:launch', 'profile', profile.id, { sessionId: result.sessionId });
+        deps.emit('profile:status', { profileId: profile.id, status: 'running' });
+        return result;
+      } catch (error) {
+        deps.profileRepo.save({ ...profile, status: 'idle' });
+        deps.audit.record('profile:launch-failed', 'profile', profile.id);
+        deps.emit('profile:status', { profileId: profile.id, status: 'idle' });
+        throw error;
+      }
     },
 
     'profile:close': async (id) => {
       const profile = requireProfile(id);
-      await kernel.close(id);
-      deps.profileRepo.save({ ...profile, status: 'idle' });
-      deps.sessions.end(id);
-      deps.audit.record('profile:close', 'profile', id);
-      deps.emit('profile:status', { profileId: id, status: 'idle' });
+      try {
+        await kernel.close(id);
+      } finally {
+        deps.profileRepo.save({ ...profile, status: 'idle' });
+        deps.sessions.end(id);
+        deps.audit.record('profile:close', 'profile', id);
+        deps.emit('profile:status', { profileId: id, status: 'idle' });
+      }
     },
 
     'fingerprint:preview': async ({ seed, proxyId, platform, overrides }) =>
-      generateFingerprint({ seed, platform: platform ?? 'host', overrides: await geoFollowOverrides(proxyId, overrides), catalogVersion: CURRENT_CATALOG_VERSION }),
+      generateFingerprint({
+        seed,
+        platform: platform ?? 'host',
+        overrides: await geoFollowOverrides(proxyId, overrides),
+        catalogVersion: CURRENT_CATALOG_VERSION,
+      }),
 
     'fingerprint:audit': async (id) => auditFingerprint(requireProfile(id).fingerprint),
 
@@ -226,7 +285,15 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'rpa:list': async () => [],
     'rpa:run': async ({ workflowId, profileIds, inputs }) =>
       rpaEngine.run(
-        { id: workflowId, orgId: 'local', name: '', version: 1, graph: {}, createdBy: 'local-user', updatedAt: new Date().toISOString() },
+        {
+          id: workflowId,
+          orgId: 'local',
+          name: '',
+          version: 1,
+          graph: {},
+          createdBy: 'local-user',
+          updatedAt: new Date().toISOString(),
+        },
         profileIds,
         inputs,
       ),
@@ -235,11 +302,17 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'sync:push': async (profileId) => {
       const profile = requireProfile(profileId);
       const revision = profile.storage.remoteRevision + 1;
-      deps.profileRepo.save({ ...profile, storage: { ...profile.storage, remoteRevision: revision } });
+      deps.profileRepo.save({
+        ...profile,
+        storage: { ...profile.storage, remoteRevision: revision },
+      });
       return { revision };
     },
 
-    'sync:pull': async (profileId) => ({ revision: requireProfile(profileId).storage.remoteRevision, applied: false }),
+    'sync:pull': async (profileId) => ({
+      revision: requireProfile(profileId).storage.remoteRevision,
+      applied: false,
+    }),
 
     'app:info': async () => ({ version: '0.1.0', platform: process.platform }),
   };

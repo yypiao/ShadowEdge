@@ -33,11 +33,13 @@ export interface KernelLaunchSpec {
 
 export interface RunningInstance {
   profileId: Uuid;
-  pid: number;
+  pid?: number;
   wsEndpoint?: string;
   startedAt: string;
   /** 实际承载内核（回退时必须显式标记，见 KERNEL_PATCH_PLAN §5）。 */
   kernelUsed?: string;
+  /** 浏览器手动关闭或异常退出时通知门面；显式 close 也会触发，由门面去重。 */
+  onExit(listener: () => void): void;
   close(): Promise<void>;
 }
 

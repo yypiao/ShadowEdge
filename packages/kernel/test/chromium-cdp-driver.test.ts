@@ -47,6 +47,7 @@ describe('chromium-cdp 驱动', () => {
       profileId: 'p1',
       pid: 0,
       startedAt: new Date().toISOString(),
+      onExit: () => undefined,
       close: async () => {},
     };
     const stubDriver: KernelDriver = {
@@ -67,6 +68,7 @@ describe('chromium-cdp 驱动', () => {
       profileId: 'p1',
       pid: 0,
       startedAt: new Date().toISOString(),
+      onExit: () => undefined,
       close: async () => {},
     };
     const fallbackDriver: KernelDriver = {

@@ -27,8 +27,10 @@ export type { ChromiumCdpDriverOptions } from './drivers/chromium-cdp.js';
 export interface BrowserKernelDeps {
   /** 按 proxyId 解析出可用代理（含已解封凭据）。由 handlers 层从加密仓储提供。 */
   resolveProxy?: (proxyId: Uuid) => Promise<ResolvedUpstreamProxy | undefined>;
-  /** 驱动注册表，默认仅 Patchright 主驱动；Camoufox 备驱动就绪后在此追加。 */
+  /** 驱动注册表，默认自研 Chromium 优先；Camoufox 备驱动就绪后在此追加。 */
   drivers?: KernelDriver[];
+  /** 用户手动关窗或浏览器异常退出；显式 kernel.close() 不触发此回调。 */
+  onExit?: (profileId: Uuid) => void;
 }
 
 /**
@@ -38,12 +40,13 @@ export interface BrowserKernelDeps {
 export class BrowserKernel {
   private readonly drivers: KernelDriver[];
   private readonly resolveProxy?: (proxyId: Uuid) => Promise<ResolvedUpstreamProxy | undefined>;
+  private readonly onExit?: (profileId: Uuid) => void;
   private running = new Map<Uuid, RunningInstance>();
 
   constructor(deps: BrowserKernelDeps = {}) {
-    // 默认自研内核优先；内核二进制未就绪时 ChromiumCdpDriver 内部回退 Patchright 并标记。
     this.drivers = deps.drivers ?? [new ChromiumCdpDriver()];
     this.resolveProxy = deps.resolveProxy;
+    this.onExit = deps.onExit;
   }
 
   async launch(profile: BrowserProfile, options: LaunchOptions): Promise<LaunchResult> {
@@ -64,24 +67,39 @@ export class BrowserKernel {
       }
     }
 
-    // 当前唯一驱动；多驱动就绪后按 profile.kernel 选择。
+    let relayClosed = false;
+    const closeRelay = async () => {
+      if (!relay || relayClosed) return;
+      relayClosed = true;
+      await relay.close();
+    };
+
     const driver = this.drivers[0]!;
     let instance: RunningInstance;
     try {
       instance = await driver.launch({ profile, options, proxy });
     } catch (error) {
-      await relay?.close();
+      await closeRelay().catch(() => undefined);
       throw error;
     }
-    // 中继随环境生命周期回收
-    if (relay) {
-      const innerClose = instance.close;
-      instance.close = async () => {
+
+    const innerClose = instance.close;
+    instance.close = async () => {
+      try {
         await innerClose();
-        await relay.close();
-      };
-    }
+      } finally {
+        await closeRelay();
+      }
+    };
+
     this.running.set(profile.id, instance);
+    instance.onExit(() => {
+      // close() 会先删除运行记录，因此显式关闭不会重复上报 profile:exit。
+      if (this.running.get(profile.id) !== instance) return;
+      this.running.delete(profile.id);
+      void closeRelay().catch(() => undefined);
+      this.onExit?.(profile.id);
+    });
 
     return {
       profileId: profile.id,
@@ -98,6 +116,7 @@ export class BrowserKernel {
     if (!instance) return;
     this.running.delete(profileId);
     await instance.close();
+    // 中继由实例的 close 包装统一回收；天然退出则在 onExit 中回收。
   }
 
   async listRunning(): Promise<Uuid[]> {

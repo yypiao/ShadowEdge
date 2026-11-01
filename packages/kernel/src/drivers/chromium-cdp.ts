@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { chromium, type BrowserContext } from 'patchright';
 import { createConsoleLogger, ShadowEdgeError } from '@shadowedge/core';
-import { buildLaunchConfig, findFreePort, PatchrightDriver } from './patchright.js';
+import {
+  buildLaunchConfig,
+  findFreePort,
+  PatchrightDriver,
+  readBrowserProcessId,
+} from './patchright.js';
 import type { KernelDriver, KernelLaunchSpec, RunningInstance } from '../driver.js';
 
 export interface ChromiumCdpDriverOptions {
@@ -74,10 +79,14 @@ export class ChromiumCdpDriver implements KernelDriver {
       });
     } catch (error) {
       if (this.fallbackDisabled()) {
-        throw new ShadowEdgeError('E_KERNEL_LAUNCH_FAILED', `自研内核启动失败: ${(error as Error).message}`, {
-          retryable: true,
-          cause: error,
-        });
+        throw new ShadowEdgeError(
+          'E_KERNEL_LAUNCH_FAILED',
+          `自研内核启动失败: ${(error as Error).message}`,
+          {
+            retryable: true,
+            cause: error,
+          },
+        );
       }
       return this.launchFallback(spec, `kernel launch failed: ${(error as Error).message}`);
     }
@@ -85,11 +94,11 @@ export class ChromiumCdpDriver implements KernelDriver {
 
     return {
       profileId: spec.profile.id,
-      // 与 PatchrightDriver 相同的限制：持久化上下文拿不到 browser target，pid 恒 0。
-      pid: 0,
+      pid: await readBrowserProcessId(context),
       wsEndpoint: cdpPort ? `http://127.0.0.1:${cdpPort}` : undefined,
       startedAt: new Date().toISOString(),
       kernelUsed: this.name,
+      onExit: (listener) => context.on('close', listener),
       close: async () => {
         await context.close().catch(() => undefined);
       },
@@ -110,7 +119,11 @@ export class ChromiumCdpDriver implements KernelDriver {
       });
     }
     const fallback = this.opts.fallbackDriver ?? new PatchrightDriver();
-    log.warn('回退 Patchright 驱动', { reason, profileId: spec.profile.id, fallback: fallback.name });
+    log.warn('回退 Patchright 驱动', {
+      reason,
+      profileId: spec.profile.id,
+      fallback: fallback.name,
+    });
     const instance = await fallback.launch(spec);
     instance.kernelUsed = fallback.name;
     return instance;

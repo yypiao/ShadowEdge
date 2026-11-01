@@ -5,10 +5,24 @@ import type { ShadowEdgeDb } from './db.js';
 export class AuditLog {
   constructor(private readonly handle: ShadowEdgeDb) {}
 
-  record(action: string, targetType: 'profile' | 'proxy' | 'session' | 'rpa' | 'sync' | 'kernel', targetId?: string, detail?: unknown): void {
+  record(
+    action: string,
+    targetType: 'profile' | 'proxy' | 'session' | 'rpa' | 'sync' | 'kernel',
+    targetId?: string,
+    detail?: unknown,
+  ): void {
     this.handle.db
-      .prepare('INSERT INTO audit_local (at, actor, action, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(new Date().toISOString(), 'local-user', action, targetType, targetId ?? null, detail === undefined ? null : JSON.stringify(detail));
+      .prepare(
+        'INSERT INTO audit_local (at, actor, action, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        new Date().toISOString(),
+        'local-user',
+        action,
+        targetType,
+        targetId ?? null,
+        detail === undefined ? null : JSON.stringify(detail),
+      );
   }
 }
 
@@ -18,8 +32,16 @@ export class SessionRepository {
 
   start(result: LaunchResult): void {
     this.handle.db
-      .prepare('INSERT INTO sessions (id, profile_id, pid, ws_endpoint, started_at) VALUES (?, ?, ?, ?, ?)')
-      .run(result.sessionId, result.profileId, result.pid, result.wsEndpoint ?? null, result.startedAt);
+      .prepare(
+        'INSERT INTO sessions (id, profile_id, pid, ws_endpoint, started_at) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run(
+        result.sessionId,
+        result.profileId,
+        result.pid ?? null,
+        result.wsEndpoint ?? null,
+        result.startedAt,
+      );
   }
 
   end(profileId: Uuid, endedAt: IsoDateTime = new Date().toISOString()): void {
@@ -30,7 +52,9 @@ export class SessionRepository {
 
   /** 应用重启后调用：上次异常退出留下的未关闭会话统一标记结束。 */
   sweepOrphans(endedAt: IsoDateTime = new Date().toISOString()): number {
-    const r = this.handle.db.prepare('UPDATE sessions SET ended_at = ? WHERE ended_at IS NULL').run(endedAt);
+    const r = this.handle.db
+      .prepare('UPDATE sessions SET ended_at = ? WHERE ended_at IS NULL')
+      .run(endedAt);
     return Number(r.changes);
   }
 }
