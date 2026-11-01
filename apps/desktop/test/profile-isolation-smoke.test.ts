@@ -14,7 +14,7 @@ import { chromium, type Browser, type CDPSession, type Page } from 'patchright';
 const executablePath = process.env.SHADOWEDGE_KERNEL_EXECUTABLE;
 const SMOKE = process.env.SHADOWEDGE_SMOKE === '1' && executablePath !== undefined;
 const PROXY_SMOKE = process.env.SHADOWEDGE_PROXY_SMOKE === '1';
-const PROXY_IDS = (process.env.SHADOWEDGE_PROXY_IDS ?? 'os1,os2').split(',');
+const PROXY_IDS = (process.env.SHADOWEDGE_PROXY_IDS ?? 'os1,t1').split(',');
 
 interface TestProxySecret {
   id: string;

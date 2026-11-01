@@ -249,7 +249,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
 ## 运维 — 探针夜间回归 🟡（工作流已落地，待 runner）
 
 `.github/workflows/probe-nightly.yml` 每天 18:00 UTC（新加坡 02:00）在
-`[self-hosted, macOS, shadowedge-probe]` runner 上跑 os1/os2 全量探针，
+`[self-hosted, macOS, shadowedge-probe]` runner 上跑 os1/t1 全量探针，
 `--fail-under 40`（Patchright 回退 31）低于阈值直接失败，并上传 JSON 报告。
 
 启用操作清单（按序执行，预计 1–2 小时）：
@@ -260,7 +260,7 @@ UA 降版本等主体能力对齐；ShadowEdge 在 UA-CH 对象稳定性与代�
    按官方指引下载安装；`config.sh` 时附加 labels：`macOS,shadowedge-probe`；
    `svc.sh install` 注册为 launchd 服务保证开机自启。
 3. 仓库 Secrets 新增 `SHADOWEDGE_TEST_PROXIES_JSON`，内容与本机
-   `experiments/.secrets/test-proxies.json` 完全一致（含 os1/os2 凭据）。
+   `experiments/.secrets/test-proxies.json` 完全一致（含 os1/t1 凭据）。
 4. 仓库 Variables 新增 `SHADOWEDGE_PROBE_UPSTREAM`（可选，默认 `http://127.0.0.1:7897`，
    指 runner 机器的本地翻墙端口，双跳链路需要）。
 5. 手动触发一次 workflow_dispatch 验证：两个 job 全绿、Artifacts 里能下载 JSON 报告；
@@ -373,8 +373,8 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 > 同期完成桌面内核配置 UI、原子持久化、严格禁止回退模式及实际 `kernelUsed` 展示。
 > 多环境真实内核验收通过：并行 Cookie/localStorage/指纹隔离、os1+t1 双代理出口隔离、
 > 同环境连续重启 20 次数据与画像稳定（65.3 秒）。测试见
-> `apps/desktop/test/profile-isolation-smoke.test.ts`。os2 当前 SOCKS5 认证失败，
-> 需更新外部测试凭据；没有用跳过测试掩盖该外部状态。
+> `apps/desktop/test/profile-isolation-smoke.test.ts`。过期 os2 凭据已于 2026-11-01 删除，
+> 后续双代理回归默认使用 os1+t1；历史 os2 报告仅作归档证据。
 
 **背景**：T10 遗留项。catalog 按「只增不改」滚动新快照后，`auditFingerprint()`
 默认加载最新素材，对历史环境复现必然误报漂移。历史环境必须记录自己出生时的 catalog 版本。
