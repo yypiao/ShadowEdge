@@ -27,4 +27,28 @@ describe('validateGraph', () => {
     expect(result.valid).toBe(false);
     expect(result.errors[0]).toContain('ghost');
   });
+
+  it('线性图存在循环应报错', () => {
+    const result = validateGraph({
+      entry: 'a',
+      nodes: {
+        a: { id: 'a', kind: 'wait', params: {}, next: 'b' },
+        b: { id: 'b', kind: 'wait', params: {}, next: 'a' },
+      },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.join('\n')).toContain('循环');
+  });
+
+  it('入口不可达节点应报错', () => {
+    const result = validateGraph({
+      entry: 'a',
+      nodes: {
+        a: { id: 'a', kind: 'wait', params: {} },
+        orphan: { id: 'orphan', kind: 'wait', params: {} },
+      },
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.join('\n')).toContain('不可达');
+  });
 });

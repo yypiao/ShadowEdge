@@ -130,6 +130,7 @@ export class PatchrightDriver implements KernelDriver {
       wsEndpoint: cdpPort ? `http://127.0.0.1:${cdpPort}` : undefined,
       startedAt,
       onExit: (listener) => context.on('close', listener),
+      getContext: () => context,
       close: async () => {
         await context.close().catch(() => undefined);
       },

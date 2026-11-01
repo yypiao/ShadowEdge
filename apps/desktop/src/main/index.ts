@@ -1,7 +1,12 @@
 import { app, BrowserWindow, ipcMain, net, protocol, shell } from 'electron';
 import { join, normalize, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createConsoleLogger, IPC_CHANNELS, isShadowEdgeError, ShadowEdgeError } from '@shadowedge/core';
+import {
+  createConsoleLogger,
+  IPC_CHANNELS,
+  isShadowEdgeError,
+  ShadowEdgeError,
+} from '@shadowedge/core';
 import type { IpcChannel } from '@shadowedge/core';
 import { createHandlers } from './handlers.js';
 import { openDatabase } from './services/db.js';
@@ -19,7 +24,10 @@ let mainWindow: BrowserWindow | null = null;
 // 必须在 app ready 之前声明特权，之后才能 protocol.handle。
 const RENDERER_SCHEME = 'seapp';
 protocol.registerSchemesAsPrivileged([
-  { scheme: RENDERER_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  {
+    scheme: RENDERER_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+  },
 ]);
 
 function registerRendererProtocol(): void {
@@ -85,6 +93,7 @@ function registerIpc(): void {
     audit: new AuditLog(handle),
     sessions,
     kernelRuntime: new KernelRuntimeService(dataDir),
+    rpaArtifactsDir: join(dataDir, 'rpa'),
   });
 
   for (const channel of IPC_CHANNELS) {
@@ -98,7 +107,9 @@ function registerIpc(): void {
       } catch (error) {
         logger.error('IPC 调用失败', { channel, error: String(error) });
         if (isShadowEdgeError(error)) throw error;
-        throw new ShadowEdgeError('E_INTERNAL', (error as Error).message ?? '未知错误', { cause: error });
+        throw new ShadowEdgeError('E_INTERNAL', (error as Error).message ?? '未知错误', {
+          cause: error,
+        });
       }
     });
   }

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
 import type {
   BrowserProfile,
   FingerprintProfile,
@@ -33,6 +34,8 @@ export interface HandlerDeps {
   audit: AuditLog;
   sessions: SessionRepository;
   kernelRuntime: KernelRuntimeService;
+  /** 生产环境传 userData/rpa；测试缺省使用仓库已忽略的 data/rpa。 */
+  rpaArtifactsDir?: string;
 }
 
 /** 主进程 IPC 处理器集合。类型与 IpcApi 严格对齐，新增通道会立即产生编译错误。 */
@@ -90,7 +93,11 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     },
   });
   const proxyManager = new ProxyManager();
-  const rpaEngine = new RpaEngine();
+  const rpaEngine = new RpaEngine({
+    resolveContext: (profileId) => kernel.getAutomationContext(profileId),
+    artifactsDir: deps.rpaArtifactsDir ?? join(process.cwd(), 'data', 'rpa'),
+    emit: (progress) => deps.emit('rpa:progress', progress),
+  });
 
   // 健康检查缓存：住宅/双跳代理探测可达 30s+，建环境与预览不应每次重探
   const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -283,20 +290,21 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     },
 
     'rpa:list': async () => [],
-    'rpa:run': async ({ workflowId, profileIds, inputs }) =>
-      rpaEngine.run(
-        {
-          id: workflowId,
-          orgId: 'local',
-          name: '',
-          version: 1,
-          graph: {},
-          createdBy: 'local-user',
-          updatedAt: new Date().toISOString(),
-        },
-        profileIds,
-        inputs,
-      ),
+    'rpa:run': async ({ workflow, profileIds, inputs }) => {
+      const runs = await rpaEngine.run(workflow, profileIds, inputs);
+      for (const run of runs) {
+        deps.audit.record('rpa:run', 'rpa', run.id, {
+          workflowId: workflow.id,
+          profileId: run.profileId,
+        });
+      }
+      return runs;
+    },
+    'rpa:get': async (runId) => {
+      const run = rpaEngine.getRun(runId);
+      if (!run) throw new ShadowEdgeError('E_RPA_RUN_NOT_FOUND', `RPA 运行 ${runId} 不存在`);
+      return run;
+    },
     'rpa:cancel': async (runId) => rpaEngine.cancel(runId),
 
     'sync:push': async (profileId) => {

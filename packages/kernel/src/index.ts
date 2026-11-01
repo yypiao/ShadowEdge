@@ -1,4 +1,5 @@
 import type { BrowserProfile, LaunchOptions, LaunchResult, Uuid } from '@shadowedge/core';
+import type { BrowserContext } from 'patchright';
 import { ShadowEdgeError } from '@shadowedge/core';
 import { startRelay, type RelayHandle } from '@shadowedge/proxy';
 import type {
@@ -117,6 +118,17 @@ export class BrowserKernel {
     this.running.delete(profileId);
     await instance.close();
     // 中继由实例的 close 包装统一回收；天然退出则在 onExit 中回收。
+  }
+
+  getAutomationContext(profileId: Uuid): BrowserContext {
+    const instance = this.running.get(profileId);
+    if (!instance) {
+      throw new ShadowEdgeError('E_PROFILE_NOT_RUNNING', `环境 ${profileId} 未在运行`);
+    }
+    if (!instance.getContext) {
+      throw new ShadowEdgeError('E_INTERNAL', `环境 ${profileId} 的驱动不支持自动化上下文`);
+    }
+    return instance.getContext();
   }
 
   async listRunning(): Promise<Uuid[]> {

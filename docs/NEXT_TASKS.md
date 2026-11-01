@@ -139,7 +139,22 @@
 
 ---
 
-## T7 — RPA 执行引擎
+## T7 — RPA 执行引擎 ✅ 核心执行链路完成（2026-11-01）
+
+> 已落地 core 类型化 `RpaGraph`、节点执行器注册表和真实运行状态机，支持
+> `navigate / click / type / wait / extract / screenshot`。通过 `BrowserKernel`
+> 直接复用当前环境的 BrowserContext，**无需开放远程调试端口**；新增 `rpa:get`
+> 查询最终状态与产物，`rpa:progress` 上报节点、重试和完成进度。
+>
+> 支持 `stop / continue /retry`、AbortController 取消、同环境执行锁、批量独立失败、
+> `{{inputs.key}}` 参数、提取 JSON 与 PNG 产物（目录 0700、文件 0600）。点击使用
+> 贝塞尔鼠标轨迹，逐字输入使用 80–260ms 抖动。工作流持久化、可视化编辑器、
+> condition/loop/script/http 节点及录制回放不在本卡，后续单独实现。
+>
+> 验收：结构化页面测试覆盖六节点、重试、继续、停止、取消、环境冲突和异常；
+> 真实自研 Chromium 在未开放 CDP 端口时跑通「打开 → 输入 Ada → 点击 → 提取
+> Hello Ada → PNG 截图 + JSON」。测试见 `packages/rpa/test/engine.test.ts`、
+> `apps/desktop/test/rpa-smoke.test.ts`。
 
 **背景**：`RpaEngine.run()` 只创建 run 记录，不执行任何节点。
 

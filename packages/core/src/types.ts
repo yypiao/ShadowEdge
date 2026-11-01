@@ -231,13 +231,38 @@ export interface LaunchResult {
 // RPA
 // ---------------------------------------------------------------------------
 
+export type RpaNodeKind =
+  | 'navigate'
+  | 'click'
+  | 'type'
+  | 'wait'
+  | 'extract'
+  | 'screenshot'
+  | 'condition'
+  | 'loop'
+  | 'script'
+  | 'http';
+
+export interface RpaNode {
+  id: string;
+  kind: RpaNodeKind;
+  params: Record<string, unknown>;
+  next?: string;
+  onError?: 'stop' | 'continue' | 'retry';
+  retries?: number;
+}
+
+export interface RpaGraph {
+  entry: string;
+  nodes: Record<string, RpaNode>;
+}
+
 export interface RpaWorkflow {
   id: Uuid;
   orgId: Uuid;
   name: string;
   version: number;
-  /** 节点图定义，由 @shadowedge/rpa 的 DSL 校验。 */
-  graph: unknown;
+  graph: RpaGraph;
   inputsSchema?: unknown;
   createdBy: Uuid;
   updatedAt: IsoDateTime;
@@ -253,6 +278,8 @@ export interface RpaRun {
   startedAt?: IsoDateTime;
   finishedAt?: IsoDateTime;
   error?: string;
+  /** extract 节点按 key 产生的文本结果。 */
+  outputs?: Record<string, string | null>;
   artifacts: Array<{ kind: 'screenshot' | 'log' | 'json' | 'video'; uri: string }>;
 }
 

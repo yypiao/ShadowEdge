@@ -35,7 +35,9 @@ export function App() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', fontFamily: 'system-ui, sans-serif' }}>
-      <nav style={{ width: 200, padding: 16, borderRight: '1px solid #e5e7eb', background: '#fafafa' }}>
+      <nav
+        style={{ width: 200, padding: 16, borderRight: '1px solid #e5e7eb', background: '#fafafa' }}
+      >
         <h1 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>ShadowEdge</h1>
         {tabs.map((tab) => (
           <button
@@ -64,7 +66,11 @@ export function App() {
       <main style={{ flex: 1, padding: 24, overflow: 'auto' }}>
         {sidebar === 'profiles' && <ProfilesPage />}
         {sidebar === 'proxies' && <ProxiesPage />}
-        {sidebar === 'rpa' && <p style={{ color: '#888' }}>自动化编排将在 T7 落地。</p>}
+        {sidebar === 'rpa' && (
+          <p style={{ color: '#888' }}>
+            RPA 执行引擎已就绪；可视化编排与工作流模板将在后续任务提供。
+          </p>
+        )}
         {sidebar === 'settings' && <SettingsPage />}
       </main>
 

@@ -1,4 +1,5 @@
 import type { BrowserProfile, LaunchOptions, Uuid } from '@shadowedge/core';
+import type { BrowserContext } from 'patchright';
 
 /** 给 Chromium 的代理配置：永远指向本机中继（T8），驱动不感知真实代理。 */
 export interface ResolvedProxy {
@@ -40,6 +41,8 @@ export interface RunningInstance {
   kernelUsed?: string;
   /** 浏览器手动关闭或异常退出时通知门面；显式 close 也会触发，由门面去重。 */
   onExit(listener: () => void): void;
+  /** 主进程内自动化直接复用当前上下文，无需开放远程调试端口。 */
+  getContext?: () => BrowserContext;
   close(): Promise<void>;
 }
 

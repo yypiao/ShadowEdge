@@ -6,6 +6,7 @@ export type ErrorCode =
   | 'E_PROFILE_NOT_FOUND'
   | 'E_PROFILE_BUSY'
   | 'E_PROFILE_LOCKED'
+  | 'E_PROFILE_NOT_RUNNING'
   | 'E_FINGERPRINT_INCONSISTENT'
   | 'E_CATALOG_SNAPSHOT_MISSING'
   | 'E_PROXY_NOT_FOUND'
@@ -14,6 +15,11 @@ export type ErrorCode =
   | 'E_KERNEL_LAUNCH_FAILED'
   | 'E_KERNEL_NOT_INSTALLED'
   | 'E_SYNC_CONFLICT'
+  | 'E_RPA_INVALID_GRAPH'
+  | 'E_RPA_INVALID_INPUT'
+  | 'E_RPA_RUN_NOT_FOUND'
+  | 'E_RPA_NODE_FAILED'
+  | 'E_RPA_CANCELLED'
   | 'E_CRYPTO_UNSEAL_FAILED'
   | 'E_RPA_STEP_FAILED'
   | 'E_QUOTA_EXCEEDED'
@@ -38,7 +44,12 @@ export class ShadowEdgeError extends Error {
   }
 
   toJSON() {
-    return { code: this.code, message: this.message, details: this.details, retryable: this.retryable };
+    return {
+      code: this.code,
+      message: this.message,
+      details: this.details,
+      retryable: this.retryable,
+    };
   }
 }
 

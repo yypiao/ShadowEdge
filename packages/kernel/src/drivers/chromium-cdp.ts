@@ -99,6 +99,7 @@ export class ChromiumCdpDriver implements KernelDriver {
       startedAt: new Date().toISOString(),
       kernelUsed: this.name,
       onExit: (listener) => context.on('close', listener),
+      getContext: () => context,
       close: async () => {
         await context.close().catch(() => undefined);
       },

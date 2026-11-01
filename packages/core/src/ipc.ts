@@ -35,7 +35,12 @@ export interface IpcApi {
   'profile:close': (id: Uuid) => void;
 
   /** 预览画像；传 proxyId 时时区/语言/地理自动跟随代理出口（T9），显式 overrides 优先。 */
-  'fingerprint:preview': (input: { seed: string; proxyId?: Uuid; platform?: Platform | 'host'; overrides?: Partial<FingerprintProfile> }) => FingerprintProfile;
+  'fingerprint:preview': (input: {
+    seed: string;
+    proxyId?: Uuid;
+    platform?: Platform | 'host';
+    overrides?: Partial<FingerprintProfile>;
+  }) => FingerprintProfile;
   'fingerprint:audit': (id: Uuid) => { consistent: boolean; issues: string[] };
 
   'kernel:getStatus': () => KernelRuntimeStatus;
@@ -47,7 +52,8 @@ export interface IpcApi {
   'proxy:importBulk': (input: { text: string; format: 'line' | 'csv' }) => ProxyCredential[];
 
   'rpa:list': () => RpaWorkflow[];
-  'rpa:run': (input: { workflowId: Uuid; profileIds: Uuid[]; inputs?: unknown }) => RpaRun[];
+  'rpa:run': (input: { workflow: RpaWorkflow; profileIds: Uuid[]; inputs?: unknown }) => RpaRun[];
+  'rpa:get': (runId: Uuid) => RpaRun;
   'rpa:cancel': (runId: Uuid) => void;
 
   'sync:push': (profileId: Uuid) => { revision: number };
@@ -89,6 +95,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'proxy:importBulk',
   'rpa:list',
   'rpa:run',
+  'rpa:get',
   'rpa:cancel',
   'sync:push',
   'sync:pull',
