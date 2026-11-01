@@ -13,6 +13,7 @@ import { openDatabase } from './services/db.js';
 import { loadKeyring } from './services/keyring.js';
 import { ProfileRepository } from './services/profile-repository.js';
 import { ProxyRepository } from './services/proxy-repository.js';
+import { AccountRepository } from './services/account-repository.js';
 import { AuditLog, SessionRepository } from './services/local-records.js';
 import { KernelRuntimeService } from './services/kernel-runtime.js';
 
@@ -90,6 +91,7 @@ function registerIpc(): void {
     emit: (event, payload) => mainWindow?.webContents.send(event, payload),
     profileRepo: new ProfileRepository(handle),
     proxyRepo: new ProxyRepository(handle, keyring),
+    accountRepo: new AccountRepository(handle, keyring),
     audit: new AuditLog(handle),
     sessions,
     kernelRuntime: new KernelRuntimeService(dataDir),

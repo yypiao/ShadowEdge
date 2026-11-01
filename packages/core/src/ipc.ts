@@ -1,4 +1,7 @@
 import type {
+  AccountAutofillResult,
+  AccountCredential,
+  AccountCredentialInput,
   BrowserProfile,
   FingerprintProfile,
   KernelRuntimeConfig,
@@ -51,6 +54,12 @@ export interface IpcApi {
   'proxy:check': (id: Uuid) => ProxyHealth;
   'proxy:importBulk': (input: { text: string; format: 'line' | 'csv' }) => ProxyCredential[];
 
+  'account:list': (profileId: Uuid) => AccountCredential[];
+  'account:upsert': (input: AccountCredentialInput) => AccountCredential;
+  'account:delete': (id: Uuid) => void;
+  /** 仅主进程短暂解密并填充；返回值不包含用户名或密码。 */
+  'account:autofill': (input: { id: Uuid; submit?: boolean }) => AccountAutofillResult;
+
   'rpa:list': () => RpaWorkflow[];
   'rpa:run': (input: { workflow: RpaWorkflow; profileIds: Uuid[]; inputs?: unknown }) => RpaRun[];
   'rpa:get': (runId: Uuid) => RpaRun;
@@ -93,6 +102,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'proxy:upsert',
   'proxy:check',
   'proxy:importBulk',
+  'account:list',
+  'account:upsert',
+  'account:delete',
+  'account:autofill',
   'rpa:list',
   'rpa:run',
   'rpa:get',

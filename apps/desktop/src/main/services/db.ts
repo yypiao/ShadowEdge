@@ -130,13 +130,31 @@ const MIGRATIONS: Migration[] = [
         fingerprint.catalogVersion = catalogVersion;
         const serialized = JSON.stringify(fingerprint);
         update.run(serialized, catalogVersion, row.id);
-        log.run(
-          new Date().toISOString(),
-          row.id,
-          JSON.stringify({ catalogVersion }),
-        );
+        log.run(new Date().toISOString(), row.id, JSON.stringify({ catalogVersion }));
       }
     },
+  },
+  {
+    id: 3,
+    name: 'account_credentials',
+    sql: `
+      CREATE TABLE account_credentials (
+        id TEXT PRIMARY KEY,
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        label TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        username TEXT NOT NULL,
+        username_selector TEXT NOT NULL,
+        password_selector TEXT NOT NULL,
+        submit_selector TEXT,
+        secret_ciphertext TEXT NOT NULL,
+        secret_wrapped_key TEXT NOT NULL,
+        secret_iv TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_account_profile ON account_credentials(profile_id);
+    `,
   },
 ];
 
@@ -157,9 +175,15 @@ export function openDatabase(path: string): ShadowEdgeDb {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
 
-  db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)');
-  const applied = new Set(allRows<{ id: number }>(db, 'SELECT id FROM schema_migrations').map((r) => r.id));
-  const insert = db.prepare('INSERT INTO schema_migrations (id, name, applied_at) VALUES (?, ?, ?)');
+  db.exec(
+    'CREATE TABLE IF NOT EXISTS schema_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)',
+  );
+  const applied = new Set(
+    allRows<{ id: number }>(db, 'SELECT id FROM schema_migrations').map((r) => r.id),
+  );
+  const insert = db.prepare(
+    'INSERT INTO schema_migrations (id, name, applied_at) VALUES (?, ?, ?)',
+  );
   for (const m of MIGRATIONS) {
     if (applied.has(m.id)) continue;
     tx(db, () => {

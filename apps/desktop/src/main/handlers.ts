@@ -24,6 +24,8 @@ import type { ProfileRepository } from './services/profile-repository.js';
 import type { ProxyRepository } from './services/proxy-repository.js';
 import type { AuditLog, SessionRepository } from './services/local-records.js';
 import type { KernelRuntimeService } from './services/kernel-runtime.js';
+import type { AccountRepository } from './services/account-repository.js';
+import { autofillAccount } from './services/account-autofill.js';
 import { runLaunchGate } from './services/launch-gate.js';
 
 export interface HandlerDeps {
@@ -31,6 +33,7 @@ export interface HandlerDeps {
   emit: <E extends IpcEventName>(event: E, payload: IpcEvents[E]) => void;
   profileRepo: ProfileRepository;
   proxyRepo: ProxyRepository;
+  accountRepo: AccountRepository;
   audit: AuditLog;
   sessions: SessionRepository;
   kernelRuntime: KernelRuntimeService;
@@ -287,6 +290,33 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       for (const item of parsed) saved.push(await deps.proxyRepo.upsert(item));
       deps.audit.record('proxy:importBulk', 'proxy', undefined, { count: saved.length });
       return saved;
+    },
+
+    'account:list': async (profileId) => {
+      requireProfile(profileId);
+      return deps.accountRepo.list(profileId);
+    },
+    'account:upsert': async (input) => {
+      requireProfile(input.profileId);
+      const saved = deps.accountRepo.upsert(input);
+      deps.audit.record('account:upsert', 'account', saved.id, {
+        profileId: saved.profileId,
+        origin: saved.origin,
+      });
+      return saved;
+    },
+    'account:delete': async (id) => {
+      deps.accountRepo.delete(id);
+      deps.audit.record('account:delete', 'account', id);
+    },
+    'account:autofill': async (input) => {
+      const result = await autofillAccount({ accountRepo: deps.accountRepo, kernel }, input);
+      deps.audit.record('account:autofill', 'account', result.credentialId, {
+        profileId: result.profileId,
+        origin: result.origin,
+        submitted: result.submitted,
+      });
+      return result;
     },
 
     'rpa:list': async () => [],

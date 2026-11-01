@@ -17,6 +17,7 @@ import { createHandlers } from '../src/main/handlers.js';
 import { openDatabase } from '../src/main/services/db.js';
 import { ProfileRepository } from '../src/main/services/profile-repository.js';
 import { ProxyRepository } from '../src/main/services/proxy-repository.js';
+import { AccountRepository } from '../src/main/services/account-repository.js';
 import { AuditLog, SessionRepository } from '../src/main/services/local-records.js';
 
 const executablePath = process.env.SHADOWEDGE_KERNEL_EXECUTABLE;
@@ -85,6 +86,7 @@ describe.skipIf(!SMOKE)('桌面配置到自研内核的真实启动链路', () =
       emit: (event, payload) => events.push({ event, payload }),
       profileRepo: profiles,
       proxyRepo: new ProxyRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
+      accountRepo: new AccountRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       audit: new AuditLog(handle),
       sessions: new SessionRepository(handle),
       kernelRuntime: runtime,

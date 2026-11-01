@@ -12,6 +12,7 @@ import { KernelRuntimeService } from '../src/main/services/kernel-runtime.js';
 import { AuditLog, SessionRepository } from '../src/main/services/local-records.js';
 import { ProfileRepository } from '../src/main/services/profile-repository.js';
 import { ProxyRepository } from '../src/main/services/proxy-repository.js';
+import { AccountRepository } from '../src/main/services/account-repository.js';
 
 const executablePath = process.env.SHADOWEDGE_KERNEL_EXECUTABLE;
 const SMOKE = process.env.SHADOWEDGE_SMOKE === '1' && executablePath !== undefined;
@@ -57,6 +58,7 @@ describe.skipIf(!SMOKE)('RPA 真实 Chromium 端到端', () => {
       },
       profileRepo: profiles,
       proxyRepo: new ProxyRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
+      accountRepo: new AccountRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       audit: new AuditLog(handle),
       sessions: new SessionRepository(handle),
       kernelRuntime: runtime,

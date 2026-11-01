@@ -13,7 +13,7 @@ interface AppState {
   proxies: ProxyCredential[];
   proxyHealth: Record<string, ProxyHealth>;
   rpaRuns: RpaRun[];
-  sidebar: 'profiles' | 'proxies' | 'rpa' | 'settings';
+  sidebar: 'profiles' | 'proxies' | 'accounts' | 'rpa' | 'settings';
   toasts: Toast[];
   setSidebar: (tab: AppState['sidebar']) => void;
   setProfiles: (profiles: BrowserProfile[]) => void;
@@ -48,12 +48,13 @@ export const useStore = create<AppState>((set) => ({
     }, 5000);
   },
   dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
-  clearRpaRun: (id) =>
-    set((state) => ({ rpaRuns: state.rpaRuns.filter((r) => r.id !== id) })),
+  clearRpaRun: (id) => set((state) => ({ rpaRuns: state.rpaRuns.filter((r) => r.id !== id) })),
 }));
 
 /** 统一把 IPC 错误转成 toast，避免每个页面各写一套 try/catch 样板。 */
 export function toastError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
-  useStore.getState().toast('error', message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+  useStore
+    .getState()
+    .toast('error', message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
 }

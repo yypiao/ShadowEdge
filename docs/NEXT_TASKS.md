@@ -615,3 +615,23 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 无需手工命令；历史环境审计不受新快照影响（由 T12 保证）。
 
 **注意**：本卡涉及新增 CI workflow，执行前先与维护者确认（AGENTS.md §7 对 CI 改动的约束）。
+
+---
+
+## T19 — 账号凭据托管与安全自动填充 ✅ 本地链路完成（2026-11-01）
+
+> 已在 `packages/core` 定义账号凭据、自动填充结果及 `account:list / upsert / delete / autofill`
+> 契约；桌面主进程新增 SQLite migration 3、`AccountRepository` 与自动填充服务，渲染层新增
+> “账号”管理页。密码使用 `EnvelopeCrypto` 的 `account-secret` 用途做信封加密，更新时省略
+> 密码会保留原密文，删除环境会级联删除凭据。
+>
+> 安全边界：没有密码 reveal IPC；自动填充只在主进程短暂解密，列表、返回值和审计均不包含
+> 密码。业务 origin 强制 HTTPS，HTTP 仅限回环地址；页面必须精确匹配 origin，密码选择器
+> 必须指向 `type=password`，默认只填充，显式 `submit: true` 才提交。非法 origin 的错误
+> 信息不回显原始输入，避免 URL userinfo 中的凭据进入日志。
+>
+> 验收：仓储测试覆盖密文落库、相同 KEK 重启解密、保留密文、级联删除和 origin/userinfo
+> 负例；真实自研 Chromium 跑通错误 origin 拒绝、非密码框拒绝、正确页面填充与提交，最终
+> 提取 `alice:ok`，审计不含用户名或密码。完整类型检查、单元测试、lint 与 Electron 构建通过。
+>
+> 本卡完成的是本地核心功能，不包含团队授权、云端同步、2FA、设备撤销或密码轮换提醒。

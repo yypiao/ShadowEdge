@@ -284,6 +284,37 @@ export interface RpaRun {
 }
 
 // ---------------------------------------------------------------------------
+// 账号凭据（密码明文永远不进入跨进程返回契约）
+// ---------------------------------------------------------------------------
+
+export interface AccountCredential {
+  id: Uuid;
+  profileId: Uuid;
+  label: string;
+  /** 精确协议 + 主机 + 端口，不允许路径、query 或 hash。 */
+  origin: string;
+  username: string;
+  usernameSelector: string;
+  passwordSelector: string;
+  submitSelector?: string;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+}
+
+export type AccountCredentialInput = Omit<AccountCredential, 'id' | 'createdAt' | 'updatedAt'> & {
+  id?: Uuid;
+  /** 新建必填；更新省略时保留原密文。 */
+  password?: string;
+};
+
+export interface AccountAutofillResult {
+  credentialId: Uuid;
+  profileId: Uuid;
+  origin: string;
+  submitted: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // 审计
 // ---------------------------------------------------------------------------
 

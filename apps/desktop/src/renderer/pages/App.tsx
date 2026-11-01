@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Toasts } from '../components/Toasts.js';
 import { useStore } from '../store.js';
 import { ProfilesPage } from './ProfilesPage.js';
+import { AccountsPage } from './AccountsPage.js';
 import { ProxiesPage } from './ProxiesPage.js';
 import { SettingsPage } from './SettingsPage.js';
 
@@ -29,6 +30,7 @@ export function App() {
   const tabs = [
     { key: 'profiles', label: '环境管理' },
     { key: 'proxies', label: '代理' },
+    { key: 'accounts', label: '账号' },
     { key: 'rpa', label: '自动化' },
     { key: 'settings', label: '设置' },
   ] as const;
@@ -66,6 +68,7 @@ export function App() {
       <main style={{ flex: 1, padding: 24, overflow: 'auto' }}>
         {sidebar === 'profiles' && <ProfilesPage />}
         {sidebar === 'proxies' && <ProxiesPage />}
+        {sidebar === 'accounts' && <AccountsPage />}
         {sidebar === 'rpa' && (
           <p style={{ color: '#888' }}>
             RPA 执行引擎已就绪；可视化编排与工作流模板将在后续任务提供。
