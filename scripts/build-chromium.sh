@@ -31,6 +31,9 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CHROMIUM_ROOT="${CHROMIUM_ROOT:-/Volumes/ChromiumBuild/chromium}"
 DEPOT_TOOLS="${DEPOT_TOOLS:-/Volumes/ChromiumBuild/depot_tools}"
 export PATH="$DEPOT_TOOLS:$PATH"
+if [[ "$(uname)" == Darwin && -d /Applications/Xcode.app/Contents/Developer ]]; then
+  export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+fi
 
 TAG="$(grep '^tag=' "$REPO_ROOT/chromium.version" | cut -d= -f2)"
 MAJOR="${TAG%%.*}"
@@ -67,15 +70,26 @@ echo "== Chromium $TAG @ ${HEAD_SHA:0:12}（commit ${LOCKED_SHA:+已锁定}${LOC
 shopt -s nullglob
 PATCHES=("$PATCH_DIR"/[0-9][0-9][0-9][0-9]-*.patch)
 if (( ${#PATCHES[@]} > 0 )); then
-  for p in "${PATCHES[@]}"; do
-    if git apply --check "$p" 2>/dev/null; then
-      git apply "$p" && echo "applied: $(basename "$p")"
-    elif git apply -R --check "$p" 2>/dev/null; then
-      echo "already applied, skip: $(basename "$p")"
-    else
-      echo "FATAL: 补丁无法干净应用：$p" >&2; exit 1
-    fi
-  done
+  LATEST="${PATCHES[${#PATCHES[@]}-1]}"
+  if git apply -R --check "$LATEST" 2>/dev/null; then
+    # 后续补丁会改变旧补丁的上下文，旧补丁不能再用独立 reverse-check 判重。
+    echo "already applied, skip: complete patch series through $(basename "$LATEST")"
+  elif (( ${#PATCHES[@]} > 1 )) \
+    && git apply -R --check "${PATCHES[${#PATCHES[@]}-2]}" 2>/dev/null \
+    && git apply --check "$LATEST" 2>/dev/null; then
+    # 日常迭代只在序列末尾新增补丁；避免重排已应用补丁的上下文。
+    git apply "$LATEST" && echo "applied: $(basename "$LATEST")"
+  else
+    for p in "${PATCHES[@]}"; do
+      if git apply --check "$p" 2>/dev/null; then
+        git apply "$p" && echo "applied: $(basename "$p")"
+      elif git apply -R --check "$p" 2>/dev/null; then
+        echo "already applied, skip: $(basename "$p")"
+      else
+        echo "FATAL: 补丁无法干净应用：$p" >&2; exit 1
+      fi
+    done
+  fi
 else
   echo "== 无补丁，构建原生 Chromium"
 fi

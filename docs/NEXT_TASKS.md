@@ -574,7 +574,14 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 
 ---
 
-## T17 — 内核版本化分发与防裸启
+## T17 — 内核版本化分发与防裸启（T17A 已完成，T17B 待做）
+
+> **T17A 本机启动授权（2026-11-02）**：桌面驱动每次启动签发独立随机 KEK 的 30 秒
+> `auth-token` 信封，Chromium 0009 在浏览器进程原生解封并检查时效，随后清除 KEK 环境。
+> 真实内核已验证合法启动，以及无令牌、错 KEK、密文篡改、过期四类拒启。该边界不替代
+> 文件签名，也不宣称抵御本机 root/逆向。当前 156 生产画像本地探针 32/32，
+> t1 代理外站全链路 40/40，Pixelscan `consistent`、无 masking，CreepJS headless/stealth 均为 0%。
+> T17B 的签名分发、下载更新、原子切换与回滚仍待做。
 
 **背景**：紫鸟内核按 `chrome_64_<ver>_<os>_ziniaobrowser.zip` 运行时下发，外壳不动换内核；
 且内核校验 launcher 令牌拒绝裸启（防提取/防二次分发）。我们目前内核跟随 patchright
@@ -676,3 +683,31 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 > 真实测试联合回归 2/2 通过；自研内核探针 32/32、Patchright 回退探针 20/20。
 > 完整 TypeScript 测试 124 passed / 10 skipped，typecheck、lint、Electron 生产构建、
 > `verify-kernel.sh --mode dev` 与补丁反向 apply 校验均通过。
+
+---
+
+## T22A — 批量环境生命周期核心 API ✅（2026-11-02）
+
+> 新增 `profile:createMany / launchMany / closeMany` 契约与主进程实现，统一复用单个
+> 创建、启动、关闭处理器，确保启动闸门、审计、会话记录和状态事件不绕路。批量项按输入顺序
+> 返回 `Result<T, ErrorPayload>`；错误使用 IPC 可结构化克隆的载荷，单项失败不中断后续项。
+> 操作串行执行，避免 16GB 开发机批量启动时产生瞬时内存峰值。
+>
+> 验收：`profile-batch.test.ts` 覆盖创建/启动/关闭三段链路中的中间项失败与后续成功；
+> 真实 Chromium 冒烟以两个独立环境验证批量启动、 `kernelUsed=chromium-cdp`、状态持久化和
+> 批量回收。批量选择/批量创建表单等 UI 属于 T22B，不在本卡。
+
+---
+
+## T22B — 批量环境管理 UI ✅（2026-11-02）
+
+> 创建对话框支持一次创建 1–50 个环境，按 `名称-01` 形式命名并派生独立 seed；环境列表
+> 支持逐项选择、全选、批量启动与批量停止，仅处理符合当前状态的目标。界面显示独立成功/
+> 失败计数及 Patchright 回退数量，操作后保留有效选择，便于连续启动和停止。
+>
+> 真实 Electron UI 冒烟已在临时用户目录完成：批量创建两个环境、全选、以两个
+> `chromium-cdp` 实例启动、批量停止并回到空闲；SQLite 中两份完整画像不同，进程与临时
+> 数据均已回收。
+>
+> 联调同时发现并修复桌面生产构建漏拷 `packages/fingerprint/catalog` 的问题；构建现在
+> 保留 `dist/catalog` 相对布局，新建环境和指纹预览不再因快照缺失而失败。

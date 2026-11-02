@@ -1,0 +1,481 @@
+# ShadowEdge: depends on 0003-serviceworker-init-script.patch.
+diff --git a/content/browser/browser_main_loop.cc b/content/browser/browser_main_loop.cc
+index 3801b65..a7bcaa7 100644
+--- a/content/browser/browser_main_loop.cc
++++ b/content/browser/browser_main_loop.cc
+@@ -13,14 +13,15 @@
+ #include <utility>
+ #include <vector>
+ 
++#include "base/base64.h"
+ #include "base/base_switches.h"
+ #include "base/callback_list.h"
+-#include "base/base64.h"
+ #include "base/command_line.h"
+-#include "base/json/json_reader.h"
+ #include "base/debug/leak_annotations.h"
++#include "base/environment.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
++#include "base/json/json_reader.h"
+ #include "base/location.h"
+ #include "base/logging.h"
+ #include "base/memory/ptr_util.h"
+@@ -167,6 +168,7 @@
+ #include "skia/ext/legacy_display_globals.h"
+ #include "skia/ext/skia_memory_dump_provider.h"
+ #include "sql/sql_memory_dump_provider.h"
++#include "third_party/boringssl/src/include/openssl/evp.h"
+ #include "ui/base/clipboard/clipboard.h"
+ #include "ui/display/display_features.h"
+ #include "ui/gfx/font_render_params.h"
+@@ -278,10 +280,12 @@ static void GLibLogHandler(const gchar* log_domain,
+                            GLogLevelFlags log_level,
+                            const gchar* message,
+                            gpointer userdata) {
+-  if (!log_domain)
++  if (!log_domain) {
+     log_domain = "<unknown>";
+-  if (!message)
++  }
++  if (!message) {
+     message = "<no message>";
++  }
+ 
+   if (log_level & (G_LOG_FLAG_FATAL)) {
+     LOG(DFATAL) << log_domain << ": " << message;
+@@ -340,8 +344,9 @@ void InitDefaultJob() {
+ 
+ #if defined(ENABLE_IPC_FUZZER)
+ bool GetBuildDirectory(base::FilePath* result) {
+-  if (!base::PathService::Get(base::DIR_EXE, result))
++  if (!base::PathService::Get(base::DIR_EXE, result)) {
+     return false;
++  }
+ 
+ #if BUILDFLAG(IS_MAC)
+   if (base::apple::AmIBundled()) {
+@@ -356,8 +361,9 @@ bool GetBuildDirectory(base::FilePath* result) {
+ 
+ void SetFileUrlPathAliasForIpcFuzzer() {
+   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+-          switches::kFileUrlPathAlias))
++          switches::kFileUrlPathAlias)) {
+     return;
++  }
+ 
+   base::FilePath build_directory;
+   if (!GetBuildDirectory(&build_directory)) {
+@@ -376,8 +382,9 @@ std::unique_ptr<memory_pressure::MultiSourceMemoryPressureMonitor>
+ CreateMemoryPressureMonitor(const base::CommandLine& command_line) {
+   // Behavior of browser tests should not depend on things outside of their
+   // control (like the amount of memory on the system running the tests).
+-  if (command_line.HasSwitch(switches::kBrowserTest))
++  if (command_line.HasSwitch(switches::kBrowserTest)) {
+     return nullptr;
++  }
+ 
+   std::unique_ptr<memory_pressure::MultiSourceMemoryPressureMonitor> monitor;
+ 
+@@ -388,8 +395,9 @@ CreateMemoryPressureMonitor(const base::CommandLine& command_line) {
+ #endif
+   // No memory monitor on other platforms...
+ 
+-  if (monitor)
++  if (monitor) {
+     monitor->MaybeStartPlatformVoter();
++  }
+ 
+ #if BUILDFLAG(IS_ANDROID)
+   if (auto evaluator = UserLevelMemoryPressureSignalGenerator::MaybeCreate(
+@@ -414,11 +422,10 @@ class OopDataDecoder : public data_decoder::ServiceProvider {
+   void BindDataDecoderService(
+       mojo::PendingReceiver<data_decoder::mojom::DataDecoderService> receiver)
+       override {
+-    ServiceProcessHost::Launch(
+-        std::move(receiver),
+-        ServiceProcessHost::Options()
+-            .WithDisplayName("Data Decoder Service")
+-            .Pass());
++    ServiceProcessHost::Launch(std::move(receiver),
++                               ServiceProcessHost::Options()
++                                   .WithDisplayName("Data Decoder Service")
++                                   .Pass());
+   }
+ };
+ 
+@@ -434,6 +441,139 @@ void BindHidManager(mojo::PendingReceiver<device::mojom::HidManager> receiver) {
+ #endif
+ }
+ 
++bool DecodeLaunchTokenField(const base::DictValue& envelope,
++                            std::string_view key,
++                            std::string* decoded) {
++  const std::string* value = envelope.FindString(key);
++  return value && base::Base64Decode(*value, decoded,
++                                     base::Base64DecodePolicy::kForgiving);
++}
++
++std::optional<std::string> OpenAes256Gcm(
++    base::span<const uint8_t> key,
++    const std::string& nonce,
++    const std::string& aad,
++    const std::string& ciphertext_and_tag) {
++  if (key.size() != 32 || nonce.size() != 12 ||
++      ciphertext_and_tag.size() < 16) {
++    return std::nullopt;
++  }
++  bssl::ScopedEVP_CIPHER_CTX context;
++  int output_length = 0;
++  if (!EVP_DecryptInit_ex(context.get(), EVP_aes_256_gcm(), nullptr, nullptr,
++                          nullptr) ||
++      !EVP_CIPHER_CTX_ctrl(context.get(), EVP_CTRL_GCM_SET_IVLEN,
++                           static_cast<int>(nonce.size()), nullptr) ||
++      !EVP_DecryptInit_ex(context.get(), nullptr, nullptr, key.data(),
++                          reinterpret_cast<const uint8_t*>(nonce.data())) ||
++      !EVP_DecryptUpdate(context.get(), nullptr, &output_length,
++                         reinterpret_cast<const uint8_t*>(aad.data()),
++                         static_cast<int>(aad.size()))) {
++    return std::nullopt;
++  }
++
++  const size_t ciphertext_size = ciphertext_and_tag.size() - 16;
++  std::string plaintext(ciphertext_size, '\0');
++  if (!EVP_DecryptUpdate(
++          context.get(), reinterpret_cast<uint8_t*>(plaintext.data()),
++          &output_length,
++          reinterpret_cast<const uint8_t*>(ciphertext_and_tag.data()),
++          static_cast<int>(ciphertext_size))) {
++    return std::nullopt;
++  }
++  const int plaintext_length = output_length;
++  void* tag = const_cast<uint8_t*>(
++      base::as_byte_span(ciphertext_and_tag).subspan(ciphertext_size).data());
++  int final_length = 0;
++  if (!EVP_CIPHER_CTX_ctrl(context.get(), EVP_CTRL_GCM_SET_TAG, 16, tag) ||
++      !EVP_DecryptFinal_ex(context.get(),
++                           base::as_writable_byte_span(plaintext)
++                               .subspan(static_cast<size_t>(plaintext_length))
++                               .data(),
++                           &final_length)) {
++    return std::nullopt;
++  }
++  plaintext.resize(static_cast<size_t>(plaintext_length + final_length));
++  return plaintext;
++}
++
++bool ValidateShadowEdgeLaunchAuthorization() {
++  const base::CommandLine& command_line =
++      *base::CommandLine::ForCurrentProcess();
++  std::unique_ptr<base::Environment> environment = base::Environment::Create();
++  std::optional<std::string> kek_hex =
++      environment ? environment->GetVar("SHADOWEDGE_LAUNCH_KEK") : std::nullopt;
++  // The key is needed only by the browser process during this early check.
++  // Do not propagate it to subsequently launched renderer/GPU/utility
++  // processes.
++  if (environment) {
++    environment->UnSetVar("SHADOWEDGE_LAUNCH_KEK");
++  }
++  if (!kek_hex || !command_line.HasSwitch(switches::kShadowEdgeLaunchToken)) {
++    return false;
++  }
++
++  std::vector<uint8_t> kek_bytes;
++  if (!base::HexStringToBytes(*kek_hex, &kek_bytes) || kek_bytes.size() != 32) {
++    return false;
++  }
++  std::string token_json;
++  if (!base::Base64Decode(
++          command_line.GetSwitchValueASCII(switches::kShadowEdgeLaunchToken),
++          &token_json, base::Base64DecodePolicy::kForgiving)) {
++    return false;
++  }
++  std::optional<base::DictValue> envelope =
++      base::JSONReader::ReadDict(token_json, base::JSON_PARSE_RFC);
++  if (!envelope || envelope->FindInt("v") != 1) {
++    return false;
++  }
++
++  std::string wrapped_key;
++  std::string ciphertext;
++  std::string iv;
++  if (!DecodeLaunchTokenField(*envelope, "wrappedKey", &wrapped_key) ||
++      !DecodeLaunchTokenField(*envelope, "ciphertext", &ciphertext) ||
++      !DecodeLaunchTokenField(*envelope, "iv", &iv) ||
++      wrapped_key.size() != 60 || iv.size() != 12 || ciphertext.size() < 16) {
++    return false;
++  }
++
++  // EnvelopeCrypto stores wrappedKey as ciphertext || tag || wrap-IV.
++  const std::string wrapped_ciphertext_and_tag = wrapped_key.substr(0, 48);
++  const std::string wrap_iv = wrapped_key.substr(48);
++  const std::string aad = "auth-token";
++  // EnvelopeCrypto authenticates the payload with its purpose, but the DEK
++  // wrapping operation intentionally has no AAD for compatibility.
++  std::optional<std::string> dek =
++      OpenAes256Gcm(kek_bytes, wrap_iv, "", wrapped_ciphertext_and_tag);
++  if (!dek || dek->size() != 32) {
++    return false;
++  }
++  std::optional<std::string> payload_json =
++      OpenAes256Gcm(base::as_byte_span(*dek), iv, aad, ciphertext);
++  if (!payload_json) {
++    return false;
++  }
++
++  std::optional<base::DictValue> payload =
++      base::JSONReader::ReadDict(*payload_json, base::JSON_PARSE_RFC);
++  if (!payload || payload->FindInt("v") != 1) {
++    return false;
++  }
++  const std::string* profile_id = payload->FindString("profileId");
++  const std::string* nonce = payload->FindString("nonce");
++  const std::optional<int> issued_at = payload->FindInt("iat");
++  const std::optional<int> expires_at = payload->FindInt("exp");
++  if (!profile_id || profile_id->empty() || !nonce || nonce->size() < 16 ||
++      !issued_at || !expires_at) {
++    return false;
++  }
++  const double now = static_cast<double>(base::Time::Now().ToTimeT());
++  return *issued_at <= now + 5 && *expires_at > now &&
++         *expires_at > *issued_at && *expires_at - *issued_at <= 60;
++}
++
+ uint32_t GenerateBrowserSalt() {
+   uint32_t salt;
+   do {
+@@ -516,9 +656,8 @@ void BrowserMainLoop::Init() {
+           command_line.GetSwitchValueASCII(switches::kShadowEdgeFingerprint),
+           &decoded, base::Base64DecodePolicy::kForgiving);
+       std::optional<base::DictValue> portrait =
+-          decoded_ok
+-              ? base::JSONReader::ReadDict(decoded, base::JSON_PARSE_RFC)
+-              : std::nullopt;
++          decoded_ok ? base::JSONReader::ReadDict(decoded, base::JSON_PARSE_RFC)
++                     : std::nullopt;
+       CHECK(decoded_ok && portrait.has_value())
+           << "FATAL: --shadowedge-fingerprint is not a base64-encoded JSON "
+              "object; refusing to start";
+@@ -533,6 +672,10 @@ void BrowserMainLoop::Init() {
+     }
+   }
+ 
++  CHECK(ValidateShadowEdgeLaunchAuthorization())
++      << "FATAL: ShadowEdge launch authorization missing, invalid, or expired; "
++         "refusing to start";
++
+   if (parameters_.startup_data) {
+     StartupDataImpl* startup_data =
+         static_cast<StartupDataImpl*>(parameters_.startup_data.get());
+@@ -593,8 +736,9 @@ int BrowserMainLoop::EarlyInitialization() {
+ 
+   if (parts_) {
+     const int pre_early_init_error_code = parts_->PreEarlyInitialization();
+-    if (pre_early_init_error_code != RESULT_CODE_NORMAL_EXIT)
++    if (pre_early_init_error_code != RESULT_CODE_NORMAL_EXIT) {
+       return pre_early_init_error_code;
++    }
+   }
+ 
+   // SetCurrentThreadType relies on CurrentUIThread on some platforms. The
+@@ -647,8 +791,9 @@ int BrowserMainLoop::EarlyInitialization() {
+   vrp_flags::PostEarlyInitialization();
+ #endif
+ 
+-  if (parts_)
++  if (parts_) {
+     parts_->PostEarlyInitialization();
++  }
+ 
+   return RESULT_CODE_NORMAL_EXIT;
+ }
+@@ -745,7 +890,9 @@ void BrowserMainLoop::PostCreateMainMessageLoop() {
+     online_state_observer_ = std::make_unique<BrowserOnlineStateObserver>();
+   }
+ 
+-  { base::SetRecordActionTaskRunner(GetUIThreadTaskRunner({})); }
++  {
++    base::SetRecordActionTaskRunner(GetUIThreadTaskRunner({}));
++  }
+ 
+   // TODO(boliu): kSingleProcess check is a temporary workaround for
+   // in-process Android WebView. crbug.com/503724 tracks proper fix.
+@@ -764,8 +911,9 @@ void BrowserMainLoop::PostCreateMainMessageLoop() {
+     browser_accessibility_state_ = BrowserAccessibilityStateImpl::Create();
+   }
+ 
+-  if (parts_)
++  if (parts_) {
+     parts_->PostCreateMainMessageLoop();
++  }
+ 
+ #if BUILDFLAG(IS_ANDROID)
+   {
+@@ -879,8 +1027,9 @@ int BrowserMainLoop::PreCreateThreads() {
+     BUILDFLAG(IS_IOS)
+   // Single-process is an unsupported and not fully tested mode, so
+   // don't enable it for official Chrome builds (except on Android and iOS).
+-  if (parsed_command_line_->HasSwitch(switches::kSingleProcess))
++  if (parsed_command_line_->HasSwitch(switches::kSingleProcess)) {
+     RenderProcessHost::SetRunRendererInProcess(true);
++  }
+ #endif
+ 
+   // Set up the callbacks used by the network layer to track and validate
+@@ -936,8 +1085,9 @@ void BrowserMainLoop::CreateStartupTasks() {
+ #if BUILDFLAG(IS_ANDROID)
+   // Some java scheduler tests need to test migration to C++, but the browser
+   // environment isn't set up fully and if these tasks run they may crash.
+-  if (!g_post_startup_tasks)
++  if (!g_post_startup_tasks) {
+     return;
++  }
+ 
+   startup_task_runner_ = std::make_unique<StartupTaskRunner>(
+       base::BindOnce(&BrowserStartupComplete),
+@@ -1088,8 +1238,9 @@ int BrowserMainLoop::PreMainMessageLoopRun() {
+   ui::SetScreenAndroid(use_display_wide_color_gamut);
+ #endif  // BUILDFLAG(IS_ANDROID)
+ 
+-  if (parts_)
++  if (parts_) {
+     result_code_ = parts_->PreMainMessageLoopRun();
++  }
+ 
+   // ShellBrowserMainParts initializes a ShellBrowserContext with user data
+   // directory only in PreMainMessageLoopRun(). First-Party Sets handler needs
+@@ -1154,8 +1305,9 @@ int BrowserMainLoop::PreMainMessageLoopRun() {
+ BrowserMainLoop::ProceedWithMainMessageLoopRun
+ BrowserMainLoop::InterceptMainMessageLoopRun() {
+   // Embedders can request not to run the loop (also voids |ui_task|).
+-  if (parts_ && !parts_->ShouldInterceptMainMessageLoopRun())
++  if (parts_ && !parts_->ShouldInterceptMainMessageLoopRun()) {
+     return ProceedWithMainMessageLoopRun(false);
++  }
+ 
+   // The |ui_task| can be injected by tests to replace the main message loop.
+   if (parameters_.ui_task) {
+@@ -1171,19 +1323,22 @@ void BrowserMainLoop::RunMainMessageLoop() {
+   // Android's main message loop is the Java message loop.
+   NOTREACHED();
+ #else  // BUILDFLAG(IS_ANDROID)
+-  if (InterceptMainMessageLoopRun() != ProceedWithMainMessageLoopRun(true))
++  if (InterceptMainMessageLoopRun() != ProceedWithMainMessageLoopRun(true)) {
+     return;
++  }
+ 
+   auto main_run_loop = std::make_unique<base::RunLoop>();
+-  if (parts_)
++  if (parts_) {
+     parts_->WillRunMainMessageLoop(main_run_loop);
++  }
+ 
+ #if BUILDFLAG(IS_MAC)
+   // Call Recycle() here as late as possible, before going into the loop because
+   // previous steps may have added things to it (e.g. while creating the main
+   // window).
+-  if (parameters_.autorelease_pool)
++  if (parameters_.autorelease_pool) {
+     parameters_.autorelease_pool->Recycle();
++  }
+ #endif  // BUILDFLAG(IS_MAC)
+ 
+   CHECK(main_run_loop, base::NotFatalUntil::M159);
+@@ -1196,8 +1351,9 @@ void BrowserMainLoop::PreShutdown() {
+ #if BUILDFLAG(IS_MAC)
+   // Ensure autorelease pool is drained before we do the leak check to avoid
+   // catching about-to-be-released objects as false positives.
+-  if (parameters_.autorelease_pool)
++  if (parameters_.autorelease_pool) {
+     parameters_.autorelease_pool->Recycle();
++  }
+ #endif  // BUILDFLAG(IS_MAC)
+   // Invoke leak detection now, to avoid dealing with shutdown-only leaks.
+   // Normally this will have already happened in
+@@ -1244,8 +1400,9 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
+       base::BindOnce(base::IgnoreResult(
+           &base::PermanentThreadAllowance::AllowBaseSyncPrimitives)));
+ 
+-  if (RenderProcessHost::run_renderer_in_process())
++  if (RenderProcessHost::run_renderer_in_process()) {
+     RenderProcessHostImpl::ShutDownInProcessRenderer();
++  }
+ 
+   if (parts_) {
+     TRACE_EVENT0("shutdown",
+@@ -1309,13 +1466,15 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
+   system_message_window_.reset();
+ #endif
+ 
+-  if (BrowserGpuChannelHostFactory::instance())
++  if (BrowserGpuChannelHostFactory::instance()) {
+     BrowserGpuChannelHostFactory::instance()->CloseChannel();
++  }
+ 
+   mojo_ipc_support_.reset();
+ 
+-  if (save_file_manager_)
++  if (save_file_manager_) {
+     save_file_manager_->Shutdown();
++  }
+ 
+   {
+     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:IOThread");
+@@ -1600,24 +1759,27 @@ bool BrowserMainLoop::InitializeToolkit() {
+   INITCOMMONCONTROLSEX config;
+   config.dwSize = sizeof(config);
+   config.dwICC = ICC_WIN95_CLASSES;
+-  if (!InitCommonControlsEx(&config))
++  if (!InitCommonControlsEx(&config)) {
+     PLOG(FATAL);
++  }
+ #endif
+ 
+ #if defined(USE_AURA)
+   // Env creates the compositor. Aura widgets need the compositor to be created
+   // before they can be initialized by the browser.
+   env_ = aura::Env::CreateInstance();
+-  if (!env_)
++  if (!env_) {
+     return false;
++  }
+ #endif  // defined(USE_AURA)
+ 
+ #if BUILDFLAG(IS_ANDROID)
+   ui::InputDeviceObserverAndroid::GetInstance()->Initialize();
+ #endif
+ 
+-  if (parts_)
++  if (parts_) {
+     parts_->ToolkitInitialized();
++  }
+ 
+   return true;
+ }
+diff --git a/content/public/common/content_switches.cc b/content/public/common/content_switches.cc
+index 1a2dbaf..625dda7 100644
+--- a/content/public/common/content_switches.cc
++++ b/content/public/common/content_switches.cc
+@@ -929,6 +929,9 @@ const char kEnableAutomation[] = "enable-automation";
+ // ShadowEdge fingerprint portrait as base64-encoded JSON.
+ const char kShadowEdgeFingerprint[] = "shadowedge-fingerprint";
+ 
++// ShadowEdge one-time encrypted launch authorization.
++const char kShadowEdgeLaunchToken[] = "shadowedge-launch-token";
++
+ // ShadowEdge JS init script as base64; consumed in Blink worker scopes.
+ const char kShadowEdgeInitScript[] = "shadowedge-init-script";
+ 
+diff --git a/content/public/common/content_switches.h b/content/public/common/content_switches.h
+index b6525cb..5658977 100644
+--- a/content/public/common/content_switches.h
++++ b/content/public/common/content_switches.h
+@@ -101,6 +101,8 @@ CONTENT_EXPORT extern const char kEnableBlinkFeatures[];
+ // ShadowEdge fingerprint portrait as base64-encoded JSON. Parsed and
+ // validated in the browser process; an invalid value aborts startup.
+ CONTENT_EXPORT extern const char kShadowEdgeFingerprint[];
++// Short-lived encrypted launch authorization issued by the desktop main process.
++CONTENT_EXPORT extern const char kShadowEdgeLaunchToken[];
+ // ShadowEdge JS init script (base64-encoded), evaluated by the kernel in
+ // ServiceWorker global scopes before the worker's own script runs.
+ CONTENT_EXPORT extern const char kShadowEdgeInitScript[];

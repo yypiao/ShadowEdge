@@ -8,6 +8,7 @@ import type {
   KernelRuntimeStatus,
   LaunchOptions,
   LaunchResult,
+  ProfileCreateInput,
   Platform,
   ProxyCredential,
   ProxyHealth,
@@ -15,6 +16,8 @@ import type {
   RpaWorkflow,
   Uuid,
 } from './types.js';
+import type { ErrorPayload } from './errors.js';
+import type { Result } from './result.js';
 
 /**
  * 渲染进程 ↔ 主进程 的唯一 IPC 契约。
@@ -23,19 +26,21 @@ import type {
 export interface IpcApi {
   'profile:list': (query?: { groupId?: Uuid; keyword?: string }) => BrowserProfile[];
   'profile:get': (id: Uuid) => BrowserProfile;
-  'profile:create': (input: {
-    name: string;
-    platformTag?: string;
-    proxyId?: Uuid;
-    /** 画像平台；'host' 跟随宿主机（推荐），缺省由主进程按 'host' 处理。 */
-    platform?: Platform | 'host';
-    fingerprintSeed?: string;
-    overrides?: Partial<FingerprintProfile>;
-  }) => BrowserProfile;
+  'profile:create': (input: ProfileCreateInput) => BrowserProfile;
+  /** 批量操作按输入顺序返回独立结果，单个失败不中断整批。 */
+  'profile:createMany': (input: {
+    items: ProfileCreateInput[];
+  }) => Array<Result<BrowserProfile, ErrorPayload>>;
   'profile:update': (input: { id: Uuid; patch: Partial<BrowserProfile> }) => BrowserProfile;
   'profile:delete': (id: Uuid) => void;
   'profile:launch': (options: LaunchOptions) => LaunchResult;
+  'profile:launchMany': (input: {
+    items: LaunchOptions[];
+  }) => Array<Result<LaunchResult, ErrorPayload>>;
   'profile:close': (id: Uuid) => void;
+  'profile:closeMany': (input: {
+    profileIds: Uuid[];
+  }) => Array<Result<{ profileId: Uuid }, ErrorPayload>>;
 
   /** 预览画像；传 proxyId 时时区/语言/地理自动跟随代理出口（T9），显式 overrides 优先。 */
   'fingerprint:preview': (input: {
@@ -90,10 +95,13 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'profile:list',
   'profile:get',
   'profile:create',
+  'profile:createMany',
   'profile:update',
   'profile:delete',
   'profile:launch',
+  'profile:launchMany',
   'profile:close',
+  'profile:closeMany',
   'fingerprint:preview',
   'fingerprint:audit',
   'kernel:getStatus',

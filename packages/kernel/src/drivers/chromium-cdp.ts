@@ -8,6 +8,7 @@ import {
   readBrowserProcessId,
 } from './patchright.js';
 import type { KernelDriver, KernelLaunchSpec, RunningInstance } from '../driver.js';
+import { createKernelLaunchAuthorization, KERNEL_LAUNCH_KEK_ENV } from '../launch-token.js';
 
 export interface ChromiumCdpDriverOptions {
   /** 自构建内核可执行文件路径；缺省读环境变量 SHADOWEDGE_KERNEL_EXECUTABLE。 */
@@ -19,6 +20,13 @@ export interface ChromiumCdpDriverOptions {
 }
 
 const log = createConsoleLogger({ driver: 'chromium-cdp' });
+
+function redactLaunchError(error: Error): string {
+  return error.message.replace(
+    /--shadowedge-launch-token=\S+/g,
+    '--shadowedge-launch-token=[redacted]',
+  );
+}
 
 /**
  * 解析自构建内核路径。不存在视为未就绪（返回 undefined 走回退），
@@ -63,6 +71,12 @@ export class ChromiumCdpDriver implements KernelDriver {
       coveredByKernel: ['screen', 'webgl', 'audio'],
     });
     const userDataDir = spec.profile.storage.userDataDir;
+    const authorization = createKernelLaunchAuthorization(spec.profile.id);
+    const environment = Object.fromEntries(
+      Object.entries(process.env).filter((entry): entry is [string, string] => {
+        return typeof entry[1] === 'string';
+      }),
+    );
     mkdirSync(userDataDir, { recursive: true });
 
     let context: BrowserContext;
@@ -72,23 +86,23 @@ export class ChromiumCdpDriver implements KernelDriver {
         args: [
           ...contextOptions.args,
           `--shadowedge-fingerprint=${encodeFingerprintPortrait(spec)}`,
+          `--shadowedge-launch-token=${authorization.token}`,
           // 全 Worker 作用域的注入载体（0003/0008 在 Worker 自身脚本前求值）。
           `--shadowedge-init-script=${Buffer.from(injectionScript, 'utf8').toString('base64')}`,
         ],
         executablePath,
+        env: { ...environment, [KERNEL_LAUNCH_KEK_ENV]: authorization.kekHex },
       });
     } catch (error) {
+      const reason = redactLaunchError(error as Error);
       if (this.fallbackDisabled()) {
-        throw new ShadowEdgeError(
-          'E_KERNEL_LAUNCH_FAILED',
-          `自研内核启动失败: ${(error as Error).message}`,
-          {
-            retryable: true,
-            cause: error,
-          },
-        );
+        throw new ShadowEdgeError('E_KERNEL_LAUNCH_FAILED', `自研内核启动失败: ${reason}`, {
+          retryable: true,
+          // Patchright 的原始启动错误包含完整命令行，不能把密文令牌留在 cause 中。
+          cause: new Error(reason),
+        });
       }
-      return this.launchFallback(spec, `kernel launch failed: ${(error as Error).message}`);
+      return this.launchFallback(spec, `kernel launch failed: ${reason}`);
     }
     await context.addInitScript({ content: injectionScript });
 

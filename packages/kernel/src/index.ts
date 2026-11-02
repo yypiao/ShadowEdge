@@ -135,3 +135,5 @@ export class BrowserKernel {
     return Array.from(this.running.keys());
   }
 }
+export { createKernelLaunchAuthorization, KERNEL_LAUNCH_KEK_ENV } from './launch-token.js';
+export type { KernelLaunchAuthorization } from './launch-token.js';

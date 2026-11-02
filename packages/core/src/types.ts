@@ -188,6 +188,16 @@ export interface BrowserProfile {
   updatedAt: IsoDateTime;
 }
 
+export interface ProfileCreateInput {
+  name: string;
+  platformTag?: string;
+  proxyId?: Uuid;
+  /** 画像平台；'host' 跟随宿主机（推荐），缺省由主进程按 'host' 处理。 */
+  platform?: Platform | 'host';
+  fingerprintSeed?: string;
+  overrides?: Partial<FingerprintProfile>;
+}
+
 export interface LaunchOptions {
   profileId: Uuid;
   headless?: boolean;

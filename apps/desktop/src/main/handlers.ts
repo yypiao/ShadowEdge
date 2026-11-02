@@ -2,15 +2,17 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type {
   BrowserProfile,
+  ErrorPayload,
   FingerprintProfile,
   IpcApi,
   IpcEventName,
   IpcEvents,
   Logger,
   ProxyHealth,
+  Result,
   Uuid,
 } from '@shadowedge/core';
-import { ShadowEdgeError } from '@shadowedge/core';
+import { err, ok, ShadowEdgeError, toErrorPayload } from '@shadowedge/core';
 import {
   auditFingerprint,
   CURRENT_CATALOG_VERSION,
@@ -37,6 +39,8 @@ export interface HandlerDeps {
   audit: AuditLog;
   sessions: SessionRepository;
   kernelRuntime: KernelRuntimeService;
+  /** 测试可注入确定性内核；生产缺省创建真实 Chromium 驱动。 */
+  kernel?: BrowserKernel;
   /** 生产环境传 userData/rpa；测试缺省使用仓库已忽略的 data/rpa。 */
   rpaArtifactsDir?: string;
 }
@@ -46,8 +50,24 @@ export type Handlers = {
   [C in keyof IpcApi]: (input: Parameters<IpcApi[C]>[0]) => Promise<Awaited<ReturnType<IpcApi[C]>>>;
 };
 
+async function settleSequential<Input, Output>(
+  items: Input[],
+  operation: (item: Input) => Promise<Output>,
+): Promise<Array<Result<Output, ErrorPayload>>> {
+  const results: Array<Result<Output, ErrorPayload>> = [];
+  // 串行执行避免批量启动时瞬时耗尽 16GB 开发机内存；各项独立捕获错误。
+  for (const item of items) {
+    try {
+      results.push(ok(await operation(item)));
+    } catch (error) {
+      results.push(err(toErrorPayload(error)));
+    }
+  }
+  return results;
+}
+
 export function createHandlers(deps: HandlerDeps): Handlers {
-  const kernel = new BrowserKernel({
+  const kernel = deps.kernel ?? new BrowserKernel({
     drivers: [new ChromiumCdpDriver(deps.kernelRuntime.driverOptions())],
     onExit: (profileId) => {
       const profile = deps.profileRepo.get(profileId);
@@ -149,7 +169,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     return profile;
   };
 
-  return {
+  const handlers: Handlers = {
     'profile:list': async (query) => {
       return deps.profileRepo.list(query ?? undefined);
     },
@@ -188,6 +208,9 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       deps.logger.info('创建环境', { profileId: id, name: input.name });
       return profile;
     },
+
+    'profile:createMany': async ({ items }) =>
+      settleSequential(items, (item) => handlers['profile:create'](item)),
 
     'profile:update': async ({ id, patch }) => {
       const profile = requireProfile(id);
@@ -238,6 +261,9 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       }
     },
 
+    'profile:launchMany': async ({ items }) =>
+      settleSequential(items, (item) => handlers['profile:launch'](item)),
+
     'profile:close': async (id) => {
       const profile = requireProfile(id);
       try {
@@ -249,6 +275,12 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         deps.emit('profile:status', { profileId: id, status: 'idle' });
       }
     },
+
+    'profile:closeMany': async ({ profileIds }) =>
+      settleSequential(profileIds, async (profileId) => {
+        await handlers['profile:close'](profileId);
+        return { profileId };
+      }),
 
     'fingerprint:preview': async ({ seed, proxyId, platform, overrides }) =>
       generateFingerprint({
@@ -354,4 +386,5 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     'app:info': async () => ({ version: '0.1.0', platform: process.platform }),
   };
+  return handlers;
 }

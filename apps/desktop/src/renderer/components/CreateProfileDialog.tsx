@@ -9,6 +9,7 @@ const FP_PLATFORMS = [
   { value: 'macos', label: 'macOS' },
   { value: 'linux', label: 'Linux' },
 ] as const;
+type FpPlatform = (typeof FP_PLATFORMS)[number]['value'];
 
 interface Props {
   onClose: () => void;
@@ -18,8 +19,9 @@ interface Props {
 export function CreateProfileDialog({ onClose, onCreated }: Props) {
   const { proxies } = useStore();
   const [name, setName] = useState('');
+  const [count, setCount] = useState(1);
   const [platformTag, setPlatformTag] = useState<string>('通用');
-  const [fpPlatform, setFpPlatform] = useState<string>('host');
+  const [fpPlatform, setFpPlatform] = useState<FpPlatform>('host');
   const [proxyId, setProxyId] = useState('');
   const [seed, setSeed] = useState<string>(() => crypto.randomUUID());
   const [preview, setPreview] = useState<FingerprintProfile | null>(null);
@@ -29,7 +31,7 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
   useEffect(() => {
     let cancelled = false;
     setPreview(null);
-    window.shadowedge.api['fingerprint:preview']({ seed, proxyId: proxyId || undefined, platform: fpPlatform as 'host' })
+    window.shadowedge.api['fingerprint:preview']({ seed, proxyId: proxyId || undefined, platform: fpPlatform })
       .then((fp) => { if (!cancelled) setPreview(fp); })
       .catch(toastError);
     return () => { cancelled = true; };
@@ -40,22 +42,55 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
       useStore.getState().toast('warn', '请填写环境名称');
       return;
     }
+    if (!Number.isInteger(count) || count < 1 || count > 50) {
+      useStore.getState().toast('warn', '创建数量必须是 1–50 的整数');
+      return;
+    }
     setSubmitting(true);
     try {
-      await window.shadowedge.api['profile:create']({
-        name: name.trim(),
+      const base = {
         platformTag: platformTag === '通用' ? undefined : platformTag,
         proxyId: proxyId || undefined,
-        platform: fpPlatform as 'host',
-        fingerprintSeed: seed,
-      });
-      useStore.getState().toast('info', `环境「${name.trim()}」已创建`);
+        platform: fpPlatform,
+      };
+      if (count === 1) {
+        await window.shadowedge.api['profile:create']({
+          ...base,
+          name: name.trim(),
+          fingerprintSeed: seed,
+        });
+        useStore.getState().toast('info', `环境「${name.trim()}」已创建`);
+      } else {
+        const results = await window.shadowedge.api['profile:createMany']({
+          items: Array.from({ length: count }, (_, index) => ({
+            ...base,
+            name: `${name.trim()}-${String(index + 1).padStart(2, '0')}`,
+            // 首个环境保持当前预览；后续 seed 派生且互不重复。
+            fingerprintSeed: index === 0 ? seed : `${seed}:${index + 1}`,
+          })),
+        });
+        const succeeded = results.filter((result) => result.ok).length;
+        const failed = results.length - succeeded;
+        if (succeeded === 0) {
+          const firstError = results.find((result) => !result.ok);
+          useStore.getState().toast(
+            'error',
+            `批量创建失败：${firstError && !firstError.ok ? firstError.error.message : '未知错误'}`,
+          );
+          setSubmitting(false);
+          return;
+        }
+        useStore.getState().toast(
+          failed > 0 ? 'warn' : 'info',
+          `批量创建完成：成功 ${succeeded} 个${failed > 0 ? `，失败 ${failed} 个` : ''}`,
+        );
+      }
       onCreated();
     } catch (error) {
       toastError(error);
       setSubmitting(false);
     }
-  }, [name, platformTag, fpPlatform, proxyId, seed, onCreated]);
+  }, [name, count, platformTag, fpPlatform, proxyId, seed, onCreated]);
 
   const input: React.CSSProperties = {
     width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box',
@@ -76,13 +111,30 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
         <span style={label}>环境名称</span>
         <input style={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：美区亚马逊-01" autoFocus />
 
+        <span style={label}>创建数量（1–50）</span>
+        <input
+          aria-label="创建数量"
+          type="number"
+          min={1}
+          max={50}
+          step={1}
+          style={input}
+          value={count}
+          onChange={(e) => setCount(e.target.valueAsNumber)}
+        />
+        {count > 1 && (
+          <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+            将按「名称-01、名称-02…」命名，并为每个环境派生独立指纹。
+          </div>
+        )}
+
         <span style={label}>平台</span>
         <select style={input} value={platformTag} onChange={(e) => setPlatformTag(e.target.value)}>
           {PLATFORM_TAGS.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
         </select>
 
         <span style={label}>画像系统</span>
-        <select style={input} value={fpPlatform} onChange={(e) => setFpPlatform(e.target.value)}>
+        <select style={input} value={fpPlatform} onChange={(e) => setFpPlatform(e.target.value as FpPlatform)}>
           {FP_PLATFORMS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
         </select>
 

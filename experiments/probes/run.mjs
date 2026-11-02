@@ -21,6 +21,10 @@ import {
 import { buildInjectionScript } from '/Users/mac/ShadowEdge/packages/fingerprint/dist/inject.js';
 import { startRelay, checkProxyHealth } from '/Users/mac/ShadowEdge/packages/proxy/dist/index.js';
 import { chromium } from '/Users/mac/ShadowEdge/apps/desktop/node_modules/patchright/index.mjs';
+import {
+  createKernelLaunchAuthorization,
+  KERNEL_LAUNCH_KEK_ENV,
+} from '/Users/mac/ShadowEdge/packages/kernel/dist/launch-token.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = Object.fromEntries(
@@ -130,6 +134,7 @@ log('画像:', fp.catalogVersion, fp.platform, fp.timezone, fp.languages[0]);
 // 追加 --shadowedge-fingerprint 画像入口，与 ChromiumCdpDriver 行为一致。
 const KERNEL_BIN = process.env.SHADOWEDGE_KERNEL_EXECUTABLE;
 if (KERNEL_BIN) log('使用自研内核:', KERNEL_BIN);
+const kernelAuthorization = KERNEL_BIN ? createKernelLaunchAuthorization('probe') : undefined;
 
 const context = await chromium.launchPersistentContext(join(HERE, '.probe-profile'), {
   headless: false,
@@ -141,10 +146,14 @@ const context = await chromium.launchPersistentContext(join(HERE, '.probe-profil
     ...(KERNEL_BIN
       ? [
           `--shadowedge-fingerprint=${Buffer.from(JSON.stringify(fp), 'utf8').toString('base64')}`,
+          `--shadowedge-launch-token=${kernelAuthorization.token}`,
           `--shadowedge-init-script=${Buffer.from(buildInjectionScript(fp, { serviceWorker: 'kernel', coveredByKernel: ['screen', 'webgl', 'audio'] }), 'utf8').toString('base64')}`,
         ]
       : []),
   ],
+  ...(kernelAuthorization
+    ? { env: { ...process.env, [KERNEL_LAUNCH_KEK_ENV]: kernelAuthorization.kekHex } }
+    : {}),
   userAgent: fp.userAgent,
   extraHTTPHeaders: clientHints,
   locale: fp.languages[0],
@@ -397,7 +406,10 @@ if (PROXY_ID) {
     await page.goto(PIXELSCAN, { timeout: 120000, waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(3000);
     const scanButton = page.getByText(/scan my browser/i).first();
-    if (await scanButton.count()) await scanButton.click({ timeout: 10000 }).catch(() => {});
+    await scanButton
+      .waitFor({ state: 'visible', timeout: 30000 })
+      .then(() => scanButton.click({ timeout: 10000 }))
+      .catch(() => {});
     await page.waitForURL(/fingerprint-check/i, { timeout: 60000 }).catch(() => {});
     await page
       .waitForFunction(
@@ -406,6 +418,7 @@ if (PROXY_ID) {
           const state = bar?.getAttribute('data-state');
           return state === 'success' || state === 'error';
         },
+        undefined,
         { timeout: 120000 },
       )
       .catch(() => {});
@@ -422,6 +435,9 @@ if (PROXY_ID) {
         state: bar?.getAttribute('data-state') ?? null,
         text: section?.innerText ?? '',
         cards,
+        url: location.href,
+        title: document.title,
+        bodyText: document.body?.innerText ?? '',
       };
     });
     const byLabel = Object.fromEntries(snapshot.cards.map((card) => [card.label, card]));
@@ -468,7 +484,9 @@ if (PROXY_ID) {
       headerConsistent:
         headers.userAgent === fp.userAgent && headers.secUA === clientHints['sec-ch-ua'],
       elapsedMs: Date.now() - started,
-      bodySnippet: snapshot.text.slice(0, 2500),
+      url: snapshot.url,
+      title: snapshot.title,
+      bodySnippet: (snapshot.text || snapshot.bodyText).slice(0, 2500),
     };
     pixelscan.nonProxyConsistent =
       pixelscan.consistent ||

@@ -59,3 +59,20 @@ export class ShadowEdgeError extends Error {
 
 export const isShadowEdgeError = (value: unknown): value is ShadowEdgeError =>
   value instanceof ShadowEdgeError;
+
+/** Electron IPC 可结构化克隆的错误载荷；批量 Result 不直接跨进程传 Error 实例。 */
+export interface ErrorPayload {
+  code: ErrorCode;
+  message: string;
+  details?: Record<string, unknown>;
+  retryable: boolean;
+}
+
+export function toErrorPayload(error: unknown): ErrorPayload {
+  if (isShadowEdgeError(error)) return error.toJSON();
+  return {
+    code: 'E_INTERNAL',
+    message: error instanceof Error ? error.message : String(error),
+    retryable: false,
+  };
+}

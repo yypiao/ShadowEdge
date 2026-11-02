@@ -66,6 +66,17 @@ kernel 模式不再生成 JS Worker/Blob/URL 包装。
 - 验收使用本地真实服务端比较首跳/次跳请求；页面 UA-CH 与服务端高低熵头必须同源，
   历史画像不得泄露当前自研二进制的真实完整版本。
 
+### P6 一次性启动令牌（0009）
+
+- 主进程在每次启动时生成随机 256 位 KEK、随机 DEK/IV 与 nonce，复用
+  `EnvelopeCrypto` 的 `auth-token` 用途生成 30 秒短期信封令牌。
+- 密文令牌经 `--shadowedge-launch-token` 传入；KEK 只经本次子进程环境
+  `SHADOWEDGE_LAUNCH_KEK` 传递，不写磁盘、不编入应用或内核。
+- 浏览器进程在 `BrowserMainLoop::Init()` 用 BoringSSL AES-256-GCM 解封并校验版本、
+  nonce、签发时间与过期时间，然后立即清除 KEK 环境变量。缺失、错密钥、篡改或过期均拒启。
+- 该机制防止无 launcher 的直接浏览器启动，不等同于内核文件完整性签名，也不宣称抵御
+  已控制本机账户的逆向或内存读取。分发包哈希/签名属于 T17B。
+
 ## 3. 构建流水线
 
 ```bash

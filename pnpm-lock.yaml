@@ -144,6 +144,9 @@ importers:
       '@shadowedge/core':
         specifier: workspace:*
         version: link:../core
+      '@shadowedge/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       '@shadowedge/fingerprint':
         specifier: workspace:*
         version: link:../fingerprint

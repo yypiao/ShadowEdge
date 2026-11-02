@@ -12,6 +12,10 @@ import { fileURLToPath } from 'node:url';
 import { generateFingerprint } from '/Users/mac/ShadowEdge/packages/fingerprint/dist/index.js';
 import { buildInjectionScript } from '/Users/mac/ShadowEdge/packages/fingerprint/dist/inject.js';
 import { chromium } from '/Users/mac/ShadowEdge/apps/desktop/node_modules/patchright/index.mjs';
+import {
+  createKernelLaunchAuthorization,
+  KERNEL_LAUNCH_KEK_ENV,
+} from '/Users/mac/ShadowEdge/packages/kernel/dist/launch-token.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const executablePath = process.env.SHADOWEDGE_KERNEL_EXECUTABLE;
@@ -25,11 +29,17 @@ const injection = buildInjectionScript(fp, {
 });
 
 const collect = async (protectedByJs) => {
+  const authorization = createKernelLaunchAuthorization('canvas-evidence');
   const profile = mkdtempSync(join(tmpdir(), 'shadowedge-canvas-evidence-'));
   const context = await chromium.launchPersistentContext(profile, {
     executablePath,
     headless: false,
-    args: ['--disable-blink-features=AutomationControlled', fingerprintArg],
+    env: { ...process.env, [KERNEL_LAUNCH_KEK_ENV]: authorization.kekHex },
+    args: [
+      '--disable-blink-features=AutomationControlled',
+      fingerprintArg,
+      `--shadowedge-launch-token=${authorization.token}`,
+    ],
   });
   try {
     const page = context.pages()[0] ?? (await context.newPage());

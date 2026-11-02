@@ -20,7 +20,10 @@ echo "binary version: $VER"
 
 # 2. headless 启动 + CDP 端点存活（不依赖图形会话）
 PORT=19315
-"$BIN" --headless=new --disable-gpu --remote-debugging-port=$PORT \
+read -r LAUNCH_TOKEN LAUNCH_KEK < <(node --input-type=module -e \
+  "import { createKernelLaunchAuthorization } from '$REPO_ROOT/packages/kernel/dist/launch-token.js'; const a = createKernelLaunchAuthorization('verify-kernel'); console.log(a.token + ' ' + a.kekHex);")
+SHADOWEDGE_LAUNCH_KEK="$LAUNCH_KEK" "$BIN" --headless=new --disable-gpu --remote-debugging-port=$PORT \
+  --shadowedge-launch-token="$LAUNCH_TOKEN" \
   --user-data-dir="$(mktemp -d /tmp/se-kernel-verify.XXXXXX)" about:blank &
 KPID=$!
 trap 'kill $KPID 2>/dev/null || true' EXIT
