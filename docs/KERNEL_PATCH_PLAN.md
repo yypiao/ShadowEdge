@@ -2,7 +2,7 @@
 
 目标：解决 JS 注入无法彻底消除的两类差距，并与紫鸟 EngTk2 的内核能力对齐。
 
-1. ServiceWorker 等独立作用域的指纹注入。
+1. Dedicated / Shared / Service / Nested Worker 等独立作用域的指纹注入。
 2. `Function.prototype.toString.call(nativeFn)` 返回带函数名的原生串。
 
 ## 1. 基线原则
@@ -30,12 +30,13 @@
 ### P2 Worker / ServiceWorker
 
 - `third_party/blink/renderer/core/workers/worker_navigator.cc`：UA、platform、语言、硬件。
-- `third_party/blink/renderer/core/workers/worker_global_scope.cc`：Worker 全局补充。
-- `third_party/blink/renderer/core/workers/service_worker_global_scope.cc`：ServiceWorker 同源画像。
+- `third_party/blink/renderer/core/workers/worker_global_scope.cc`：0003 + 0008 在 classic/module
+  Worker 自身代码前原生求值同一注入脚本，覆盖 Dedicated / Shared / Service / Nested Worker。
 - `third_party/blink/renderer/core/workers/worker_navigator_ua_data.cc`：Worker UA-CH。
 
-验收：Worker / SharedWorker / ServiceWorker 内读取 UA、UA-CH、核数、GPU 与主世界一致，
-且 `Object.getOwnPropertyNames(navigator)` 为空。
+验收：classic/module Dedicated Worker、SharedWorker、ServiceWorker 与 Blob 嵌套 Worker
+内读取 UA、UA-CH、核数、GPU 与主世界一致，且 `Object.getOwnPropertyNames(navigator)` 为空；
+kernel 模式不再生成 JS Worker/Blob/URL 包装。
 
 ### P3 Screen / WebGL / Audio（已完成）；Canvas（暂缓）
 
@@ -97,7 +98,7 @@ autoninja -C out/ShadowEdge chrome
 1. `pnpm typecheck && pnpm test` 全绿。
 2. `pnpm probe -- --seed kernel-check --proxy os1 --fail-under 40` 全绿（Patchright 回退为 31）。
 3. CreepJS：`0% headless`、`0% stealth`。
-4. ServiceWorker 探针：UA/UA-CH/GPU/核数与主世界一致。
+4. 全 Worker 探针：classic/module/shared/service 与嵌套 Worker 的 UA/UA-CH/GPU/核数与主世界一致。
 5. `Function.prototype.toString.call` 命名原生串检查通过。
 6. 同一 `seed` 在 JS 版本与内核版本产出完全相同的画像值。
 

@@ -11,26 +11,26 @@
 
 ## 1. 逐项对比
 
-| 维度 | ShadowEdge（ziniao-compare） | 紫鸟 EngTk2 | 说明 |
-| --- | --- | --- | --- |
-| UA | Chrome/130.0.0.0，Mac 14_6 | Chrome/150.0.0.0，Mac 10_15_7 | 紫鸟 UA 与内核 150 同版；我们的 UA 库仍是 130/131 区间 |
-| platform | MacIntel | MacIntel | 一致 |
-| 核数 / 内存 | 4 / 8 GB | 4 / 8 GB | 一致 |
-| 语言 / 时区 | en-US / Australia/Sydney（seed 决定） | en-GB / Europe/London | 都是环境配置值，不是宿主机真实值 |
-| 屏幕 | 2560×1440，DPR 1，depth 30 | 1440×2560，DPR 1，depth 24 | 紫鸟是竖屏 + 24 位色深 |
-| WebGL | `ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)` | `ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Pro, Unspecified Version)` | 都做到同系 GPU，不出现 Windows/D3D11 矛盾 |
-| UA-CH | 稳定对象 `stableObject=true`，品牌/完整版本与 UA 同源 | **`stableObject=false`**：两次读取不是同一对象 | 紫鸟此处反而是可被稳定性探针利用的弱点 |
-| Canvas 纹理 | `a34b9bbc`，两次读取逐字节一致 | `631a6983`，两次读取逐字节一致 | 两者都有确定性噪声 |
-| Canvas 纯色块 | `39756b3c`，像素严格等于 `255,0,0,255` | `39756b3c`，像素严格等于 `255,0,0,255` | 关键：纯色检测块不能被噪声污染 |
-| Audio | `172.67165175`（微噪声） | `172.67165096`（较大噪声） | 量级不同，但都稳定 |
-| Worker 世界 | UA / UA-CH / 核数 / GPU 全部与主世界一致，`navOwnProps=[]` | 同样全部一致，`navOwnProps=[]` | 跨世界一致性已对齐 |
-| `Worker.toString` | `function Worker() { [native code] }`（0006，普通 Proxy 行为不变） | `function Worker() { [native code] }` | 已对齐 |
-| `Blob.toString` | `function Blob() { [native code] }` | `function Blob() { [native code] }` | 已对齐 |
-| WebRTC | candidate 为空；SDP `c=IN IP4` 被改写为 `0.0.0.0`（unspecified） | candidate 为空；旧探针把地址标成 `public` | 旧版 `ipClass()` 把 `0.0.0.0` 误判为 public；原始地址未落盘，需 BrowserLeaks 复测确认 |
-| ServiceWorker | **可用且画像一致**（chromium-cdp 0003；Patchright 回退仍屏蔽） | **可用** | 自研内核路径已对齐 |
-| webdriver / CDC / native | 干净 | 干净 | 一致 |
-| CreepJS | `0% headless / 0% stealth` | 未测（需其 API） | — |
-| Pixelscan | 最新 os1 全量 40/40，`No masking detected`（Proxy 卡单独标 `Proxy detected`） | 未测 | 非代理因素全部通过 |
+| 维度                     | ShadowEdge（ziniao-compare）                                                  | 紫鸟 EngTk2                                                              | 说明                                                                                  |
+| ------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| UA                       | Chrome/130.0.0.0，Mac 14_6                                                    | Chrome/150.0.0.0，Mac 10_15_7                                            | 紫鸟 UA 与内核 150 同版；我们的 UA 库仍是 130/131 区间                                |
+| platform                 | MacIntel                                                                      | MacIntel                                                                 | 一致                                                                                  |
+| 核数 / 内存              | 4 / 8 GB                                                                      | 4 / 8 GB                                                                 | 一致                                                                                  |
+| 语言 / 时区              | en-US / Australia/Sydney（seed 决定）                                         | en-GB / Europe/London                                                    | 都是环境配置值，不是宿主机真实值                                                      |
+| 屏幕                     | 2560×1440，DPR 1，depth 30                                                    | 1440×2560，DPR 1，depth 24                                               | 紫鸟是竖屏 + 24 位色深                                                                |
+| WebGL                    | `ANGLE (Apple, Apple M1 Pro, OpenGL 4.1)`                                     | `ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Pro, Unspecified Version)` | 都做到同系 GPU，不出现 Windows/D3D11 矛盾                                             |
+| UA-CH                    | 稳定对象 `stableObject=true`，品牌/完整版本与 UA 同源                         | **`stableObject=false`**：两次读取不是同一对象                           | 紫鸟此处反而是可被稳定性探针利用的弱点                                                |
+| Canvas 纹理              | `a34b9bbc`，两次读取逐字节一致                                                | `631a6983`，两次读取逐字节一致                                           | 两者都有确定性噪声                                                                    |
+| Canvas 纯色块            | `39756b3c`，像素严格等于 `255,0,0,255`                                        | `39756b3c`，像素严格等于 `255,0,0,255`                                   | 关键：纯色检测块不能被噪声污染                                                        |
+| Audio                    | `172.67165175`（微噪声）                                                      | `172.67165096`（较大噪声）                                               | 量级不同，但都稳定                                                                    |
+| Worker 世界              | UA / UA-CH / 核数 / GPU 全部与主世界一致，`navOwnProps=[]`                    | 同样全部一致，`navOwnProps=[]`                                           | 跨世界一致性已对齐                                                                    |
+| `Worker.toString`        | `function Worker() { [native code] }`（0006，普通 Proxy 行为不变）            | `function Worker() { [native code] }`                                    | 已对齐                                                                                |
+| `Blob.toString`          | `function Blob() { [native code] }`                                           | `function Blob() { [native code] }`                                      | 已对齐                                                                                |
+| WebRTC                   | candidate 为空；SDP `c=IN IP4` 被改写为 `0.0.0.0`（unspecified）              | candidate 为空；旧探针把地址标成 `public`                                | 旧版 `ipClass()` 把 `0.0.0.0` 误判为 public；原始地址未落盘，需 BrowserLeaks 复测确认 |
+| ServiceWorker            | **可用且画像一致**（chromium-cdp 0003；Patchright 回退仍屏蔽）                | **可用**                                                                 | 自研内核路径已对齐                                                                    |
+| webdriver / CDC / native | 干净                                                                          | 干净                                                                     | 一致                                                                                  |
+| CreepJS                  | `0% headless / 0% stealth`                                                    | 未测（需其 API）                                                         | —                                                                                     |
+| Pixelscan                | 最新 os1 全量 40/40，`No masking detected`（Proxy 卡单独标 `Proxy detected`） | 未测                                                                     | 非代理因素全部通过                                                                    |
 
 ## 2. 结论
 
@@ -53,6 +53,10 @@ UA-CH 与 HTTP 头同源、纯色检测块保护，这些紫鸟具备的维度 S
 `UserAgentMetadata` 接入同一画像；修复后导航、302 跳转和 fetch 的高低熵头均与画像一致，
 首次请求不偷发高熵头，Dedicated Worker 保持 Chromium 原生协商行为且不泄露真实版本。
 可重复验收见 `apps/desktop/test/client-hints-smoke.test.ts`。
+
+**2026-11-02 全 Worker 收口**：0008 将 0003 的原生求值入口扩展到全部 classic/module
+Worker。真实 classic、module、Shared、Service 与 Blob 嵌套 Worker 均读取同一画像；kernel
+模式已移除 JS Worker/Blob/URL 包装与自引用源码，避免嵌套子 Worker 泄露宿主机核数、内存。
 
 **UA 库运营差距**：紫鸟 UA 150 与内核 150 同版，说明其 UA 库持续维护；我们的 `DEFAULT_DB`
 仍是 130/131，需要建立版本更新机制，否则时间越久越像“静止画像”。

@@ -119,7 +119,7 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 | Worker 源码读取失败 | Pixelscan 禁止同步 XHR 读取 `blob:` URL，旧包装静默回退，Worker 暴露真实 `Chrome/156 + Apple M4`            | 在 `Blob` 构造与 `URL.createObjectURL()` 时登记源码，Worker 构造直接取用；不再依赖 XHR                                                             |
 | Worker GPU 裸奔     | Worker 无 `WebGLRenderingContext` 全局构造器，OffscreenCanvas 返回的上下文未被覆盖                          | 包装 `OffscreenCanvas.prototype.getContext`，从实例原型套用 WebGL spoof；兼容 `WorkerNavigator.prototype`                                          |
 | Canvas 噪声可被回读 | 持久修改原画布会让重复读取累积漂移，并可能破坏纯色检测块                                                    | `toDataURL` 先做 8×8 网格纯色采样；纯色直接原生编码；纹理才复制到临时画布，并只在 5×5 邻域颜色数 ≥5 的位置落点；`getImageData` 只改返回副本        |
-| UA / UA-CH 不一致   | HTTP Client Hints 不受页面 JS 注入影响，服务端看到内核真实版本                                              | 低熵头由 `buildClientHintHeaders()` 覆盖；0007 在浏览器进程统一原生 `UserAgentMetadata`，使 `Accept-CH` 高熵协商与页面 `userAgentData`、UA 同源                              |
+| UA / UA-CH 不一致   | HTTP Client Hints 不受页面 JS 注入影响，服务端看到内核真实版本                                              | 低熵头由 `buildClientHintHeaders()` 覆盖；0007 在浏览器进程统一原生 `UserAgentMetadata`，使 `Accept-CH` 高熵协商与页面 `userAgentData`、UA 同源    |
 | Navigator 伪造痕迹  | 属性挂在 `navigator` 实例上，`Object.getOwnPropertyNames(navigator)` 非空                                   | 全部属性定义到 `Navigator.prototype` / `WorkerNavigator.prototype`                                                                                 |
 | SDP 候选泄漏        | 只过滤 ICE 事件时，`localDescription.sdp` 仍含 host/srflx IP；mDNS 候选因正则只认 IP 字符集而漏删           | 同步过滤 `c=` 与 `a=candidate` 行；地址匹配改为 `[^\s]+`，覆盖带连字符的 mDNS；`0.0.0.0` / `::` 归为 unspecified                                   |
 | 包装函数 toString   | Worker / SharedWorker 包装器暴露源码；Proxy 默认返回 32 字符匿名原生串，Pixelscan C14 直接判失败            | Proxy 增加 `toString` / `name` get 陷阱：`fn.toString()` 返回带名原生串（`toDataURL` 为 38 字符），`Function.prototype.toString.call` 仍不泄漏源码 |
@@ -140,9 +140,9 @@ UA / Client Hints、平台 / 语言 / 硬件合理性、字体与 OS 匹配、�
 其中 C14 `canvasNoiseOn2d()` 会校验 `toDataURL.toString()` 长度必须为 38/42，并读取 14 个纯色块；
 这两点分别由「命名 toString」与「纯色保护」修复。
 
-**已知边界**：嵌套 Worker（Worker 里再建 Worker）不递归注入；
-ServiceWorker 在 chromium-cdp 内核驱动下已由补丁 0003 注入覆盖（探针矩阵含 4 项 SW 检查）；
-Patchright 驱动下仍通过屏蔽迫使探针回退；
+**已知边界**：chromium-cdp 内核经 0003 + 0008 已覆盖 classic/module、Shared、Service 与
+嵌套 Worker，真实五路测试确认核数、内存等画像一致，不再依赖递归 JS 包装；
+Patchright 回退驱动仍使用 JS Worker 包装，嵌套 Worker 不递归覆盖，ServiceWorker 通过屏蔽迫使探针回退；
 chromium-cdp 内核经 0006 已让 `Function.prototype.toString.call(Worker/Blob)` 返回带名原生串，
 普通 Proxy 行为不变；Patchright 回退路径仍为匿名原生串。JS 全局补丁会让 CreepJS stealth
 升到 20%，保持禁用；

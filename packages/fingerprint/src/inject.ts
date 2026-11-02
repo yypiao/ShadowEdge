@@ -10,8 +10,8 @@ export interface InjectionOptions {
    * ServiceWorker 策略：
    * - 'shield'（默认）：屏蔽 navigator.serviceWorker，迫使探针回退到可注入的 Worker。
    *   用于 Patchright 等无法触达 SW 作用域的驱动。
-   * - 'kernel'：保留 ServiceWorker 能力，由内核补丁 0003 把本脚本注入 SW 全局作用域。
-   *   仅 chromium-cdp 驱动使用。
+   * - 'kernel'：保留 ServiceWorker 与原生 Worker 构造器，由内核补丁 0003/0008
+   *   把本脚本注入全部 Worker 全局作用域，不使用 JS URL 包装。仅 chromium-cdp 驱动使用。
    */
   serviceWorker?: 'shield' | 'kernel';
   /**
@@ -119,20 +119,20 @@ export function buildInjectionScript(fp: FingerprintProfile, opts: InjectionOpti
   // 屏幕与像素比（仅 Window 作用域存在）
   const kernelCovered = new Set(opts.coveredByKernel ?? []);
   if (!kernelCovered.has('screen')) {
-  // C++ 补丁 0004 覆盖时跳过本段：Screen:: 各方法直接返回画像值，JS 不再包装。
-  lines.push(
-    // screen 的属性必须落在 Screen.prototype；挂到实例上会让
-    // Object.getOwnPropertyNames(screen) 从 [] 变成伪造特征。
-    'if (typeof Screen !== "undefined" && Screen.prototype) {',
-    `_def(Screen.prototype, 'width', () => P.screen.width);`,
-    `_def(Screen.prototype, 'height', () => P.screen.height);`,
-    `_def(Screen.prototype, 'availWidth', () => P.screen.availWidth);`,
-    `_def(Screen.prototype, 'availHeight', () => P.screen.availHeight);`,
-    `_def(Screen.prototype, 'colorDepth', () => P.screen.colorDepth);`,
-    // colorDepth 与 pixelDepth 在真实设备上通常相同；只改 colorDepth 会留下 24 vs 30 的矛盾。
-    `_def(Screen.prototype, 'pixelDepth', () => P.screen.colorDepth);`,
-    '}',
-  );
+    // C++ 补丁 0004 覆盖时跳过本段：Screen:: 各方法直接返回画像值，JS 不再包装。
+    lines.push(
+      // screen 的属性必须落在 Screen.prototype；挂到实例上会让
+      // Object.getOwnPropertyNames(screen) 从 [] 变成伪造特征。
+      'if (typeof Screen !== "undefined" && Screen.prototype) {',
+      `_def(Screen.prototype, 'width', () => P.screen.width);`,
+      `_def(Screen.prototype, 'height', () => P.screen.height);`,
+      `_def(Screen.prototype, 'availWidth', () => P.screen.availWidth);`,
+      `_def(Screen.prototype, 'availHeight', () => P.screen.availHeight);`,
+      `_def(Screen.prototype, 'colorDepth', () => P.screen.colorDepth);`,
+      // colorDepth 与 pixelDepth 在真实设备上通常相同；只改 colorDepth 会留下 24 vs 30 的矛盾。
+      `_def(Screen.prototype, 'pixelDepth', () => P.screen.colorDepth);`,
+      '}',
+    );
   }
   // DPR 段独立于 Screen 让位：devicePixelRatio 由 context deviceScaleFactor + JS 兜底，不在 C++ 范围。
   lines.push(
@@ -486,77 +486,81 @@ export function buildInjectionScript(fp: FingerprintProfile, opts: InjectionOpti
   // 包装 Worker：同源脚本同步拉源码、前置本注入、转 blob 启动。
   // 另：CreepJS 优先选 ServiceWorker（register 直拉 URL 无法注入），屏蔽之迫使其
   // 回退到 Shared/Dedicated（均可包装）；这是反检测浏览器的通行做法。
-  // 内核驱动下 SW 由补丁 0003 注入，无需屏蔽；屏蔽本身是探针可见的能力缺口。
+  // 内核驱动下全部 Worker 由补丁 0003/0008 原生注入，无需屏蔽或改写脚本 URL。
   if ((opts.serviceWorker ?? 'shield') === 'shield') {
     lines.push(`_def(_navProto, 'serviceWorker', () => undefined);`);
   }
-  lines.push(
-    'if (_w.Worker) {',
-    // Pixelscan 等站点会禁用同步 XHR 读取 blob: URL，导致源码拉取失败、Worker 裸奔。
-    // 在 Blob 创建和 createObjectURL 时登记源码，Worker 构造时直接取用，不发起任何请求。
-    '  const _blobSource = new WeakMap();',
-    '  const _blobUrlSource = new Map();',
-    '  if (_w.Blob) {',
-    '    const _OrigBlob = _w.Blob;',
-    '    const _patchedBlob = _proxy(_OrigBlob, { construct: (target, args) => {',
-    '      const blob = Reflect.construct(target, args);',
-    '      const parts = args[0];',
-    '      try {',
-    '        const chunks = [];',
-    '        for (const part of (parts || [])) {',
-    '          if (typeof part === "string") chunks.push(part);',
-    '          else if (part && _blobSource.has(part)) chunks.push(_blobSource.get(part));',
-    '        }',
-    '        if (chunks.length) _blobSource.set(blob, chunks.join(""));',
-    '      } catch (_) {}',
-    '      return blob;',
-    '    } }, "Blob");',
-    '    _w.Blob = _patchedBlob;',
-    '  }',
-    '  if (_w.URL && _w.URL.createObjectURL) {',
-    '    const _origCreateObjectURL = _w.URL.createObjectURL;',
-    '    _w.URL.createObjectURL = _proxy(_origCreateObjectURL, { apply: (target, thisArg, args) => {',
-    '      const blob = args[0];',
-    '      const url = Reflect.apply(target, thisArg, args);',
-    '      try { if (_blobSource.has(blob)) _blobUrlSource.set(url, _blobSource.get(blob)); } catch (_) {}',
-    '      return url;',
-    '    } }, "createObjectURL");',
-    '  }',
-    '  const _OrigWorker = _w.Worker;',
-    '  const _wrapUrl = (url) => {',
-    '    try {',
-    '      const s = String(url);',
-    '      const same = s.startsWith("blob:") || s.startsWith("data:") || new URL(s, location.href).origin === location.origin;',
-    '      if (!same || !P.__injectSrc) return url;',
-    '      const mapped = _blobUrlSource.get(s);',
-    '      if (mapped) return URL.createObjectURL(new Blob([P.__injectSrc, "\\n", mapped], { type: "application/javascript" }));',
-    '      if (s.startsWith("data:")) {',
-    '        const comma = s.indexOf(",");',
-    '        if (comma < 0) return url;',
-    '        const meta = s.slice(5, comma);',
-    '        const body = s.slice(comma + 1);',
-    '        const source = meta.includes(";base64") ? atob(body) : decodeURIComponent(body);',
-    '        return URL.createObjectURL(new Blob([P.__injectSrc, "\\n", source], { type: "application/javascript" }));',
-    '      }',
-    '      const xhr = new XMLHttpRequest();',
-    '      xhr.open("GET", s, false);',
-    '      xhr.send(null);',
-    '      if (xhr.status >= 400) return url;',
-    '      return URL.createObjectURL(new Blob([P.__injectSrc, "\\n", xhr.responseText], { type: "application/javascript" }));',
-    '    } catch (_) { return url; }',
-    '  };',
-    '  _w.Worker = _proxy(_OrigWorker, { construct: (target, args) => Reflect.construct(target, [_wrapUrl(args[0]), args[1]]) }, "Worker");',
-    '  if (_w.SharedWorker) {',
-    '    const _OrigShared = _w.SharedWorker;',
-    '    _w.SharedWorker = _proxy(_OrigShared, { construct: (target, args) => Reflect.construct(target, [_wrapUrl(args[0]), args[1]]) }, "SharedWorker");',
-    '  }',
-    '}',
-  );
+  if ((opts.serviceWorker ?? 'shield') === 'shield') {
+    lines.push(
+      'if (_w.Worker) {',
+      // Pixelscan 等站点会禁用同步 XHR 读取 blob: URL，导致源码拉取失败、Worker 裸奔。
+      // 在 Blob 创建和 createObjectURL 时登记源码，Worker 构造时直接取用，不发起任何请求。
+      '  const _blobSource = new WeakMap();',
+      '  const _blobUrlSource = new Map();',
+      '  if (_w.Blob) {',
+      '    const _OrigBlob = _w.Blob;',
+      '    const _patchedBlob = _proxy(_OrigBlob, { construct: (target, args) => {',
+      '      const blob = Reflect.construct(target, args);',
+      '      const parts = args[0];',
+      '      try {',
+      '        const chunks = [];',
+      '        for (const part of (parts || [])) {',
+      '          if (typeof part === "string") chunks.push(part);',
+      '          else if (part && _blobSource.has(part)) chunks.push(_blobSource.get(part));',
+      '        }',
+      '        if (chunks.length) _blobSource.set(blob, chunks.join(""));',
+      '      } catch (_) {}',
+      '      return blob;',
+      '    } }, "Blob");',
+      '    _w.Blob = _patchedBlob;',
+      '  }',
+      '  if (_w.URL && _w.URL.createObjectURL) {',
+      '    const _origCreateObjectURL = _w.URL.createObjectURL;',
+      '    _w.URL.createObjectURL = _proxy(_origCreateObjectURL, { apply: (target, thisArg, args) => {',
+      '      const blob = args[0];',
+      '      const url = Reflect.apply(target, thisArg, args);',
+      '      try { if (_blobSource.has(blob)) _blobUrlSource.set(url, _blobSource.get(blob)); } catch (_) {}',
+      '      return url;',
+      '    } }, "createObjectURL");',
+      '  }',
+      '  const _OrigWorker = _w.Worker;',
+      '  const _wrapUrl = (url) => {',
+      '    try {',
+      '      const s = String(url);',
+      '      const same = s.startsWith("blob:") || s.startsWith("data:") || new URL(s, location.href).origin === location.origin;',
+      '      if (!same || !P.__injectSrc) return url;',
+      '      const mapped = _blobUrlSource.get(s);',
+      '      if (mapped) return URL.createObjectURL(new Blob([P.__injectSrc, "\\n", mapped], { type: "application/javascript" }));',
+      '      if (s.startsWith("data:")) {',
+      '        const comma = s.indexOf(",");',
+      '        if (comma < 0) return url;',
+      '        const meta = s.slice(5, comma);',
+      '        const body = s.slice(comma + 1);',
+      '        const source = meta.includes(";base64") ? atob(body) : decodeURIComponent(body);',
+      '        return URL.createObjectURL(new Blob([P.__injectSrc, "\\n", source], { type: "application/javascript" }));',
+      '      }',
+      '      const xhr = new XMLHttpRequest();',
+      '      xhr.open("GET", s, false);',
+      '      xhr.send(null);',
+      '      if (xhr.status >= 400) return url;',
+      '      return URL.createObjectURL(new Blob([P.__injectSrc, "\\n", xhr.responseText], { type: "application/javascript" }));',
+      '    } catch (_) { return url; }',
+      '  };',
+      '  _w.Worker = _proxy(_OrigWorker, { construct: (target, args) => Reflect.construct(target, [_wrapUrl(args[0]), args[1]]) }, "Worker");',
+      '  if (_w.SharedWorker) {',
+      '    const _OrigShared = _w.SharedWorker;',
+      '    _w.SharedWorker = _proxy(_OrigShared, { construct: (target, args) => Reflect.construct(target, [_wrapUrl(args[0]), args[1]]) }, "SharedWorker");',
+      '  }',
+      '}',
+    );
+  }
 
   lines.push('})();');
 
-  // 注入源码自引用：Worker 包装需要把整段脚本带过去。嵌套 Worker（Worker 再生 Worker）不递归。
+  // Patchright 的 Worker 包装需要源码自引用；自研内核在所有 Worker 作用域原生求值，
+  // 不再携带重复源码，也从根上覆盖嵌套 Worker。
   const body = lines.join('\n'); // 末尾已是 IIFE 闭合 })();
+  if ((opts.serviceWorker ?? 'shield') === 'kernel') return body;
   const assign = `try { P.__injectSrc = ${JSON.stringify(body)}; } catch (_) {}`;
   return body.replace(/\}\)\(\);\s*$/, assign + '\n})();');
 }

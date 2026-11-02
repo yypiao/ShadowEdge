@@ -56,7 +56,7 @@ export class ChromiumCdpDriver implements KernelDriver {
     }
 
     const cdpPort = spec.options.remoteDebugging ? await findFreePort() : undefined;
-    // 内核模式下不屏蔽 ServiceWorker：由补丁 0003 把同一注入脚本送进 SW 作用域。
+    // 内核模式保留原生 Worker 构造器：0003/0008 把同一脚本送进所有 Worker 作用域。
     const { contextOptions, injectionScript } = buildLaunchConfig(spec, cdpPort, {
       serviceWorker: 'kernel',
       // 0004/0005 已下沉 Screen/WebGL/Audio；Canvas 保留 JS，见 ADR 0005。
@@ -72,7 +72,7 @@ export class ChromiumCdpDriver implements KernelDriver {
         args: [
           ...contextOptions.args,
           `--shadowedge-fingerprint=${encodeFingerprintPortrait(spec)}`,
-          // SW 作用域的注入载体（内核 0003 在 SW 自身脚本前求值）。
+          // 全 Worker 作用域的注入载体（0003/0008 在 Worker 自身脚本前求值）。
           `--shadowedge-init-script=${Buffer.from(injectionScript, 'utf8').toString('base64')}`,
         ],
         executablePath,

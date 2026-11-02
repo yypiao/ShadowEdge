@@ -1,0 +1,30 @@
+ShadowEdge: depends on 0003-serviceworker-init-script.patch.
+--- a/third_party/blink/renderer/core/workers/worker_global_scope.cc
++++ b/third_party/blink/renderer/core/workers/worker_global_scope.cc
+@@ -766,12 +766,13 @@
+       task_attribution_resource_timing_scope =
+           SetTaskStateVariable(resource_timing_context, GetExecutionContext());
+     }
+-    // ShadowEdge: ServiceWorker global scopes cannot be reached by
+-    // renderer-level init scripts; evaluate the kernel-provided init script
+-    // here so fingerprint overrides live before the worker's own code runs.
++    // ShadowEdge: renderer-level init scripts cannot reach worker global
++    // scopes. Evaluate the same portrait script before every classic/module
++    // worker's own code, including nested workers, so no JS URL rewriting or
++    // recursive source forwarding is needed.
+     // Blink cannot depend on //content, so the switch name is kept as a local
+     // literal mirroring content::switches::kShadowEdgeInitScript.
+-    if (IsServiceWorkerGlobalScope()) {
++    {
+       static const base::NoDestructor<std::string> shadowedge_init_script([] {
+         const base::CommandLine& cmd = *base::CommandLine::ForCurrentProcess();
+         if (!cmd.HasSwitch("shadowedge-init-script"))
+@@ -793,7 +794,7 @@
+                                     static_cast<int>(shadowedge_init_script->size()))
+                 .ToLocalChecked();
+         v8::Local<v8::Script> compiled;
+-        // 注入失败不阻断 SW 安装：宁可裸奔也不破坏站点功能（可观测性靠探针）。
++        // 注入失败不阻断 Worker 启动：宁可裸奔也不破坏站点功能（可观测性靠探针）。
+         if (v8::Script::Compile(v8_context, source).ToLocal(&compiled))
+           std::ignore = compiled->Run(v8_context);
+       }

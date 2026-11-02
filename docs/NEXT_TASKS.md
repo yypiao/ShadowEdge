@@ -484,7 +484,7 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 > 报告 `kernel-156-full3-1793256417314.json`。
 > 探针坑位：经代理时本地 HTTP 服务收到 absolute-form 请求行，路径匹配需先归一化；
 > Pixelscan 经住宅出口偶发超时，重试即可（非指纹问题）。
-> 遗留：嵌套 Worker 递归注入仍未覆盖（0003 只对 SW 生效）。
+> ~~遗留：嵌套 Worker 递归注入仍未覆盖（0003 只对 SW 生效）。~~ 已由 T21 / 0008 解决。
 
 **背景**：这是与紫鸟的最大单点差距——它能在 ServiceWorker 内覆盖指纹（C++ 层能力），
 我们目前只能屏蔽迫使探针回退（`COMPARISON_ZINIAO.md` §2）。
@@ -655,3 +655,24 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 > 版本泄露。测试见 `apps/desktop/test/client-hints-smoke.test.ts`。
 > 原有自研内核探针回归 32/32；完整 TypeScript 测试 123 passed / 9 skipped，
 > lint、Electron 生产构建与 `verify-kernel.sh` 均通过。
+
+---
+
+## T21 — 全 Worker 作用域原生画像注入 ✅（2026-11-02）
+
+> 问题证据：0003 只覆盖 ServiceWorker，Dedicated/Shared Worker 仍依赖 JS 构造器包装；
+> Blob Worker 内再创建的子 Worker 没有主世界包装器，能够读到宿主机核数与内存。
+>
+> 已落地 `0008-all-worker-init-script.patch`：复用
+> `WorkerGlobalScope::RunWorkerScript()` 的共同入口，在 classic/module Worker 自身脚本前
+> 求值同一份 `--shadowedge-init-script`。原生入口覆盖每次 Worker 创建，嵌套 Worker 不再需要
+> 递归转发源码。chromium-cdp 的 kernel 模式不再生成 Worker/Blob/URL.createObjectURL 包装，
+> 也不再携带 `P.__injectSrc`；Patchright 的 shield 回退路径保持原实现。
+>
+> 验收：dev 增量编译通过；真实 Chromium 测试覆盖 classic、module、Shared、Service 以及
+> Blob 外层/嵌套 Worker，UA、platform、languages、核数、内存、触摸点、UA-CH 与 navigator
+> 自有属性全部和画像一致，原生 Worker/Blob 构造器 toString 保持带名原生串。
+> 可重复验收见 `apps/desktop/test/worker-scope-smoke.test.ts`。与 T20 的 Client Hints
+> 真实测试联合回归 2/2 通过；自研内核探针 32/32、Patchright 回退探针 20/20。
+> 完整 TypeScript 测试 124 passed / 10 skipped，typecheck、lint、Electron 生产构建、
+> `verify-kernel.sh --mode dev` 与补丁反向 apply 校验均通过。
