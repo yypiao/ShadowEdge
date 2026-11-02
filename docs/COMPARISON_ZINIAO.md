@@ -48,6 +48,12 @@ UA-CH 与 HTTP 头同源、纯色检测块保护，这些紫鸟具备的维度 S
 受控恢复带名原生 `toString`，没有改变普通 Proxy 行为。最新 CreepJS 仍为 0%/0%。
 历史上的 JS 全局补丁曾让 stealth 升到 20%，该方案继续禁用。
 
+**2026-11-02 网络层修正**：实测历史画像页面 UA 为 Chrome 130 时，服务端经
+`Accept-CH` 仍能读到真实 `Chromium 156.0.8078.73`。0007 已将浏览器进程原生
+`UserAgentMetadata` 接入同一画像；修复后导航、302 跳转和 fetch 的高低熵头均与画像一致，
+首次请求不偷发高熵头，Dedicated Worker 保持 Chromium 原生协商行为且不泄露真实版本。
+可重复验收见 `apps/desktop/test/client-hints-smoke.test.ts`。
+
 **UA 库运营差距**：紫鸟 UA 150 与内核 150 同版，说明其 UA 库持续维护；我们的 `DEFAULT_DB`
 仍是 130/131，需要建立版本更新机制，否则时间越久越像“静止画像”。
 

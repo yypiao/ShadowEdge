@@ -1,0 +1,123 @@
+diff --git a/components/embedder_support/BUILD.gn b/components/embedder_support/BUILD.gn
+index 847ba42327..80b6223b66 100644
+--- a/components/embedder_support/BUILD.gn
++++ b/components/embedder_support/BUILD.gn
+@@ -57,6 +57,7 @@ static_library("user_agent") {
+
+   deps = [
+     ":embedder_support",
++    "//base",
+     "//build:branding_buildflags",
+     "//components/policy/core/common",
+     "//components/prefs",
+diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
+index e699a6a394..27f5f984e2 100644
+--- a/components/embedder_support/user_agent_utils.cc
++++ b/components/embedder_support/user_agent_utils.cc
+@@ -13,9 +13,11 @@
+ #include <vector>
+
+ #include "base/android/device_info.h"
++#include "base/base64.h"
+ #include "base/command_line.h"
+ #include "base/compiler_specific.h"
+ #include "base/feature_list.h"
++#include "base/json/json_reader.h"
+ #include "base/logging.h"
+ #include "base/no_destructor.h"
+ #include "base/strings/strcat.h"
+@@ -660,7 +662,94 @@ std::string GetPlatformForUAMetadata() {
+ #endif
+ }
+
++// ShadowEdge: browser-process UA metadata is the common source for
++// navigation, subresource and worker Accept-CH negotiation. Keep it on the
++// same portrait as the renderer instead of letting high-entropy headers leak
++// the binary's real version.
++std::optional<blink::UserAgentMetadata> GetShadowEdgeUserAgentMetadata(
++    bool only_low_entropy_ch) {
++  static const base::NoDestructor<std::optional<base::DictValue>> portrait([] {
++    const base::CommandLine& cmd = *base::CommandLine::ForCurrentProcess();
++    if (!cmd.HasSwitch("shadowedge-fingerprint"))
++      return std::optional<base::DictValue>(std::nullopt);
++    std::string decoded;
++    if (!base::Base64Decode(cmd.GetSwitchValueASCII("shadowedge-fingerprint"),
++                            &decoded, base::Base64DecodePolicy::kForgiving)) {
++      return std::optional<base::DictValue>(std::nullopt);
++    }
++    auto dict = base::JSONReader::ReadDict(decoded, base::JSON_PARSE_RFC);
++    return dict ? std::optional<base::DictValue>(std::move(*dict))
++                : std::nullopt;
++  }());
++  if (!portrait->has_value())
++    return std::nullopt;
++
++  const base::DictValue* ua = (*portrait)->FindDict("userAgentData");
++  const base::ListValue* brands = ua ? ua->FindList("brands") : nullptr;
++  const std::string* full_version =
++      ua ? ua->FindString("fullVersion") : nullptr;
++  const std::string* platform = ua ? ua->FindString("platform") : nullptr;
++  const std::string* platform_version =
++      ua ? ua->FindString("platformVersion") : nullptr;
++  const std::string* architecture =
++      ua ? ua->FindString("architecture") : nullptr;
++  const std::string* bitness = ua ? ua->FindString("bitness") : nullptr;
++  const std::string* model = ua ? ua->FindString("model") : nullptr;
++  std::optional<bool> mobile = ua ? ua->FindBool("mobile") : std::nullopt;
++  if (!brands || brands->empty() || !full_version || !platform ||
++      !platform_version || !architecture || !bitness || !model ||
++      !mobile.has_value()) {
++    return std::nullopt;
++  }
++
++  base::Version parsed_full_version(*full_version);
++  if (!parsed_full_version.IsValid())
++    return std::nullopt;
++  const std::string full_major =
++      base::NumberToString(parsed_full_version.components()[0]);
++
++  blink::UserAgentMetadata metadata;
++  metadata.platform = *platform;
++  metadata.mobile = *mobile;
++  for (const base::Value& value : *brands) {
++    if (!value.is_dict())
++      return std::nullopt;
++    const base::DictValue& brand_value = value.GetDict();
++    const std::string* brand = brand_value.FindString("brand");
++    const std::string* version = brand_value.FindString("version");
++    if (!brand || !version)
++      return std::nullopt;
++    metadata.brand_version_list.emplace_back(*brand, *version);
++    if (!only_low_entropy_ch) {
++      const std::string brand_full_version =
++          *version == full_major
++              ? *full_version
++              : (base::Version(*version).IsValid() &&
++                         base::Version(*version).components().size() > 1
++                     ? *version
++                     : base::StrCat({*version, ".0.0.0"}));
++      metadata.brand_full_version_list.emplace_back(*brand,
++                                                    brand_full_version);
++    }
++  }
++  if (only_low_entropy_ch)
++    return metadata;
++
++  metadata.full_version = *full_version;
++  metadata.platform_version = *platform_version;
++  metadata.architecture = *architecture;
++  metadata.bitness = *bitness;
++  metadata.model = *model;
++  metadata.wow64 = false;
++  metadata.form_factors = {metadata.mobile ? blink::kMobileFormFactor
++                                           : blink::kDesktopFormFactor};
++  return metadata;
++}
++
+ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
++  if (auto metadata = GetShadowEdgeUserAgentMetadata(only_low_entropy_ch))
++    return std::move(*metadata);
++
+   blink::UserAgentMetadata metadata;
+
+   // Low entropy client hints.

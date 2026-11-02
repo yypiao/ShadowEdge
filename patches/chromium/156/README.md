@@ -30,6 +30,7 @@
 | 0004 | 0004-screen-webgl-kernel.patch | 新增 `platform/shadowedge_fingerprint.h`（header-only 画像访问器，含 Fnv1a）；`Screen::width/height/avail*/colorDepth` 返回画像值；WebGL `UNMASKED_VENDOR/RENDERER` 返回画像值（Worker OffscreenCanvas 同分支，天然跨世界一致） | 探针 23/23 |
 | 0005 | 0005-audio-kernel-noise.patch | `AudioBuffer::getChannelData` 的 **IDL 入口重载**叠加 xorshift 微噪声（每 499 样本、±5e-6），per-buffer 一次性 | 同 156 内核下 JS 与 C++ 注入 audioFp 逐值一致 |
 | 0006 | 0006-named-native-tostring.patch | V8 `FunctionPrototypeToString` 仅解包带 ShadowEdge handler 自有标记且 target 为非用户 JS 的 Proxy；普通 Proxy、原型污染、revoked Proxy 保持原行为 | Worker/Blob/Canvas 带名原生串；普通 Proxy 负例与 CreepJS 不回退 |
+| 0007 | 0007-network-user-agent-metadata.patch | 浏览器进程从同一画像生成原生 `UserAgentMetadata`，覆盖导航、子资源与 Worker 的 `Accept-CH` 高低熵协商 | 首次请求不偷发高熵头；协商后完整版本、品牌、平台、架构等与画像一致，不泄露真实二进制版本 |
 
 **0005 关键教训**：加噪必须放在带 `ExceptionState` 的 IDL 入口重载，而非无异常版——
 内部 C++ 路径（如 OfflineAudioContext 渲染结果拷贝）走无异常版，若在空 buffer 上

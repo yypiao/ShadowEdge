@@ -56,6 +56,15 @@
 - 验收已达：Worker 返回 `function Worker() { [native code] }`，普通/Revoked Proxy
   保持匿名原生串，CreepJS 0%/0%，os1 全量 40/40。设计与报告见 ADR 0006。
 
+### P5 网络层 UserAgentMetadata（0007）
+
+- `components/embedder_support/user_agent_utils.cc`：浏览器进程从同一画像生成
+  原生 `UserAgentMetadata`，覆盖 `Accept-CH` 协商后的完整版本列表、平台版本、
+  架构、位宽、型号与 form-factors。
+- 保留 Chromium 原生协商语义：首次请求只发送低熵头，不无条件附加全部高熵头。
+- 验收使用本地真实服务端比较首跳/次跳请求；页面 UA-CH 与服务端高低熵头必须同源，
+  历史画像不得泄露当前自研二进制的真实完整版本。
+
 ## 3. 构建流水线
 
 ```bash

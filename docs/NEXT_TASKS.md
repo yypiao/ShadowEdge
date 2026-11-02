@@ -635,3 +635,23 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 > 提取 `alice:ok`，审计不含用户名或密码。完整类型检查、单元测试、lint 与 Electron 构建通过。
 >
 > 本卡完成的是本地核心功能，不包含团队授权、云端同步、2FA、设备撤销或密码轮换提醒。
+
+---
+
+## T20 — 网络层 Client Hints 同源 ✅（2026-11-02）
+
+> 问题证据：页面 UA 已伪装为 Chrome 130，但服务端通过 `Accept-CH` 请求高熵信息后，
+> `Sec-CH-UA-Full-Version-List` 仍返回真实 `Chromium 156.0.8078.73`。低熵
+> `extraHTTPHeaders` 和页面 JS 注入都无法修复这个网络层矛盾。
+>
+> 已落地 `0007-network-user-agent-metadata.patch`：在
+> `components/embedder_support/user_agent_utils.cc` 的浏览器进程共同入口，从
+> `--shadowedge-fingerprint` 生成原生 `UserAgentMetadata`。品牌、完整版本、平台、
+> 架构、位宽、型号、mobile 与 form-factors 均来自画像；保留原生 `Accept-CH` 协商，
+> 不向首次请求无条件附加高熵头。
+>
+> 验收：dev 增量编译通过；真实 Chromium 首跳/次跳测试确认高熵完整版本不再泄露，
+> 导航、302 跳转、fetch 的高低熵头与画像一致，Worker 脚本遵循原生协商策略且无真实
+> 版本泄露。测试见 `apps/desktop/test/client-hints-smoke.test.ts`。
+> 原有自研内核探针回归 32/32；完整 TypeScript 测试 123 passed / 9 skipped，
+> lint、Electron 生产构建与 `verify-kernel.sh` 均通过。
