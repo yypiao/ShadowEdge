@@ -37,11 +37,18 @@ webPreferences: {
         └─ 解封 ─→ 组织 KEK（服务端存被用户密钥包裹的副本）
               └─ 包裹 ─→ 每个环境的 DEK
                     └─ AES-256-GCM ─→ Cookie / Storage 密文
+
+本机 macOS Keychain
+  └─ 本地随机 KEK
+        └─ 包裹 ─→ 独立 DEK
+              └─ AES-256-GCM ─→ 代理密码 / 账密 / Cookie / LocalStorage / IndexedDB 快照
 ```
 
 - DEK 一环境一密钥，泄露不横向扩散。
 - AAD 绑定用途（`KeyPurpose`），防止密文被跨用途重放。
 - 密钥轮换：换 KEK 只需重新包裹 DEK，不必重加密全部数据。
+- macOS 的本地 KEK 由 Keychain 保管，旧 `vault.key` 只有在 Keychain 写入并读回校验成功后才删除；Keychain 不可用时停止解锁，不静默降级为明文文件。其他平台当前仍使用 0600 文件，Windows DPAPI / Linux Secret Service 属于后续平台工作。
+- Keychain 主要防止数据库与密钥文件被一起离线复制后直接解密，不宣称抵御已取得当前用户会话权限或 root 权限的攻击者。
 
 ## 4. 敏感数据处理
 
@@ -52,10 +59,12 @@ webPreferences: {
 - 填充用户名和密码之前必须确认密码选择器指向 `type=password`；填充过程中再次检查页面 origin，默认只填充，只有显式 `submit: true` 才点击登录。
 - 代理密码在内存中的存活时间最小化，用完即置零。
 - 崩溃报告不上传 `userDataDir` 内容。
-- `.sebackup` 环境备份包含画像、完整代理链凭据、Cookie 与 LocalStorage，明文只短暂存在于主进程；使用独立口令经 PBKDF2-SHA256（210000 次）派生 KEK，再以 AES-256-GCM 信封加密。口令不写入备份或数据库，保存对话框明确提示其敏感范围。
+- `.sebackup` 环境备份包含画像、完整代理链凭据、Cookie、LocalStorage 与 IndexedDB，明文只短暂存在于主进程；使用独立口令经 PBKDF2-SHA256（210000 次）派生 KEK，再以 AES-256-GCM 信封加密。口令不写入备份或数据库，保存对话框明确提示其敏感范围。
 - 导出要求源环境正在运行，以读取当前浏览器状态；错误口令、认证标签不符或密文篡改都会拒绝导入。导入始终生成新环境及代理 ID，不覆盖既有环境。
-- 待恢复 Cookie 与 LocalStorage 在 SQLite 中使用本机 KEK 的 `profile-cookie` 用途再次加密；仅在首次正常启动并完成启动闸门后解封恢复，恢复成功才删除待恢复密文，失败保留以便重试。
-- 当前备份不包含 IndexedDB、SessionStorage、账号凭据库、RPA 工作流或运行历史，也不等同于自动云同步。备份文件与口令必须分开保管；获得两者即可还原其中全部站点状态与代理凭据。
+- Cookie、LocalStorage 与 IndexedDB 快照在 SQLite 中使用本机 KEK 的 `profile-cookie` 用途加密。正常关闭先捕获状态，成功写库后才删除 Chromium 数据目录；下次启动通过闸门后恢复。快照会保留为崩溃恢复基线，不再于首次恢复后删除。
+- 当前备份不包含 SessionStorage、OPFS、账号凭据库、RPA 工作流或运行历史，也不等同于自动云同步。备份文件与口令必须分开保管；获得两者即可还原其中全部站点状态与代理凭据。
+
+浏览器运行期间仍需要 Chromium 数据目录。正常关闭、批量停止和应用退出统一经过加密快照与目录清理；若快照捕获或写库失败，则保留目录并明确报错。异常退出可能留下 Chromium 已落盘数据，下次启动优先从该目录恢复，避免被旧快照回滚；快照仅补回目录缺失的 Cookie，同名同域路径以目录为准。只有后续正常关闭才重新加密并清理。崩溃时尚未由 Chromium 刷盘的 LocalStorage 等修改无法保证恢复，建议同时启用操作系统全盘加密。
 
 当前账密托管的安全边界是**单客户端本地加密存储与填充**。团队授权、云端零知识同步、设备撤销和服务端 KEK 分片尚未实现，不能把本地链路描述为已经完成团队端到端加密。
 

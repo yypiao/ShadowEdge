@@ -3,6 +3,7 @@ import type { BrowserProfile } from '@shadowedge/core';
 import { generateFingerprint } from '@shadowedge/fingerprint';
 import {
   ChromiumCdpDriver,
+  browserChildEnvironment,
   encodeFingerprintPortrait,
   resolveKernelExecutable,
 } from '../src/drivers/chromium-cdp.js';
@@ -32,6 +33,20 @@ describe('chromium-cdp 驱动', () => {
     expect(resolveKernelExecutable('/nonexistent/Chromium')).toBeUndefined();
     expect(resolveKernelExecutable()).toBeUndefined(); // 测试环境未设 env
     expect(resolveKernelExecutable('/bin/sh')).toBe('/bin/sh');
+  });
+
+  it('业务浏览器环境不继承本机数据 KEK', () => {
+    const environment = browserChildEnvironment({
+      SHADOWEDGE_KEK: 'must-not-leak',
+      SHADOWEDGE_KERNEL_EXECUTABLE: '/tmp/Chromium',
+      PATH: '/usr/bin',
+      OPTIONAL_UNDEFINED: undefined,
+    });
+    expect(environment).toEqual({
+      SHADOWEDGE_KERNEL_EXECUTABLE: '/tmp/Chromium',
+      PATH: '/usr/bin',
+    });
+    expect(JSON.stringify(environment)).not.toContain('must-not-leak');
   });
 
   it('encodeFingerprintPortrait：base64-JSON 与内核 0001 校验口径一致', () => {

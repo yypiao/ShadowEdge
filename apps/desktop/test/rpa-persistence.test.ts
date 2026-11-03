@@ -10,6 +10,7 @@ import { openDatabase, type ShadowEdgeDb } from '../src/main/services/db.js';
 import { KernelRuntimeService } from '../src/main/services/kernel-runtime.js';
 import { AuditLog, SessionRepository } from '../src/main/services/local-records.js';
 import { ProfileRepository } from '../src/main/services/profile-repository.js';
+import { GroupRepository } from '../src/main/services/group-repository.js';
 import { ProxyRepository } from '../src/main/services/proxy-repository.js';
 import { RpaRepository } from '../src/main/services/rpa-repository.js';
 import { StorageStateRepository } from '../src/main/services/storage-state-repository.js';
@@ -30,6 +31,7 @@ describe('RPA 工作流与运行历史持久化', () => {
       logger: createConsoleLogger({ test: 'rpa-persistence' }),
       emit: () => undefined,
       profileRepo: new ProfileRepository(handle),
+      groupRepo: new GroupRepository(handle),
       proxyRepo: new ProxyRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       accountRepo: new AccountRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       rpaRepo: repository,
@@ -38,6 +40,7 @@ describe('RPA 工作流与运行历史持久化', () => {
       sessions: new SessionRepository(handle),
       kernelRuntime: new KernelRuntimeService(join(dir, 'config'), {}),
       rpaArtifactsDir: join(dir, 'artifacts'),
+      profilesDir: join(dir, 'profiles'),
       openArtifact: async (path) => {
         opened.push(path);
       },

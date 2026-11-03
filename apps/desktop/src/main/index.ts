@@ -20,6 +20,8 @@ import { KernelRuntimeService } from './services/kernel-runtime.js';
 import { RpaRepository } from './services/rpa-repository.js';
 import { StorageStateRepository } from './services/storage-state-repository.js';
 import { readProfileBackupDialog, saveProfileBackupDialog } from './services/backup-dialog.js';
+import { GroupRepository } from './services/group-repository.js';
+import { migrateProfileDirectories } from './services/profile-directory.js';
 
 const logger = createConsoleLogger({ component: 'main' });
 
@@ -28,6 +30,7 @@ let activeKernel: BrowserKernel | undefined;
 let activeDatabase: ShadowEdgeDb | undefined;
 let activeProfiles: ProfileRepository | undefined;
 let activeSessions: SessionRepository | undefined;
+let closeActiveProfiles: (() => Promise<void>) | undefined;
 let shutdownStarted = false;
 
 // file:// 下 ES module 受 CORS 限制无法加载，注册特权自定义协议作为渲染层 origin。
@@ -92,6 +95,8 @@ function registerIpc(): void {
   const profiles = new ProfileRepository(handle);
   const rpaRepo = new RpaRepository(handle);
   const keyring = loadKeyring(dataDir);
+  const profilesDir = join(dataDir, 'profiles');
+  migrateProfileDirectories(profiles, profilesDir, process.cwd());
   const sessions = new SessionRepository(handle);
   // 上次异常退出留下的未关闭会话统一收口，避免状态假活。
   const orphans = sessions.sweepOrphans();
@@ -109,6 +114,7 @@ function registerIpc(): void {
     logger: logger.child({ component: 'handlers' }),
     emit: (event, payload) => mainWindow?.webContents.send(event, payload),
     profileRepo: profiles,
+    groupRepo: new GroupRepository(handle),
     proxyRepo: new ProxyRepository(handle, keyring),
     accountRepo: new AccountRepository(handle, keyring),
     rpaRepo,
@@ -117,6 +123,7 @@ function registerIpc(): void {
     sessions,
     kernelRuntime: new KernelRuntimeService(dataDir),
     rpaArtifactsDir: join(dataDir, 'rpa'),
+    profilesDir,
     openArtifact: async (path) => {
       const error = await shell.openPath(path);
       if (error) throw new ShadowEdgeError('E_INTERNAL', `无法打开 RPA 产物: ${error}`);
@@ -129,6 +136,18 @@ function registerIpc(): void {
   activeProfiles = profiles;
   activeSessions = sessions;
   const handlers = createHandlers({ ...deps, kernel: activeKernel });
+  closeActiveProfiles = async () => {
+    const kernel = activeKernel;
+    if (!kernel) return;
+    for (const profileId of await kernel.listActive()) {
+      try {
+        await handlers['profile:close'](profileId);
+      } catch (error) {
+        logger.error('退出时保存环境状态失败', { profileId, error: String(error) });
+      }
+    }
+    await kernel.closeAll();
+  };
 
   for (const channel of IPC_CHANNELS) {
     ipcMain.handle(channel, async (_event, payload: unknown) => {
@@ -169,7 +188,7 @@ app.on('before-quit', (event) => {
   shutdownStarted = true;
   void (async () => {
     try {
-      await activeKernel?.closeAll();
+      await closeActiveProfiles?.();
     } catch (error) {
       logger.error('退出时回收浏览器失败', { error: String(error) });
     }

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import type {
   BrowserProfile,
@@ -32,11 +33,16 @@ import type { StorageStateRepository } from './services/storage-state-repository
 import { exportProfileBackup, importProfileBackup } from './services/profile-backup.js';
 import { autofillAccount } from './services/account-autofill.js';
 import { runLaunchGate } from './services/launch-gate.js';
+import type { GroupRepository } from './services/group-repository.js';
+import { deleteProfileWithDirectory, managedProfilePath, removeProfileDirectory } from './services/profile-directory.js';
+import { normalizeCreateInput, normalizeUpdateInput } from './services/profile-input.js';
+import { captureStorageState, openStartupPages, restoreOrCheckpointState, storageStateFailure } from './services/profile-state.js';
 
 export interface HandlerDeps {
   logger: Logger;
   emit: <E extends IpcEventName>(event: E, payload: IpcEvents[E]) => void;
   profileRepo: ProfileRepository;
+  groupRepo: GroupRepository;
   proxyRepo: ProxyRepository;
   accountRepo: AccountRepository;
   rpaRepo: RpaRepository;
@@ -48,6 +54,8 @@ export interface HandlerDeps {
   kernel?: BrowserKernel;
   /** 生产环境传 userData/rpa；测试缺省使用仓库已忽略的 data/rpa。 */
   rpaArtifactsDir?: string;
+  /** 所有浏览器目录的唯一托管根；生产传 userData/profiles。 */
+  profilesDir?: string;
   /** 生产由 Electron shell 打开；测试注入 spy，渲染层不接触本地路径。 */
   openArtifact?: (path: string) => Promise<void>;
   saveProfileBackup?: (fileName: string, contents: string) => Promise<string | undefined>;
@@ -129,6 +137,7 @@ export function createDesktopKernel(deps: HandlerDeps): BrowserKernel {
 export function createHandlers(deps: HandlerDeps): Handlers {
   const kernel = deps.kernel ?? createDesktopKernel(deps);
   const proxyManager = new ProxyManager();
+  const profilesDir = resolve(deps.profilesDir ?? join(process.cwd(), 'data', 'profiles'));
   const artifactsRoot = resolve(deps.rpaArtifactsDir ?? join(process.cwd(), 'data', 'rpa'));
   const rpaEngine = new RpaEngine({
     resolveContext: (profileId) => kernel.getAutomationContext(profileId),
@@ -184,6 +193,24 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     return profile;
   };
 
+  const requireProfileProxy = (id: Uuid): void => {
+    if (!deps.proxyRepo.get(id)) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${id} 不存在`);
+  };
+
+  const requireGroup = (id: Uuid | undefined): void => {
+    if (id && !deps.groupRepo.get(id)) {
+      throw new ShadowEdgeError('E_PROFILE_GROUP_NOT_FOUND', `环境分组 ${id} 不存在`);
+    }
+  };
+
+  const backupDeps = () => ({
+    profileRepo: deps.profileRepo,
+    proxyRepo: deps.proxyRepo,
+    storageStateRepo: deps.storageStateRepo,
+    kernel,
+    profilesDir,
+  });
+
   const handlers: Handlers = {
     'profile:list': async (query) => {
       return deps.profileRepo.list(query ?? undefined);
@@ -191,7 +218,29 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     'profile:get': async (id) => requireProfile(id),
 
-    'profile:create': async (input) => {
+    'profileGroup:list': async () => deps.groupRepo.list(),
+
+    'profileGroup:save': async (input) => {
+      const id = input.id ?? randomUUID() as Uuid;
+      const group = deps.groupRepo.save(input, id);
+      deps.audit.record('profile-group:save', 'profile-group', id, { name: group.name });
+      return group;
+    },
+
+    'profileGroup:delete': async (id) => {
+      if (!deps.groupRepo.get(id)) {
+        throw new ShadowEdgeError('E_PROFILE_GROUP_NOT_FOUND', `环境分组 ${id} 不存在`);
+      }
+      deps.profileRepo.transaction(() => {
+        deps.profileRepo.clearGroup(id);
+        deps.groupRepo.delete(id);
+      });
+      deps.audit.record('profile-group:delete', 'profile-group', id);
+    },
+
+    'profile:create': async (rawInput) => {
+      const input = normalizeCreateInput(rawInput);
+      requireGroup(input.groupId);
       const now = new Date().toISOString();
       const id = randomUUID() as Uuid;
       const seed = input.fingerprintSeed ?? randomUUID();
@@ -201,6 +250,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         orgId: 'local',
         name: input.name,
         platformTag: input.platformTag,
+        groupId: input.groupId,
         kernel: 'chromium-patched',
         // 缺省跟随宿主机平台（紫鸟式同系微调哲学）；显式指定则尊重用户选择
         fingerprint: generateFingerprint({
@@ -212,8 +262,9 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         proxyId: input.proxyId,
         ownerId: 'local-user',
         sharedWith: [],
-        storage: { userDataDir: `profiles/${id}`, remoteRevision: 0, syncMode: 'auto' },
-        startupUrls: [],
+        storage: { userDataDir: managedProfilePath(profilesDir, id), remoteRevision: 0, syncMode: 'auto' },
+        startupUrls: input.startupUrls ?? [],
+        notes: input.notes,
         status: 'idle',
         createdAt: now,
         updatedAt: now,
@@ -229,23 +280,26 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     'profile:update': async ({ id, patch }) => {
       const profile = requireProfile(id);
+      const normalized = normalizeUpdateInput(patch);
+      requireGroup(normalized.groupId);
+      if (normalized.proxyId) requireProfileProxy(normalized.proxyId);
       const updated: BrowserProfile = {
         ...profile,
-        ...patch,
+        ...normalized,
         id,
         updatedAt: new Date().toISOString(),
       };
       deps.profileRepo.save(updated);
-      deps.audit.record('profile:update', 'profile', id, { fields: Object.keys(patch) });
+      deps.audit.record('profile:update', 'profile', id, { fields: Object.keys(normalized) });
       return updated;
     },
 
     'profile:delete': async (id) => {
-      requireProfile(id);
+      const profile = requireProfile(id);
       if (kernel.isActive(id)) {
         throw new ShadowEdgeError('E_PROFILE_BUSY', '环境仍在运行或启动中，请先停止后再删除');
       }
-      deps.profileRepo.delete(id);
+      deleteProfileWithDirectory(deps.profileRepo, profilesDir, profile);
       deps.audit.record('profile:delete', 'profile', id);
     },
 
@@ -263,6 +317,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       );
       deps.profileRepo.save({ ...profile, status: 'launching' });
       deps.emit('profile:status', { profileId: profile.id, status: 'launching' });
+      const hadExistingDirectory = existsSync(managedProfilePath(profilesDir, profile.id));
       try {
         const result = await kernel.launch(profile, options);
         // 同步检查避免在 await 间隙浏览器退出后，又被这里写回 running。
@@ -271,18 +326,38 @@ export function createHandlers(deps: HandlerDeps): Handlers {
             retryable: true,
           });
         }
-        try {
-          const pendingState = deps.storageStateRepo.reveal(profile.id);
-          if (pendingState) {
-            await kernel.getAutomationContext(profile.id).setStorageState(pendingState);
-            deps.storageStateRepo.delete(profile.id);
+        if (kernel.supportsAutomationContext(profile.id)) {
+          try {
+            const pendingState = deps.storageStateRepo.reveal(profile.id);
+            await restoreOrCheckpointState(
+              kernel,
+              profile.id,
+              hadExistingDirectory,
+              pendingState,
+              (state) => deps.storageStateRepo.save(profile.id, state),
+            );
+            const startupFailures = await openStartupPages(
+              kernel.getAutomationContext(profile.id),
+              profile.startupUrls,
+            );
+            for (const failure of startupFailures) {
+              deps.audit.record('profile:startup-url-failed', 'profile', profile.id, {
+                url: failure.url,
+              });
+            }
+            if (startupFailures.length > 0) {
+              deps.emit('app:toast', {
+                level: 'warn',
+                message: `${startupFailures.length} 个启动页面未能加载，环境仍保持运行`,
+              });
+            }
+          } catch (error) {
+            await kernel.close(profile.id).catch(() => undefined);
+            throw new ShadowEdgeError('E_KERNEL_LAUNCH_FAILED', '浏览器状态恢复或启动页面初始化失败，请重试', {
+              retryable: true,
+              cause: error,
+            });
           }
-        } catch (error) {
-          await kernel.close(profile.id).catch(() => undefined);
-          throw new ShadowEdgeError('E_KERNEL_LAUNCH_FAILED', '浏览器状态恢复失败，请重试', {
-            retryable: true,
-            cause: error,
-          });
         }
         deps.profileRepo.save({ ...profile, status: 'running', lastUsedAt: result.startedAt });
         deps.sessions.start(result);
@@ -306,7 +381,24 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'profile:close': async (id) => {
       const profile = requireProfile(id);
       try {
-        await kernel.close(id);
+        let captured: Awaited<ReturnType<typeof captureStorageState>> | undefined;
+        await kernel.close(id, {
+          beforeClose: async (context) => {
+            try {
+              captured = await captureStorageState(context);
+            } catch (error) {
+              throw storageStateFailure('浏览器状态捕获失败，已保留原数据目录', error);
+            }
+          },
+        });
+        if (captured) {
+          try {
+            deps.storageStateRepo.save(id, captured);
+            removeProfileDirectory(profilesDir, profile);
+          } catch (error) {
+            throw storageStateFailure('加密快照保存或原目录清理失败，请检查磁盘后重试', error);
+          }
+        }
       } finally {
         deps.profileRepo.save({ ...profile, status: 'idle' });
         deps.sessions.end(id);
@@ -324,7 +416,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'profile:export': async ({ profileId, passphrase }) => {
       const profile = requireProfile(profileId);
       const backup = await exportProfileBackup(
-        { profileRepo: deps.profileRepo, proxyRepo: deps.proxyRepo, storageStateRepo: deps.storageStateRepo, kernel },
+        backupDeps(),
         profileId,
         passphrase,
       );
@@ -337,25 +429,28 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         saved: path !== undefined,
         cookieCount: backup.cookieCount,
         originCount: backup.originCount,
+        indexedDbCount: backup.indexedDbCount,
       });
       return {
         saved: path !== undefined,
         path,
         cookieCount: backup.cookieCount,
         originCount: backup.originCount,
+        indexedDbCount: backup.indexedDbCount,
       };
     },
 
     'profile:import': async ({ passphrase, name, contents }) => {
       const source = contents ?? await deps.readProfileBackup?.();
-      if (source === undefined) return { imported: false, cookieCount: 0, originCount: 0 };
+      if (source === undefined) return { imported: false, cookieCount: 0, originCount: 0, indexedDbCount: 0 };
       const imported = importProfileBackup(
-        { profileRepo: deps.profileRepo, proxyRepo: deps.proxyRepo, storageStateRepo: deps.storageStateRepo, kernel },
+        backupDeps(),
         { contents: source, passphrase, name },
       );
       deps.audit.record('profile:import', 'profile', imported.profile.id, {
         cookieCount: imported.cookieCount,
         originCount: imported.originCount,
+        indexedDbCount: imported.indexedDbCount,
       });
       return { imported: true, ...imported };
     },

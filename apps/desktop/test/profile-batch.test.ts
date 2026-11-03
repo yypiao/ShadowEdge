@@ -13,6 +13,7 @@ import { openDatabase, type ShadowEdgeDb } from '../src/main/services/db.js';
 import { KernelRuntimeService } from '../src/main/services/kernel-runtime.js';
 import { AuditLog, SessionRepository } from '../src/main/services/local-records.js';
 import { ProfileRepository } from '../src/main/services/profile-repository.js';
+import { GroupRepository } from '../src/main/services/group-repository.js';
 import { ProxyRepository } from '../src/main/services/proxy-repository.js';
 
 describe('批量环境生命周期', () => {
@@ -45,6 +46,7 @@ describe('批量环境生命周期', () => {
       logger: createConsoleLogger({ test: 'profile-batch' }),
       emit: () => undefined,
       profileRepo: profiles,
+      groupRepo: new GroupRepository(handle),
       proxyRepo: new ProxyRepository(handle, crypto),
       accountRepo: new AccountRepository(handle, crypto),
       rpaRepo: new RpaRepository(handle),
@@ -54,6 +56,7 @@ describe('批量环境生命周期', () => {
       kernelRuntime: new KernelRuntimeService(join(dir, 'config'), {}),
       kernel,
       rpaArtifactsDir: join(dir, 'artifacts'),
+      profilesDir: join(dir, 'profiles'),
     });
   });
 

@@ -13,6 +13,7 @@ import { openDatabase, type ShadowEdgeDb } from '../src/main/services/db.js';
 import { KernelRuntimeService } from '../src/main/services/kernel-runtime.js';
 import { AuditLog, SessionRepository } from '../src/main/services/local-records.js';
 import { ProfileRepository } from '../src/main/services/profile-repository.js';
+import { GroupRepository } from '../src/main/services/group-repository.js';
 import { ProxyRepository } from '../src/main/services/proxy-repository.js';
 import { RpaRepository } from '../src/main/services/rpa-repository.js';
 import { StorageStateRepository } from '../src/main/services/storage-state-repository.js';
@@ -36,7 +37,7 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('密文不泄密，错误口令与篡改拒绝，首次启动恢复 Cookie 和 LocalStorage', async () => {
+  it('密文不泄密，错误口令与篡改拒绝，首次启动恢复 Cookie、LocalStorage 和 IndexedDB', async () => {
     server = createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end('<!doctype html><title>backup</title>');
@@ -60,6 +61,7 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
       logger: createConsoleLogger({ test: 'profile-backup-smoke' }),
       emit: () => undefined,
       profileRepo: profiles,
+      groupRepo: new GroupRepository(handle),
       proxyRepo: proxies,
       accountRepo: new AccountRepository(handle, crypto),
       rpaRepo: new RpaRepository(handle),
@@ -69,6 +71,7 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
       kernelRuntime: runtime,
       kernel,
       rpaArtifactsDir: join(dir, 'artifacts'),
+      profilesDir: join(dir, 'profiles'),
       saveProfileBackup: async (_fileName, value) => {
         contents = value;
         return join(dir, 'backup.sebackup');
@@ -85,6 +88,24 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
       const page = sourceContext.pages()[0] ?? await sourceContext.newPage();
       await page.goto(origin);
       await page.evaluate(() => localStorage.setItem('login-state', 'local-storage-secret'));
+      await page.evaluate(async () => {
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open('auth-db', 1);
+          request.onerror = () => reject(request.error);
+          request.onupgradeneeded = () => {
+            const store = request.result.createObjectStore('sessions', { keyPath: 'id' });
+            store.createIndex('token', 'token', { unique: false });
+          };
+          request.onsuccess = () => resolve(request.result);
+        });
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction('sessions', 'readwrite');
+          tx.objectStore('sessions').put({ id: 'current', token: 'indexed-db-secret' });
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+        db.close();
+      });
       await sourceContext.addCookies([{
         name: 'session', value: 'cookie-secret', domain: '127.0.0.1', path: '/',
         expires: -1, httpOnly: true, secure: false, sameSite: 'Lax',
@@ -102,8 +123,10 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
       expect(exported.saved).toBe(true);
       expect(exported.cookieCount).toBe(1);
       expect(exported.originCount).toBe(1);
+      expect(exported.indexedDbCount).toBe(1);
       expect(contents).not.toContain('cookie-secret');
       expect(contents).not.toContain('local-storage-secret');
+      expect(contents).not.toContain('indexed-db-secret');
       expect(contents).not.toContain('proxy-secret');
       expect(contents).not.toContain('backup-source');
 
@@ -130,7 +153,7 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
       // 本测试不经过代理联网，单独验证代理凭据迁移后改回直连以验证站点状态。
       profiles.save({ ...importedProfile, proxyId: undefined });
       await handlers['profile:launch']({ profileId: importedProfile.id });
-      expect(storageStates.reveal(importedProfile.id)).toBeUndefined();
+      expect(storageStates.reveal(importedProfile.id)?.cookies[0]?.value).toBe('cookie-secret');
       const importedContext = kernel.getAutomationContext(importedProfile.id);
       const importedPage = importedContext.pages()[0] ?? await importedContext.newPage();
       await importedPage.goto(origin);
@@ -139,6 +162,21 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
       );
       const cookies = await importedContext.cookies([origin]);
       expect(cookies.find((cookie) => cookie.name === 'session')?.value).toBe('cookie-secret');
+      const indexedToken = await importedPage.evaluate(async () => {
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open('auth-db', 1);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve(request.result);
+        });
+        const value = await new Promise<{ token: string } | undefined>((resolve, reject) => {
+          const request = db.transaction('sessions', 'readonly').objectStore('sessions').get('current');
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve(request.result as { token: string } | undefined);
+        });
+        db.close();
+        return value?.token;
+      });
+      expect(indexedToken).toBe('indexed-db-secret');
 
       const envelope = JSON.parse(contents) as ProfileBackupEnvelope;
       const ciphertext = Buffer.from(envelope.payload.ciphertext, 'base64');

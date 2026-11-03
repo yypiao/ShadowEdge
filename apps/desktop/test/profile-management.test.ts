@@ -1,0 +1,110 @@
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createConsoleLogger, type BrowserProfile, type ProfileUpdateInput } from '@shadowedge/core';
+import { EnvelopeCrypto } from '@shadowedge/crypto';
+import { BrowserKernel, type KernelDriver } from '@shadowedge/kernel';
+import { createHandlers, type Handlers } from '../src/main/handlers.js';
+import { openDatabase, type ShadowEdgeDb } from '../src/main/services/db.js';
+import { KernelRuntimeService } from '../src/main/services/kernel-runtime.js';
+import { AuditLog, SessionRepository } from '../src/main/services/local-records.js';
+import { ProfileRepository } from '../src/main/services/profile-repository.js';
+import { GroupRepository } from '../src/main/services/group-repository.js';
+import { ProxyRepository } from '../src/main/services/proxy-repository.js';
+import { AccountRepository } from '../src/main/services/account-repository.js';
+import { RpaRepository } from '../src/main/services/rpa-repository.js';
+import { StorageStateRepository } from '../src/main/services/storage-state-repository.js';
+
+describe('环境分组、编辑与删除', () => {
+  let dir: string;
+  let handle: ShadowEdgeDb;
+  let profiles: ProfileRepository;
+  let groups: GroupRepository;
+  let handlers: Handlers;
+  let kernel: BrowserKernel;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'shadowedge-profile-management-'));
+    handle = openDatabase(':memory:');
+    profiles = new ProfileRepository(handle);
+    groups = new GroupRepository(handle);
+    const crypto = new EnvelopeCrypto('55'.repeat(32));
+    const driver: KernelDriver = {
+      name: 'test', launch: async ({ profile }) => ({
+        profileId: profile.id, startedAt: new Date().toISOString(),
+        onExit: () => undefined, close: async () => undefined,
+      }),
+    };
+    kernel = new BrowserKernel({ drivers: [driver] });
+    handlers = createHandlers({
+      logger: createConsoleLogger({ test: 'profile-management' }), emit: () => undefined,
+      profileRepo: profiles, groupRepo: groups,
+      proxyRepo: new ProxyRepository(handle, crypto), accountRepo: new AccountRepository(handle, crypto),
+      rpaRepo: new RpaRepository(handle), storageStateRepo: new StorageStateRepository(handle, crypto),
+      audit: new AuditLog(handle), sessions: new SessionRepository(handle),
+      kernelRuntime: new KernelRuntimeService(join(dir, 'config'), {}), kernel,
+      profilesDir: join(dir, 'profiles'),
+    });
+  });
+
+  afterEach(async () => {
+    await kernel.closeAll();
+    handle.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('创建与编辑只修改白名单字段，启动 URL 规范化且路径绝对隔离', async () => {
+    const group = await handlers['profileGroup:save']({ name: '美区店铺', color: '#1976d2' });
+    const profile = await handlers['profile:create']({
+      name: 'shop-one', groupId: group.id, notes: '主店',
+      startupUrls: ['https://example.com/dashboard'], fingerprintSeed: 'management-one',
+    });
+    expect(isAbsolute(profile.storage.userDataDir)).toBe(true);
+    expect(profile.groupId).toBe(group.id);
+    expect(profile.startupUrls).toEqual(['https://example.com/dashboard']);
+    const originalFingerprint = profile.fingerprint;
+    const originalDirectory = profile.storage.userDataDir;
+    const runtimePatch: ProfileUpdateInput & Record<string, unknown> = {
+      name: 'shop-renamed', groupId: group.id, startupUrls: ['http://localhost:8080/start'],
+      status: 'running', fingerprint: { seed: 'attacker' }, storage: { userDataDir: '/tmp/attacker' },
+    };
+    const updated = await handlers['profile:update']({ id: profile.id, patch: runtimePatch });
+    expect(updated.name).toBe('shop-renamed');
+    expect(updated.status).toBe('idle');
+    expect(updated.fingerprint).toEqual(originalFingerprint);
+    expect(updated.storage.userDataDir).toBe(originalDirectory);
+    expect(updated.startupUrls).toEqual(['http://localhost:8080/start']);
+    await expect(handlers['profile:update']({
+      id: profile.id, patch: { startupUrls: ['file:///etc/passwd'] },
+    })).rejects.toMatchObject({ code: 'E_PROFILE_INVALID' });
+  });
+
+  it('删除分组只解绑环境，删除环境同时清理账号、快照和目录', async () => {
+    const group = await handlers['profileGroup:save']({ name: '待删除组' });
+    const profile = await handlers['profile:create']({ name: 'delete-me', groupId: group.id });
+    await handlers['profileGroup:delete'](group.id);
+    expect(profiles.get(profile.id)?.groupId).toBeUndefined();
+    const crypto = new EnvelopeCrypto('55'.repeat(32));
+    await handlers['account:upsert']({
+      profileId: profile.id, label: 'shop', origin: 'https://example.com', username: 'user',
+      usernameSelector: '#user', passwordSelector: '#pass', password: 'secret',
+    });
+    new StorageStateRepository(handle, crypto).save(profile.id, { cookies: [], origins: [] });
+    mkdirSync(profile.storage.userDataDir, { recursive: true });
+    writeFileSync(join(profile.storage.userDataDir, 'marker'), 'delete');
+    await handlers['profile:delete'](profile.id);
+    expect(profiles.get(profile.id)).toBeUndefined();
+    expect(existsSync(profile.storage.userDataDir)).toBe(false);
+    expect(handle.db.prepare('SELECT COUNT(*) AS count FROM account_credentials').get()).toEqual({ count: 0 });
+    expect(handle.db.prepare('SELECT COUNT(*) AS count FROM profile_storage_states').get()).toEqual({ count: 0 });
+  });
+
+  it('运行或启动中禁止删除', async () => {
+    const profile: BrowserProfile = await handlers['profile:create']({ name: 'busy-delete' });
+    await handlers['profile:launch']({ profileId: profile.id });
+    await expect(handlers['profile:delete'](profile.id)).rejects.toMatchObject({ code: 'E_PROFILE_BUSY' });
+    await handlers['profile:close'](profile.id);
+    await handlers['profile:delete'](profile.id);
+  });
+});

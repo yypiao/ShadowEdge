@@ -21,7 +21,7 @@ export function ProfileBackupDialog({ mode, profileId, onClose, onImported }: Pr
       if (exporting) {
         const result = await window.shadowedge.api['profile:export']({ profileId: profileId!, passphrase });
         useStore.getState().toast('info', result.saved
-          ? `加密备份已保存：${result.cookieCount} 个 Cookie，${result.originCount} 个站点状态`
+          ? `加密备份已保存：${result.cookieCount} 个 Cookie，${result.originCount} 个站点状态，${result.indexedDbCount} 个 IndexedDB 数据库`
           : '已取消保存备份');
       } else {
         const result = await window.shadowedge.api['profile:import']({ passphrase, name: name || undefined });
@@ -43,7 +43,7 @@ export function ProfileBackupDialog({ mode, profileId, onClose, onImported }: Pr
         <h3 style={{ marginTop: 0 }}>{exporting ? '导出加密环境备份' : '导入环境备份'}</h3>
         <p style={{ color: '#666', fontSize: 12, lineHeight: 1.6 }}>
           {exporting
-            ? '环境画像、代理凭据、Cookie 和 LocalStorage 将使用口令加密。请妥善保管口令，遗失后无法恢复。'
+            ? '环境画像、代理凭据、Cookie、LocalStorage 和 IndexedDB 将使用口令加密。请妥善保管口令，遗失后无法恢复。'
             : '选择 .sebackup 文件并输入原口令。导入会创建新环境，不会覆盖现有环境。'}
         </p>
         {!exporting && (

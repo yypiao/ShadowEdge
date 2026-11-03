@@ -41,6 +41,15 @@ export function resolveKernelExecutable(
   return existsSync(candidate) ? candidate : undefined;
 }
 
+export function browserChildEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => {
+      // 本机数据 KEK 只允许存在于 Electron 主进程，绝不继承给业务浏览器。
+      return entry[0] !== 'SHADOWEDGE_KEK' && typeof entry[1] === 'string';
+    }),
+  );
+}
+
 /** 画像序列化为 base64-JSON，与内核 0001 补丁的校验口径（base64 + JSON 对象）一致。 */
 export function encodeFingerprintPortrait(spec: KernelLaunchSpec): string {
   return Buffer.from(JSON.stringify(spec.profile.fingerprint), 'utf8').toString('base64');
@@ -72,11 +81,7 @@ export class ChromiumCdpDriver implements KernelDriver {
     });
     const userDataDir = spec.profile.storage.userDataDir;
     const authorization = createKernelLaunchAuthorization(spec.profile.id);
-    const environment = Object.fromEntries(
-      Object.entries(process.env).filter((entry): entry is [string, string] => {
-        return typeof entry[1] === 'string';
-      }),
-    );
+    const environment = browserChildEnvironment(process.env);
     mkdirSync(userDataDir, { recursive: true });
 
     let context: BrowserContext;

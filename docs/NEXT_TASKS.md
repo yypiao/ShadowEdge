@@ -751,7 +751,7 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 ## T25 — 环境加密备份与迁移 ✅（2026-11-02）
 
 > 新增 `.sebackup` 版本化备份格式与 `profile:export / import` 白名单契约。备份包含环境画像、
-> 完整代理链及其凭据、Cookie 和 LocalStorage；口令经 PBKDF2-SHA256（210000 次）派生
+> 完整代理链及其凭据、Cookie、LocalStorage，并在 T30 扩展 IndexedDB；口令经 PBKDF2-SHA256（210000 次）派生
 > KEK，再以 AES-256-GCM 信封加密。文件选择与读写由主进程原生对话框完成；导出结果和
 > 成功导入均记录审计，用户取消导入时不创建环境或代理。
 >
@@ -764,5 +764,65 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 > 并确认备份密文不包含环境名、Cookie、LocalStorage 或代理密码。完整 TypeScript 回归
 > 135 passed / 17 skipped，typecheck、lint 与 Electron 生产构建通过。
 >
-> 当前边界：不迁移 IndexedDB、SessionStorage、账号凭据库、RPA 工作流/运行历史，不提供自动
-> 云同步；这些项目不得被描述为已经包含在环境备份内。
+> 当前边界：T30 起包含 IndexedDB；不迁移 SessionStorage、OPFS、账号凭据库、RPA 工作流/
+> 运行历史，不提供自动云同步；这些项目不得被描述为已经包含在环境备份内。
+
+---
+
+## T26 — 环境数据目录迁移与安全删除 ✅（2026-11-04）
+
+> 新建和导入环境统一使用 Electron `userData/profiles/<环境ID>` 绝对路径。启动时只迁移旧版
+> 精确的 `cwd/profiles/<ID>` 布局，新旧目录同时存在或路径越界时拒绝猜测/合并。删除先将目录
+> 隔离改名，再事务删除 SQLite；数据库失败恢复原目录，提交后残留下次启动清理。环境删除会级联
+> 清理账号凭据和状态快照，不再留下 Chromium Cookie/LocalStorage 文件。删除与关闭均采用
+> 原子隔离目录：删除前崩溃会回滚，快照提交后的关闭残留可安全清理，不使用半个目录恢复。
+
+---
+
+## T27 — macOS Keychain 本地 KEK ✅（2026-11-04）
+
+> macOS 本地随机 KEK 改由 Keychain 保管。旧 `vault.key` 在 Keychain 写入并读回逐字校验成功
+> 后才删除；失败保留旧文件并停止解锁，不静默降级。`security` 的密码通过 stdin 双重输入，
+> 不进入进程参数。测试环境可显式注入 `SHADOWEDGE_KEK`，不会读写开发者真实 Keychain。
+> 其他平台暂时保留 0600 文件并明确记录边界，未冒充完成 DPAPI/Secret Service。
+
+---
+
+## T28 — 备份导入事务与载荷加固 ✅（2026-11-04）
+
+> 代理、环境与加密状态在同一个 SQLite `BEGIN IMMEDIATE` 事务中写入，任一步失败全部回滚。
+> 新增代理重复 ID、缺失上游、循环链、环境代理缺引用、端口和 IndexedDB 结构校验；导入不再
+> 信任备份中的旧 `secretRef`。故障注入在最后一次状态写入抛错，确认环境、代理和快照均为零残留。
+
+---
+
+## T29 — 环境分组、编辑、搜索与启动 URL ✅（2026-11-04）
+
+> 新增 SQLite 分组及白名单 IPC，桌面支持先建分组、创建/编辑环境、按名称搜索、按分组筛选和
+> 安全删除。创建与编辑均可配置最多 20 个 HTTP(S) 启动页面，启动后真实打开；单个页面加载失败
+> 只告警，不关闭已运行环境。`profile:update` 在运行时重建白名单对象，额外传入的状态、画像和
+> 存储路径无法越过类型系统污染主进程。
+
+---
+
+## T30 — IndexedDB 加密迁移 ✅（2026-11-04）
+
+> `.sebackup` 与本地快照统一使用 Patchright `storageState({ indexedDB: true })`，保留数据库
+> 版本、对象仓库、索引、键和值。格式保持 v1 向后兼容，旧备份没有该字段时按零数据库处理。
+> 真实 Chromium 已验证含对象仓库和索引的登录数据库跨环境导出、导入并首次启动恢复；备份
+> 密文不包含 IndexedDB token，返回结果新增数据库计数。
+
+---
+
+## T31 — 正常退出加密快照与崩溃恢复 ✅（2026-11-04）
+
+> 内核关闭新增捕获钩子，单独停止、启动中停止、批量停止和 Electron 退出均先捕获 Cookie、
+> LocalStorage、IndexedDB，再关闭浏览器；快照写库成功后才清理环境目录。启动时保存基线快照，
+> 不删除恢复后的快照。若上次异常退出留下目录，下次启动优先使用目录内较新的已落盘状态，
+> 防止旧快照回滚；目录缺失的 Cookie 会从快照补回，同名同域路径以目录为准。快照保存失败
+> 同样保留目录。真实 SIGKILL 测试验证恢复语义，LocalStorage
+> 尚未刷盘的修改不承诺可恢复。SessionStorage、OPFS 仍不在本卡范围内。
+>
+> 最终回归：完整单元/集成测试 148 passed / 19 skipped，typecheck、lint 和桌面生产构建通过；
+> 最新构建的七个真实 Chromium/Electron 联合场景全部通过，覆盖加密备份迁移、加密快照与崩溃恢复、
+> 环境管理 UI、应用退出回收、批量生命周期、批量管理 UI 和 RPA UI。

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserProfile, ProfileBackupEnvelope } from '@shadowedge/core';
 import { deriveKek, EnvelopeCrypto } from '@shadowedge/crypto';
 import { CURRENT_CATALOG_VERSION, generateFingerprint } from '@shadowedge/fingerprint';
@@ -53,6 +53,13 @@ describe('环境备份加密与导入', () => {
         origins: [{
           origin: 'http://127.0.0.1',
           localStorage: [{ name: 'token', value: 'local-secret' }],
+          indexedDB: [{
+            name: 'auth-db', version: 1,
+            stores: [{
+              name: 'sessions', autoIncrement: false, keyPath: 'id',
+              records: [{ key: 'current', value: { token: 'indexed-secret' } }], indexes: [],
+            }],
+          }],
         }],
       },
     };
@@ -66,6 +73,7 @@ describe('环境备份加密与导入', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     handle.close();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -76,6 +84,7 @@ describe('环境备份加密与导入', () => {
       proxyRepo: proxies,
       storageStateRepo: states,
       kernel: new BrowserKernel(),
+      profilesDir: join(dir, 'profiles'),
     };
   }
 
@@ -83,15 +92,27 @@ describe('环境备份加密与导入', () => {
     expect(contents).not.toContain('proxy-secret');
     expect(contents).not.toContain('cookie-secret');
     expect(contents).not.toContain('local-secret');
+    expect(contents).not.toContain('indexed-secret');
     const result = importProfileBackup(deps(), { contents, passphrase: PASSPHRASE, name: 'imported' });
 
+    expect(result.indexedDbCount).toBe(1);
     expect(result.profile.id).not.toBe('source-profile');
     expect(result.profile.status).toBe('idle');
-    expect(result.profile.storage.userDataDir).toBe(`profiles/${result.profile.id}`);
+    expect(result.profile.storage.userDataDir).toBe(join(dir, 'profiles', result.profile.id));
     expect(result.profile.storage.remoteRevision).toBe(0);
     expect(result.profile.proxyId).not.toBe('source-proxy');
     expect(proxies.reveal(result.profile.proxyId!)).toBe('proxy-secret');
     expect(states.reveal(result.profile.id)?.origins[0]?.localStorage[0]?.value).toBe('local-secret');
+  });
+
+  it('状态写入中途失败时环境、代理和快照全部回滚', () => {
+    vi.spyOn(states, 'save').mockImplementationOnce(() => { throw new Error('injected write failure'); });
+    expect(() => importProfileBackup(deps(), { contents, passphrase: PASSPHRASE })).toThrowError(
+      expect.objectContaining({ code: 'E_STORAGE_STATE_FAILED' }),
+    );
+    expect(profiles.list()).toEqual([]);
+    expect(proxies.list()).toEqual([]);
+    expect(handle.db.prepare('SELECT COUNT(*) AS count FROM profile_storage_states').get()).toEqual({ count: 0 });
   });
 
   it('错误口令和密文篡改均拒绝且不创建环境', () => {

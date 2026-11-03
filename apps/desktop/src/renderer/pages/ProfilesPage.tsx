@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import type { BrowserProfile } from '@shadowedge/core';
 import { CreateProfileDialog } from '../components/CreateProfileDialog.js';
+import { EditProfileDialog } from '../components/EditProfileDialog.js';
 import { ProfileBackupDialog } from '../components/ProfileBackupDialog.js';
 import { toastError, useStore } from '../store.js';
 
@@ -11,11 +13,15 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export function ProfilesPage() {
-  const { profiles, proxies, setProfiles } = useStore();
+  const { profiles, groups, proxies, setProfiles, setGroups } = useStore();
   const [creating, setCreating] = useState(false);
   const [kernels, setKernels] = useState<Record<string, string | undefined>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState<'launch' | 'close' | null>(null);
+  const [editing, setEditing] = useState<BrowserProfile | null>(null);
+  const [keyword, setKeyword] = useState('');
+  const [groupFilter, setGroupFilter] = useState('');
+  const [newGroupName, setNewGroupName] = useState('');
   const [backup, setBackup] = useState<{ mode: 'export' | 'import'; profileId?: string } | null>(null);
 
   useEffect(() => {
@@ -29,6 +35,46 @@ export function ProfilesPage() {
 
   const refresh = async () => {
     setProfiles(await window.shadowedge.api['profile:list'](undefined));
+  };
+
+  const createGroup = async () => {
+    if (!newGroupName.trim()) return;
+    try {
+      await window.shadowedge.api['profileGroup:save']({ name: newGroupName });
+      setGroups(await window.shadowedge.api['profileGroup:list'](undefined));
+      setNewGroupName('');
+      useStore.getState().toast('info', '环境分组已创建');
+    } catch (error) {
+      toastError(error);
+    }
+  };
+
+  const deleteGroup = async () => {
+    if (!groupFilter || !window.confirm('删除分组不会删除环境，组内环境将变为未分组。是否继续？')) return;
+    try {
+      await window.shadowedge.api['profileGroup:delete'](groupFilter);
+      setGroups(await window.shadowedge.api['profileGroup:list'](undefined));
+      setProfiles(await window.shadowedge.api['profile:list'](undefined));
+      setGroupFilter('');
+    } catch (error) {
+      toastError(error);
+    }
+  };
+
+  const remove = async (profile: BrowserProfile) => {
+    if (!window.confirm(`确定删除环境「${profile.name}」吗？本地浏览器数据、账号凭据和待恢复快照将一并删除，此操作不可撤销。`)) return;
+    try {
+      await window.shadowedge.api['profile:delete'](profile.id);
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(profile.id);
+        return next;
+      });
+      await refresh();
+      useStore.getState().toast('info', `环境「${profile.name}」及其本地数据已删除`);
+    } catch (error) {
+      toastError(error);
+    }
   };
 
   const launch = async (profileId: string) => {
@@ -51,7 +97,11 @@ export function ProfilesPage() {
     }
   };
 
-  const selectedProfiles = profiles.filter((profile) => selectedIds.has(profile.id));
+  const visibleProfiles = profiles.filter((profile) =>
+    (!groupFilter || profile.groupId === groupFilter) &&
+    (!keyword.trim() || profile.name.toLowerCase().includes(keyword.trim().toLowerCase())),
+  );
+  const selectedProfiles = visibleProfiles.filter((profile) => selectedIds.has(profile.id));
   const launchTargets = selectedProfiles.filter(
     (profile) => profile.status !== 'running' && profile.status !== 'launching',
   );
@@ -138,6 +188,16 @@ export function ProfilesPage() {
         </div>
       </div>
 
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12, padding: 12, border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff' }}>
+        <input aria-label="搜索环境" placeholder="搜索环境名称" value={keyword} onChange={(event) => setKeyword(event.target.value)} style={{ padding: 8, minWidth: 180, flex: 1 }} />
+        <select aria-label="按分组筛选" value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)} style={{ padding: 8 }}>
+          <option value="">全部分组</option>
+          {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+        </select>
+        {groupFilter && <button type="button" onClick={() => void deleteGroup()}>删除当前分组</button>}
+        <input aria-label="新分组名称" placeholder="新分组名称" value={newGroupName} onChange={(event) => setNewGroupName(event.target.value)} style={{ padding: 8, width: 140 }} />
+        <button type="button" disabled={!newGroupName.trim()} onClick={() => void createGroup()}>创建分组</button>
+      </div>
       {profiles.length === 0 ? (
         <p style={{ color: '#888' }}>暂无环境。点击「新建 / 批量创建」创建第一个隔离环境。</p>
       ) : (
@@ -147,11 +207,11 @@ export function ProfilesPage() {
               <input
                 aria-label="全选环境"
                 type="checkbox"
-                checked={selectedProfiles.length === profiles.length}
+                checked={visibleProfiles.length > 0 && selectedProfiles.length === visibleProfiles.length}
                 onChange={() => setSelectedIds(
-                  selectedProfiles.length === profiles.length
+                  selectedProfiles.length === visibleProfiles.length
                     ? new Set()
-                    : new Set(profiles.map((profile) => profile.id)),
+                    : new Set(visibleProfiles.map((profile) => profile.id)),
                 )}
               />
               全选
@@ -175,7 +235,7 @@ export function ProfilesPage() {
             </button>
           </div>
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
-            {profiles.map((profile) => {
+            {visibleProfiles.map((profile) => {
               const selected = selectedIds.has(profile.id);
               return (
                 <article key={profile.id} style={{ padding: 16, borderRadius: 8, border: `1px solid ${selected ? '#1976d2' : '#e5e7eb'}`, background: selected ? '#f5f9ff' : '#fff' }}>
@@ -194,7 +254,7 @@ export function ProfilesPage() {
                     </span>
                   </div>
                   <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-                    {profile.platformTag ?? '通用'} · {proxyLabel(profile.proxyId) ?? '直连'}
+                    {profile.platformTag ?? '通用'} · {groups.find((group) => group.id === profile.groupId)?.name ?? '未分组'} · {proxyLabel(profile.proxyId) ?? '直连'}
                     {kernels[profile.id] && <span> · 内核：{kernels[profile.id]}</span>}
                   </div>
                   <div style={{ fontSize: 11, color: '#999', marginTop: 6, wordBreak: 'break-all' }}>
@@ -220,14 +280,19 @@ export function ProfilesPage() {
                         启动
                       </button>
                     )}
+                    <button type="button" disabled={batchBusy !== null} onClick={() => setEditing(profile)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d1d5db', color: '#444', background: '#fff', cursor: 'pointer', fontSize: 12 }}>编辑</button>
                     {profile.status === 'running' && (
                       <button type="button" disabled={batchBusy !== null} onClick={() => setBackup({ mode: 'export', profileId: profile.id })} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d1d5db', color: '#444', background: '#fff', cursor: 'pointer', fontSize: 12 }}>加密备份</button>
+                    )}
+                    {profile.status !== 'running' && profile.status !== 'launching' && (
+                      <button type="button" disabled={batchBusy !== null} onClick={() => void remove(profile)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d32f2f', color: '#d32f2f', background: '#fff', cursor: 'pointer', fontSize: 12 }}>删除</button>
                     )}
                   </div>
                 </article>
               );
             })}
           </div>
+          {visibleProfiles.length === 0 && <p style={{ color: '#888' }}>没有符合当前搜索或分组条件的环境。</p>}
         </>
       )}
 
@@ -239,6 +304,10 @@ export function ProfilesPage() {
             void refresh();
           }}
         />
+      )}
+
+      {editing && (
+        <EditProfileDialog profile={editing} onClose={() => setEditing(null)} onSaved={() => void refresh()} />
       )}
 
       {backup && (

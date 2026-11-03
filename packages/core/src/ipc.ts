@@ -9,6 +9,9 @@ import type {
   LaunchOptions,
   LaunchResult,
   ProfileCreateInput,
+  ProfileUpdateInput,
+  ProfileGroupInput,
+  ProfileGroup,
   ProfileBackupExportResult,
   ProfileBackupImportResult,
   Platform,
@@ -30,11 +33,14 @@ export interface IpcApi {
   'profile:list': (query?: { groupId?: Uuid; keyword?: string }) => BrowserProfile[];
   'profile:get': (id: Uuid) => BrowserProfile;
   'profile:create': (input: ProfileCreateInput) => BrowserProfile;
+  'profileGroup:list': () => ProfileGroup[];
+  'profileGroup:save': (input: ProfileGroupInput) => ProfileGroup;
+  'profileGroup:delete': (id: Uuid) => void;
   /** 批量操作按输入顺序返回独立结果，单个失败不中断整批。 */
   'profile:createMany': (input: {
     items: ProfileCreateInput[];
   }) => Array<Result<BrowserProfile, ErrorPayload>>;
-  'profile:update': (input: { id: Uuid; patch: Partial<BrowserProfile> }) => BrowserProfile;
+  'profile:update': (input: { id: Uuid; patch: ProfileUpdateInput }) => BrowserProfile;
   'profile:delete': (id: Uuid) => void;
   'profile:launch': (options: LaunchOptions) => LaunchResult;
   'profile:launchMany': (input: {
@@ -112,6 +118,9 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'profile:list',
   'profile:get',
   'profile:create',
+  'profileGroup:list',
+  'profileGroup:save',
+  'profileGroup:delete',
   'profile:createMany',
   'profile:update',
   'profile:delete',

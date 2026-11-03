@@ -16,6 +16,7 @@ import { KernelRuntimeService } from '../src/main/services/kernel-runtime.js';
 import { createHandlers } from '../src/main/handlers.js';
 import { openDatabase } from '../src/main/services/db.js';
 import { ProfileRepository } from '../src/main/services/profile-repository.js';
+import { GroupRepository } from '../src/main/services/group-repository.js';
 import { ProxyRepository } from '../src/main/services/proxy-repository.js';
 import { AccountRepository } from '../src/main/services/account-repository.js';
 import { RpaRepository } from '../src/main/services/rpa-repository.js';
@@ -87,6 +88,7 @@ describe.skipIf(!SMOKE)('桌面配置到自研内核的真实启动链路', () =
       logger: createConsoleLogger({ test: 'kernel-lifecycle' }),
       emit: (event, payload) => events.push({ event, payload }),
       profileRepo: profiles,
+      groupRepo: new GroupRepository(handle),
       proxyRepo: new ProxyRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       accountRepo: new AccountRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       rpaRepo: new RpaRepository(handle),

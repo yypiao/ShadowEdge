@@ -7,7 +7,7 @@ export class AuditLog {
 
   record(
     action: string,
-    targetType: 'profile' | 'proxy' | 'account' | 'session' | 'rpa' | 'sync' | 'kernel',
+    targetType: 'profile' | 'profile-group' | 'proxy' | 'account' | 'session' | 'rpa' | 'sync' | 'kernel',
     targetId?: string,
     detail?: unknown,
   ): void {

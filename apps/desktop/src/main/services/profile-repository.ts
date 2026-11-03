@@ -55,6 +55,10 @@ function rowToFingerprint(row: ProfileRow): BrowserProfile['fingerprint'] {
 export class ProfileRepository {
   constructor(private readonly handle: ShadowEdgeDb) {}
 
+  transaction<T>(fn: () => T): T {
+    return this.handle.transaction(fn);
+  }
+
   list(query?: { groupId?: Uuid; keyword?: string }): BrowserProfile[] {
     const rows = allRows<ProfileRow>(this.handle.db, 'SELECT * FROM profiles ORDER BY updated_at DESC');
     const all = rows.map(rowToProfile);
@@ -108,6 +112,10 @@ export class ProfileRepository {
 
   delete(id: Uuid): void {
     this.handle.db.prepare('DELETE FROM profiles WHERE id = ?').run(id);
+  }
+
+  clearGroup(groupId: Uuid): void {
+    this.handle.db.prepare('UPDATE profiles SET group_id = NULL WHERE group_id = ?').run(groupId);
   }
 
   /** 进程重启后没有可恢复的运行上下文，持久化的活跃状态必须统一归零。 */

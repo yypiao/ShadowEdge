@@ -126,7 +126,10 @@ export class BrowserKernel {
     };
   }
 
-  async close(profileId: Uuid): Promise<void> {
+  async close(
+    profileId: Uuid,
+    options: { beforeClose?: (context: BrowserContext) => Promise<void> } = {},
+  ): Promise<void> {
     const pending = this.launching.get(profileId);
     if (pending) {
       try {
@@ -137,9 +140,22 @@ export class BrowserKernel {
     }
     const instance = this.running.get(profileId);
     if (!instance) return;
+    let captureError: unknown;
+    if (options.beforeClose && instance.getContext) {
+      try {
+        await options.beforeClose(instance.getContext());
+      } catch (error) {
+        captureError = error;
+      }
+    }
     this.running.delete(profileId);
     await instance.close();
     // 中继由实例的 close 包装统一回收；天然退出则在 onExit 中回收。
+    if (captureError) throw captureError;
+  }
+
+  supportsAutomationContext(profileId: Uuid): boolean {
+    return Boolean(this.running.get(profileId)?.getContext);
   }
 
   getAutomationContext(profileId: Uuid): BrowserContext {
@@ -155,6 +171,10 @@ export class BrowserKernel {
 
   async listRunning(): Promise<Uuid[]> {
     return Array.from(this.running.keys());
+  }
+
+  async listActive(): Promise<Uuid[]> {
+    return [...new Set([...this.launching.keys(), ...this.running.keys()])];
   }
 
   isActive(profileId: Uuid): boolean {

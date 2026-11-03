@@ -8,10 +8,11 @@ import { SettingsPage } from './SettingsPage.js';
 import { RpaPage } from './RpaPage.js';
 
 export function App() {
-  const { sidebar, setSidebar, setProfiles, setProxies, setProxyHealth, toast } = useStore();
+  const { sidebar, setSidebar, setProfiles, setGroups, setProxies, setProxyHealth, toast } = useStore();
 
   useEffect(() => {
     void window.shadowedge.api['profile:list'](undefined).then(setProfiles);
+    void window.shadowedge.api['profileGroup:list'](undefined).then(setGroups);
     void window.shadowedge.api['proxy:list'](undefined).then(setProxies);
 
     const unsubscribers = [
@@ -26,7 +27,7 @@ export function App() {
       window.shadowedge.on['app:toast']((payload) => toast(payload.level, payload.message)),
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
-  }, [setProfiles, setProxies, setProxyHealth, toast]);
+  }, [setProfiles, setGroups, setProxies, setProxyHealth, toast]);
 
   const tabs = [
     { key: 'profiles', label: '环境管理' },

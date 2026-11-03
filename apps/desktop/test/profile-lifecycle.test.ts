@@ -15,6 +15,7 @@ import { openDatabase, type ShadowEdgeDb } from '../src/main/services/db.js';
 import { KernelRuntimeService } from '../src/main/services/kernel-runtime.js';
 import { AuditLog, SessionRepository } from '../src/main/services/local-records.js';
 import { ProfileRepository } from '../src/main/services/profile-repository.js';
+import { GroupRepository } from '../src/main/services/group-repository.js';
 import { ProxyRepository } from '../src/main/services/proxy-repository.js';
 import { AccountRepository } from '../src/main/services/account-repository.js';
 import { RpaRepository } from '../src/main/services/rpa-repository.js';
@@ -43,6 +44,7 @@ describe('桌面环境启动生命周期', () => {
       logger: createConsoleLogger({ test: 'launch-failure' }),
       emit: (event, payload) => statuses.push({ event, payload }),
       profileRepo: profiles,
+      groupRepo: new GroupRepository(handle),
       proxyRepo: new ProxyRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       accountRepo: new AccountRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       rpaRepo: new RpaRepository(handle),
@@ -89,6 +91,7 @@ describe('桌面环境启动生命周期', () => {
       logger: createConsoleLogger({ test: 'launch-concurrency' }),
       emit: () => undefined,
       profileRepo: profiles,
+      groupRepo: new GroupRepository(handle),
       proxyRepo: new ProxyRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       accountRepo: new AccountRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       rpaRepo: new RpaRepository(handle),

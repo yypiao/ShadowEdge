@@ -188,6 +188,30 @@ export interface BrowserProfile {
   updatedAt: IsoDateTime;
 }
 
+export interface IndexedDbDatabaseSnapshot {
+  name: string;
+  version: number;
+  stores: Array<{
+    name: string;
+    autoIncrement: boolean;
+    keyPath?: string;
+    keyPathArray?: string[];
+    records: Array<{
+      key?: unknown;
+      keyEncoded?: unknown;
+      value?: unknown;
+      valueEncoded?: unknown;
+    }>;
+    indexes: Array<{
+      name: string;
+      keyPath?: string;
+      keyPathArray?: string[];
+      multiEntry: boolean;
+      unique: boolean;
+    }>;
+  }>;
+}
+
 export interface BrowserStorageState {
   cookies: Array<{
     name: string;
@@ -202,6 +226,7 @@ export interface BrowserStorageState {
   origins: Array<{
     origin: string;
     localStorage: Array<{ name: string; value: string }>;
+    indexedDB?: IndexedDbDatabaseSnapshot[];
   }>;
 }
 
@@ -217,6 +242,7 @@ export interface ProfileBackupExportResult {
   path?: string;
   cookieCount: number;
   originCount: number;
+  indexedDbCount: number;
 }
 
 export interface ProfileBackupImportResult {
@@ -224,16 +250,45 @@ export interface ProfileBackupImportResult {
   profile?: BrowserProfile;
   cookieCount: number;
   originCount: number;
+  indexedDbCount: number;
 }
 
 export interface ProfileCreateInput {
   name: string;
   platformTag?: string;
+  groupId?: Uuid;
   proxyId?: Uuid;
+  startupUrls?: string[];
+  notes?: string;
   /** 画像平台；'host' 跟随宿主机（推荐），缺省由主进程按 'host' 处理。 */
   platform?: Platform | 'host';
   fingerprintSeed?: string;
   overrides?: Partial<FingerprintProfile>;
+}
+
+export interface ProfileGroup {
+  id: Uuid;
+  orgId: Uuid;
+  name: string;
+  color?: string;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+}
+
+export interface ProfileGroupInput {
+  id?: Uuid;
+  name: string;
+  color?: string;
+}
+
+/** 渲染层只能修改这些业务字段，画像、状态和本地路径由主进程独占。 */
+export interface ProfileUpdateInput {
+  name?: string;
+  platformTag?: string;
+  groupId?: Uuid;
+  proxyId?: Uuid;
+  startupUrls?: string[];
+  notes?: string;
 }
 
 export interface LaunchOptions {

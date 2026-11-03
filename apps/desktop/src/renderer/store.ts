@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { BrowserProfile, ProxyCredential, ProxyHealth, RpaRun } from '@shadowedge/core';
+import type { BrowserProfile, ProfileGroup, ProxyCredential, ProxyHealth, RpaRun } from '@shadowedge/core';
 
 export interface Toast {
   id: number;
@@ -10,6 +10,7 @@ export interface Toast {
 interface AppState {
   version: string;
   profiles: BrowserProfile[];
+  groups: ProfileGroup[];
   proxies: ProxyCredential[];
   proxyHealth: Record<string, ProxyHealth>;
   rpaRuns: RpaRun[];
@@ -17,6 +18,7 @@ interface AppState {
   toasts: Toast[];
   setSidebar: (tab: AppState['sidebar']) => void;
   setProfiles: (profiles: BrowserProfile[]) => void;
+  setGroups: (groups: ProfileGroup[]) => void;
   setProxies: (proxies: ProxyCredential[]) => void;
   setProxyHealth: (health: ProxyHealth) => void;
   toast: (level: Toast['level'], message: string) => void;
@@ -29,6 +31,7 @@ let toastSeq = 0;
 export const useStore = create<AppState>((set) => ({
   version: '0.1.0',
   profiles: [],
+  groups: [],
   proxies: [],
   proxyHealth: {},
   rpaRuns: [],
@@ -36,6 +39,7 @@ export const useStore = create<AppState>((set) => ({
   toasts: [],
   setSidebar: (sidebar) => set({ sidebar }),
   setProfiles: (profiles) => set({ profiles }),
+  setGroups: (groups) => set({ groups }),
   setProxies: (proxies) => set({ proxies }),
   setProxyHealth: (health) =>
     set((state) => ({ proxyHealth: { ...state.proxyHealth, [health.proxyId]: health } })),

@@ -11,6 +11,7 @@ import {
 } from '@shadowedge/fingerprint';
 import { openDatabase, type ShadowEdgeDb } from '../src/main/services/db.js';
 import { ProfileRepository } from '../src/main/services/profile-repository.js';
+import { GroupRepository } from '../src/main/services/group-repository.js';
 import { ProxyRepository } from '../src/main/services/proxy-repository.js';
 import { AccountRepository } from '../src/main/services/account-repository.js';
 import { RpaRepository } from '../src/main/services/rpa-repository.js';
@@ -81,6 +82,7 @@ describe('catalogVersion 数据库迁移', () => {
       logger: createConsoleLogger({ test: 'catalog-create' }),
       emit: () => undefined,
       profileRepo: profiles,
+      groupRepo: new GroupRepository(handle),
       proxyRepo: new ProxyRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       accountRepo: new AccountRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       rpaRepo: new RpaRepository(handle),

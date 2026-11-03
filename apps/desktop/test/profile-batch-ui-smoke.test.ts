@@ -22,7 +22,11 @@ describe.skipIf(!SMOKE)('Electron 批量环境 UI', () => {
         executablePath: electronBinary,
         args: [appRoot, `--user-data-dir=${join(dir, 'electron-data')}`],
         cwd: dir,
-        env: { ...process.env, SHADOWEDGE_KERNEL_EXECUTABLE: executablePath! },
+        env: {
+          ...process.env,
+          SHADOWEDGE_KERNEL_EXECUTABLE: executablePath!,
+          SHADOWEDGE_KEK: '55'.repeat(32),
+        },
       });
       page = await electronApp.firstWindow();
       await page.getByRole('button', { name: '+ 新建 / 批量创建' }).click();

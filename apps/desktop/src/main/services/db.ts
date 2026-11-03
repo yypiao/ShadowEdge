@@ -10,6 +10,7 @@ import { dirname } from 'node:path';
 
 export interface ShadowEdgeDb {
   readonly db: DatabaseSync;
+  transaction<T>(fn: () => T): T;
   close(): void;
 }
 
@@ -202,6 +203,22 @@ const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    id: 6,
+    name: 'profile_groups',
+    sql: `
+      CREATE TABLE profile_groups (
+        id TEXT PRIMARY KEY,
+        org_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        color TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX idx_profile_groups_name ON profile_groups(org_id, name);
+      CREATE INDEX idx_profiles_group_id ON profiles(group_id);
+    `,
+  },
 ];
 
 function tx(db: DatabaseSync, fn: () => void): void {
@@ -239,5 +256,24 @@ export function openDatabase(path: string): ShadowEdgeDb {
     });
   }
 
-  return { db, close: () => db.close() };
+  let transactionDepth = 0;
+  return {
+    db,
+    transaction: <T>(fn: () => T): T => {
+      if (transactionDepth > 0) return fn();
+      db.exec('BEGIN IMMEDIATE');
+      transactionDepth += 1;
+      try {
+        const result = fn();
+        db.exec('COMMIT');
+        return result;
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      } finally {
+        transactionDepth -= 1;
+      }
+    },
+    close: () => db.close(),
+  };
 }

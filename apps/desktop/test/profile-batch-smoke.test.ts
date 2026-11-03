@@ -12,6 +12,7 @@ import { openDatabase } from '../src/main/services/db.js';
 import { KernelRuntimeService } from '../src/main/services/kernel-runtime.js';
 import { AuditLog, SessionRepository } from '../src/main/services/local-records.js';
 import { ProfileRepository } from '../src/main/services/profile-repository.js';
+import { GroupRepository } from '../src/main/services/group-repository.js';
 import { ProxyRepository } from '../src/main/services/proxy-repository.js';
 
 const executablePath = process.env.SHADOWEDGE_KERNEL_EXECUTABLE;
@@ -29,6 +30,7 @@ describe.skipIf(!SMOKE)('真实 Chromium 批量环境生命周期', () => {
       logger: createConsoleLogger({ test: 'profile-batch-smoke' }),
       emit: () => undefined,
       profileRepo: profiles,
+      groupRepo: new GroupRepository(handle),
       proxyRepo: new ProxyRepository(handle, crypto),
       accountRepo: new AccountRepository(handle, crypto),
       rpaRepo: new RpaRepository(handle),
@@ -37,6 +39,7 @@ describe.skipIf(!SMOKE)('真实 Chromium 批量环境生命周期', () => {
       sessions: new SessionRepository(handle),
       kernelRuntime: runtime,
       rpaArtifactsDir: join(dir, 'artifacts'),
+      profilesDir: join(dir, 'profiles'),
     });
     const profileIds: string[] = [];
     try {

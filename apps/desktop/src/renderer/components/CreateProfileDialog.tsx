@@ -17,12 +17,15 @@ interface Props {
 }
 
 export function CreateProfileDialog({ onClose, onCreated }: Props) {
-  const { proxies } = useStore();
+  const { proxies, groups } = useStore();
   const [name, setName] = useState('');
   const [count, setCount] = useState(1);
   const [platformTag, setPlatformTag] = useState<string>('通用');
   const [fpPlatform, setFpPlatform] = useState<FpPlatform>('host');
   const [proxyId, setProxyId] = useState('');
+  const [groupId, setGroupId] = useState('');
+  const [startupUrls, setStartupUrls] = useState('');
+  const [notes, setNotes] = useState('');
   const [seed, setSeed] = useState<string>(() => crypto.randomUUID());
   const [preview, setPreview] = useState<FingerprintProfile | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -51,6 +54,9 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
       const base = {
         platformTag: platformTag === '通用' ? undefined : platformTag,
         proxyId: proxyId || undefined,
+        groupId: groupId || undefined,
+        startupUrls: startupUrls.split('\n').map((url) => url.trim()).filter(Boolean),
+        notes: notes.trim() || undefined,
         platform: fpPlatform,
       };
       if (count === 1) {
@@ -90,7 +96,7 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
       toastError(error);
       setSubmitting(false);
     }
-  }, [name, count, platformTag, fpPlatform, proxyId, seed, onCreated]);
+  }, [name, count, platformTag, fpPlatform, proxyId, groupId, startupUrls, notes, seed, onCreated]);
 
   const input: React.CSSProperties = {
     width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box',
@@ -132,6 +138,18 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
         <select style={input} value={platformTag} onChange={(e) => setPlatformTag(e.target.value)}>
           {PLATFORM_TAGS.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
         </select>
+
+        <span style={label}>分组（可选）</span>
+        <select aria-label="环境分组" style={input} value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+          <option value="">未分组</option>
+          {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+        </select>
+
+        <span style={label}>启动页面（每行一个 HTTP(S) URL）</span>
+        <textarea aria-label="启动页面" style={{ ...input, minHeight: 64, resize: 'vertical' }} value={startupUrls} onChange={(e) => setStartupUrls(e.target.value)} placeholder="https://example.com/dashboard" />
+
+        <span style={label}>备注（可选）</span>
+        <textarea aria-label="环境备注" style={{ ...input, minHeight: 56, resize: 'vertical' }} value={notes} onChange={(e) => setNotes(e.target.value)} />
 
         <span style={label}>画像系统</span>
         <select style={input} value={fpPlatform} onChange={(e) => setFpPlatform(e.target.value as FpPlatform)}>

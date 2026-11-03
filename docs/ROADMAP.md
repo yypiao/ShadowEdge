@@ -17,13 +17,13 @@
 
 ## Phase 1 — 可运行桌面客户端
 
-- [ ] Chromium 补丁编译脚本（`scripts/build-chromium.sh`）
-- [ ] 本地 SQLite 持久层（替换 handlers 中的内存 Map）
-- [ ] 环境 CRUD 全流程（创建→编辑→启动→关闭→删除）
-- [ ] 代理导入（行格式 / CSV）与健康检查
-- [ ] 单页应用 UI 打磨（环境列表、代理管理、设置页）
-- [ ] 启动后自动打开目标站点（`startupUrls`）
-- [ ] 关闭后自动推 Cookie 到本地加密存储
+- [x] Chromium 补丁编译脚本（`scripts/build-chromium.sh`）
+- [x] 本地 SQLite 持久层（替换 handlers 中的内存 Map）
+- [x] 环境 CRUD 全流程（创建→编辑→启动→关闭→删除）
+- [x] 代理导入（行格式 / CSV）与健康检查
+- [x] 单页应用 UI 打磨（环境列表、代理管理、设置页）
+- [x] 启动后自动打开目标站点（`startupUrls`）
+- [x] 关闭后自动推 Cookie 到本地加密存储
 
 ## Phase 2 — 指纹反检测验证
 
