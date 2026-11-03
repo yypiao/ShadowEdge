@@ -43,6 +43,7 @@ export class BrowserKernel {
   private readonly resolveProxy?: (proxyId: Uuid) => Promise<ResolvedUpstreamProxy | undefined>;
   private readonly onExit?: (profileId: Uuid) => void;
   private running = new Map<Uuid, RunningInstance>();
+  private launching = new Map<Uuid, Promise<LaunchResult>>();
 
   constructor(deps: BrowserKernelDeps = {}) {
     this.drivers = deps.drivers ?? [new ChromiumCdpDriver()];
@@ -51,10 +52,23 @@ export class BrowserKernel {
   }
 
   async launch(profile: BrowserProfile, options: LaunchOptions): Promise<LaunchResult> {
-    if (this.running.has(profile.id)) {
+    if (this.isActive(profile.id)) {
       throw new ShadowEdgeError('E_PROFILE_BUSY', `环境 ${profile.id} 已在运行`);
     }
 
+    const pending = this.launchInternal(profile, options);
+    this.launching.set(profile.id, pending);
+    try {
+      return await pending;
+    } finally {
+      if (this.launching.get(profile.id) === pending) this.launching.delete(profile.id);
+    }
+  }
+
+  private async launchInternal(
+    profile: BrowserProfile,
+    options: LaunchOptions,
+  ): Promise<LaunchResult> {
     // T8：Chromium 不支持 SOCKS5 认证与代理链，真实代理一律由本机中继承接，
     // Chromium 只看见 127.0.0.1 上的无认证 HTTP 代理。
     let relay: RelayHandle | undefined;
@@ -113,6 +127,14 @@ export class BrowserKernel {
   }
 
   async close(profileId: Uuid): Promise<void> {
+    const pending = this.launching.get(profileId);
+    if (pending) {
+      try {
+        await pending;
+      } catch {
+        return;
+      }
+    }
     const instance = this.running.get(profileId);
     if (!instance) return;
     this.running.delete(profileId);
@@ -133,6 +155,29 @@ export class BrowserKernel {
 
   async listRunning(): Promise<Uuid[]> {
     return Array.from(this.running.keys());
+  }
+
+  isActive(profileId: Uuid): boolean {
+    return this.running.has(profileId) || this.launching.has(profileId);
+  }
+
+  /** 应用退出时等待启动收口，并逐项回收浏览器与代理中继。 */
+  async closeAll(): Promise<void> {
+    const profileIds = new Set([...this.launching.keys(), ...this.running.keys()]);
+    const failures: unknown[] = [];
+    for (const profileId of profileIds) {
+      try {
+        await this.close(profileId);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length > 0) {
+      throw new ShadowEdgeError('E_INTERNAL', `${failures.length} 个环境退出时关闭失败`, {
+        details: { count: failures.length },
+        cause: failures[0],
+      });
+    }
   }
 }
 export { createKernelLaunchAuthorization, KERNEL_LAUNCH_KEK_ENV } from './launch-token.js';

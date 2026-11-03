@@ -109,4 +109,12 @@ export class ProfileRepository {
   delete(id: Uuid): void {
     this.handle.db.prepare('DELETE FROM profiles WHERE id = ?').run(id);
   }
+
+  /** 进程重启后没有可恢复的运行上下文，持久化的活跃状态必须统一归零。 */
+  resetActiveStatuses(): number {
+    const result = this.handle.db
+      .prepare("UPDATE profiles SET status = 'idle' WHERE status IN ('running', 'launching')")
+      .run();
+    return Number(result.changes);
+  }
 }

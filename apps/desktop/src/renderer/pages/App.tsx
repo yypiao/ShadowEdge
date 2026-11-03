@@ -5,6 +5,7 @@ import { ProfilesPage } from './ProfilesPage.js';
 import { AccountsPage } from './AccountsPage.js';
 import { ProxiesPage } from './ProxiesPage.js';
 import { SettingsPage } from './SettingsPage.js';
+import { RpaPage } from './RpaPage.js';
 
 export function App() {
   const { sidebar, setSidebar, setProfiles, setProxies, setProxyHealth, toast } = useStore();
@@ -69,11 +70,7 @@ export function App() {
         {sidebar === 'profiles' && <ProfilesPage />}
         {sidebar === 'proxies' && <ProxiesPage />}
         {sidebar === 'accounts' && <AccountsPage />}
-        {sidebar === 'rpa' && (
-          <p style={{ color: '#888' }}>
-            RPA 执行引擎已就绪；可视化编排与工作流模板将在后续任务提供。
-          </p>
-        )}
+        {sidebar === 'rpa' && <RpaPage />}
         {sidebar === 'settings' && <SettingsPage />}
       </main>
 

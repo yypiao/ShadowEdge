@@ -8,18 +8,27 @@ import {
   ShadowEdgeError,
 } from '@shadowedge/core';
 import type { IpcChannel } from '@shadowedge/core';
-import { createHandlers } from './handlers.js';
-import { openDatabase } from './services/db.js';
+import type { BrowserKernel } from '@shadowedge/kernel';
+import { createDesktopKernel, createHandlers, type HandlerDeps } from './handlers.js';
+import { openDatabase, type ShadowEdgeDb } from './services/db.js';
 import { loadKeyring } from './services/keyring.js';
 import { ProfileRepository } from './services/profile-repository.js';
 import { ProxyRepository } from './services/proxy-repository.js';
 import { AccountRepository } from './services/account-repository.js';
 import { AuditLog, SessionRepository } from './services/local-records.js';
 import { KernelRuntimeService } from './services/kernel-runtime.js';
+import { RpaRepository } from './services/rpa-repository.js';
+import { StorageStateRepository } from './services/storage-state-repository.js';
+import { readProfileBackupDialog, saveProfileBackupDialog } from './services/backup-dialog.js';
 
 const logger = createConsoleLogger({ component: 'main' });
 
 let mainWindow: BrowserWindow | null = null;
+let activeKernel: BrowserKernel | undefined;
+let activeDatabase: ShadowEdgeDb | undefined;
+let activeProfiles: ProfileRepository | undefined;
+let activeSessions: SessionRepository | undefined;
+let shutdownStarted = false;
 
 // file:// 下 ES module 受 CORS 限制无法加载，注册特权自定义协议作为渲染层 origin。
 // 必须在 app ready 之前声明特权，之后才能 protocol.handle。
@@ -80,23 +89,46 @@ function createWindow(): void {
 function registerIpc(): void {
   const dataDir = app.getPath('userData');
   const handle = openDatabase(join(dataDir, 'shadowedge.db'));
+  const profiles = new ProfileRepository(handle);
+  const rpaRepo = new RpaRepository(handle);
   const keyring = loadKeyring(dataDir);
   const sessions = new SessionRepository(handle);
   // 上次异常退出留下的未关闭会话统一收口，避免状态假活。
   const orphans = sessions.sweepOrphans();
-  if (orphans > 0) logger.info('清理异常退出会话', { count: orphans });
+  const staleProfiles = profiles.resetActiveStatuses();
+  const interruptedRuns = rpaRepo.recoverActiveRuns();
+  if (orphans > 0 || staleProfiles > 0 || interruptedRuns > 0) {
+    logger.info('清理异常退出状态', {
+      sessions: orphans,
+      profiles: staleProfiles,
+      rpaRuns: interruptedRuns,
+    });
+  }
 
-  const handlers = createHandlers({
+  const deps: HandlerDeps = {
     logger: logger.child({ component: 'handlers' }),
     emit: (event, payload) => mainWindow?.webContents.send(event, payload),
-    profileRepo: new ProfileRepository(handle),
+    profileRepo: profiles,
     proxyRepo: new ProxyRepository(handle, keyring),
     accountRepo: new AccountRepository(handle, keyring),
+    rpaRepo,
+    storageStateRepo: new StorageStateRepository(handle, keyring),
     audit: new AuditLog(handle),
     sessions,
     kernelRuntime: new KernelRuntimeService(dataDir),
     rpaArtifactsDir: join(dataDir, 'rpa'),
-  });
+    openArtifact: async (path) => {
+      const error = await shell.openPath(path);
+      if (error) throw new ShadowEdgeError('E_INTERNAL', `无法打开 RPA 产物: ${error}`);
+    },
+    saveProfileBackup: saveProfileBackupDialog,
+    readProfileBackup: readProfileBackupDialog,
+  };
+  activeKernel = createDesktopKernel(deps);
+  activeDatabase = handle;
+  activeProfiles = profiles;
+  activeSessions = sessions;
+  const handlers = createHandlers({ ...deps, kernel: activeKernel });
 
   for (const channel of IPC_CHANNELS) {
     ipcMain.handle(channel, async (_event, payload: unknown) => {
@@ -129,4 +161,29 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', (event) => {
+  if (shutdownStarted) return;
+  event.preventDefault();
+  shutdownStarted = true;
+  void (async () => {
+    try {
+      await activeKernel?.closeAll();
+    } catch (error) {
+      logger.error('退出时回收浏览器失败', { error: String(error) });
+    }
+    try {
+      activeProfiles?.resetActiveStatuses();
+      activeSessions?.sweepOrphans();
+    } catch (error) {
+      logger.error('退出时收口会话状态失败', { error: String(error) });
+    }
+    try {
+      activeDatabase?.close();
+    } catch (error) {
+      logger.error('退出时关闭数据库失败', { error: String(error) });
+    }
+    app.quit();
+  })();
 });

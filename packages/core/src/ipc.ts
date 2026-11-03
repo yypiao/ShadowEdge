@@ -9,11 +9,14 @@ import type {
   LaunchOptions,
   LaunchResult,
   ProfileCreateInput,
+  ProfileBackupExportResult,
+  ProfileBackupImportResult,
   Platform,
   ProxyCredential,
   ProxyHealth,
   RpaRun,
   RpaWorkflow,
+  RpaWorkflowInput,
   Uuid,
 } from './types.js';
 import type { ErrorPayload } from './errors.js';
@@ -41,6 +44,16 @@ export interface IpcApi {
   'profile:closeMany': (input: {
     profileIds: Uuid[];
   }) => Array<Result<{ profileId: Uuid }, ErrorPayload>>;
+  'profile:export': (input: {
+    profileId: Uuid;
+    passphrase: string;
+  }) => ProfileBackupExportResult;
+  'profile:import': (input: {
+    passphrase: string;
+    name?: string;
+    /** 测试/ SDK 可传密文；桌面缺省经主进程原生文件选择器读取。 */
+    contents?: string;
+  }) => ProfileBackupImportResult;
 
   /** 预览画像；传 proxyId 时时区/语言/地理自动跟随代理出口（T9），显式 overrides 优先。 */
   'fingerprint:preview': (input: {
@@ -66,9 +79,13 @@ export interface IpcApi {
   'account:autofill': (input: { id: Uuid; submit?: boolean }) => AccountAutofillResult;
 
   'rpa:list': () => RpaWorkflow[];
+  'rpa:save': (input: RpaWorkflowInput) => RpaWorkflow;
+  'rpa:delete': (id: Uuid) => void;
   'rpa:run': (input: { workflow: RpaWorkflow; profileIds: Uuid[]; inputs?: unknown }) => RpaRun[];
   'rpa:get': (runId: Uuid) => RpaRun;
+  'rpa:listRuns': (input?: { limit?: number }) => RpaRun[];
   'rpa:cancel': (runId: Uuid) => void;
+  'rpa:openArtifact': (input: { runId: Uuid; uri: string }) => void;
 
   'sync:push': (profileId: Uuid) => { revision: number };
   'sync:pull': (profileId: Uuid) => { revision: number; applied: boolean };
@@ -102,6 +119,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'profile:launchMany',
   'profile:close',
   'profile:closeMany',
+  'profile:export',
+  'profile:import',
   'fingerprint:preview',
   'fingerprint:audit',
   'kernel:getStatus',
@@ -115,9 +134,13 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'account:delete',
   'account:autofill',
   'rpa:list',
+  'rpa:save',
+  'rpa:delete',
   'rpa:run',
   'rpa:get',
+  'rpa:listRuns',
   'rpa:cancel',
+  'rpa:openArtifact',
   'sync:push',
   'sync:pull',
   'app:info',

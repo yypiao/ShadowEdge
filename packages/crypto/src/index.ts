@@ -1,8 +1,8 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, pbkdf2Sync, randomBytes } from 'node:crypto';
 
 /** 密钥用途标签，防止同一密钥被用于不同目的。 */
 export type KeyPurpose =
-  'profile-cookie' | 'proxy-secret' | 'account-secret' | 'sync-payload' | 'auth-token';
+  'profile-cookie' | 'profile-backup' | 'proxy-secret' | 'account-secret' | 'sync-payload' | 'auth-token';
 
 /** 信封加密：用一个 KEK（密钥加密密钥）加密若干 DEK（数据加密密钥）。 */
 export class EnvelopeCrypto {
@@ -62,9 +62,13 @@ export class EnvelopeCrypto {
   }
 }
 
-/** 从口令短语派生 256 位 KEK（PBKDF2）。 */
-export function deriveKek(passphrase: string, salt?: string): { kek: string; salt: string } {
+/** 从口令短语派生 256 位 KEK；迭代次数随备份格式保存，便于未来逐步提高。 */
+export function deriveKek(
+  passphrase: string,
+  salt?: string,
+  iterations = 210000,
+): { kek: string; salt: string } {
   const s = salt ?? randomBytes(16).toString('hex');
-  const key = createHash('sha256').update(passphrase).update(s).digest();
+  const key = pbkdf2Sync(passphrase, s, iterations, 32, 'sha256');
   return { kek: key.toString('hex'), salt: s };
 }

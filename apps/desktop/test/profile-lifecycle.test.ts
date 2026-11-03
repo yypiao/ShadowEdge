@@ -9,6 +9,7 @@ import {
   type IpcEvents,
 } from '@shadowedge/core';
 import { EnvelopeCrypto } from '@shadowedge/crypto';
+import { BrowserKernel, type KernelDriver, type RunningInstance } from '@shadowedge/kernel';
 import { createHandlers } from '../src/main/handlers.js';
 import { openDatabase, type ShadowEdgeDb } from '../src/main/services/db.js';
 import { KernelRuntimeService } from '../src/main/services/kernel-runtime.js';
@@ -16,6 +17,8 @@ import { AuditLog, SessionRepository } from '../src/main/services/local-records.
 import { ProfileRepository } from '../src/main/services/profile-repository.js';
 import { ProxyRepository } from '../src/main/services/proxy-repository.js';
 import { AccountRepository } from '../src/main/services/account-repository.js';
+import { RpaRepository } from '../src/main/services/rpa-repository.js';
+import { StorageStateRepository } from '../src/main/services/storage-state-repository.js';
 
 describe('桌面环境启动生命周期', () => {
   let dir: string;
@@ -42,6 +45,8 @@ describe('桌面环境启动生命周期', () => {
       profileRepo: profiles,
       proxyRepo: new ProxyRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       accountRepo: new AccountRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
+      rpaRepo: new RpaRepository(handle),
+      storageStateRepo: new StorageStateRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       audit: new AuditLog(handle),
       sessions: new SessionRepository(handle),
       kernelRuntime: runtime,
@@ -68,5 +73,59 @@ describe('桌面环境启动生命周期', () => {
         .prepare("SELECT COUNT(*) AS count FROM audit_local WHERE action = 'profile:launch-failed'")
         .get(),
     ).toEqual({ count: 1 });
+  });
+
+  it('并发启动与删除保护不会覆盖已有会话状态', async () => {
+    handle = openDatabase(':memory:');
+    const profiles = new ProfileRepository(handle);
+    const runtime = new KernelRuntimeService(join(dir, 'config'), {});
+    let release!: (instance: RunningInstance) => void;
+    const pending = new Promise<RunningInstance>((resolve) => {
+      release = resolve;
+    });
+    const driver: KernelDriver = { name: 'delayed', launch: async () => pending };
+    const kernel = new BrowserKernel({ drivers: [driver] });
+    const handlers = createHandlers({
+      logger: createConsoleLogger({ test: 'launch-concurrency' }),
+      emit: () => undefined,
+      profileRepo: profiles,
+      proxyRepo: new ProxyRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
+      accountRepo: new AccountRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
+      rpaRepo: new RpaRepository(handle),
+      storageStateRepo: new StorageStateRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
+      audit: new AuditLog(handle),
+      sessions: new SessionRepository(handle),
+      kernelRuntime: runtime,
+      kernel,
+    });
+    const profile = await handlers['profile:create']({
+      name: 'launch-concurrency',
+      fingerprintSeed: 'launch-concurrency',
+    });
+
+    const launching = handlers['profile:launch']({ profileId: profile.id });
+    await expect.poll(() => profiles.get(profile.id)?.status).toBe('launching');
+    await expect(handlers['profile:launch']({ profileId: profile.id })).rejects.toMatchObject({
+      code: 'E_PROFILE_BUSY',
+    });
+    await expect(handlers['profile:delete'](profile.id)).rejects.toMatchObject({
+      code: 'E_PROFILE_BUSY',
+    });
+    expect(profiles.get(profile.id)?.status).toBe('launching');
+
+    release({
+      profileId: profile.id,
+      startedAt: new Date().toISOString(),
+      onExit: () => undefined,
+      close: async () => undefined,
+    });
+    await launching;
+    expect(profiles.get(profile.id)?.status).toBe('running');
+    await expect(handlers['profile:delete'](profile.id)).rejects.toMatchObject({
+      code: 'E_PROFILE_BUSY',
+    });
+    await handlers['profile:close'](profile.id);
+    await handlers['profile:delete'](profile.id);
+    expect(profiles.get(profile.id)).toBeUndefined();
   });
 });

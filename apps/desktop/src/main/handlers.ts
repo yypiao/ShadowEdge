@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import type {
   BrowserProfile,
   ErrorPayload,
@@ -21,12 +21,15 @@ import {
 } from '@shadowedge/fingerprint';
 import { BrowserKernel, ChromiumCdpDriver } from '@shadowedge/kernel';
 import { ProxyManager } from '@shadowedge/proxy';
-import { RpaEngine } from '@shadowedge/rpa';
+import { RpaEngine, validateGraph } from '@shadowedge/rpa';
 import type { ProfileRepository } from './services/profile-repository.js';
 import type { ProxyRepository } from './services/proxy-repository.js';
 import type { AuditLog, SessionRepository } from './services/local-records.js';
 import type { KernelRuntimeService } from './services/kernel-runtime.js';
 import type { AccountRepository } from './services/account-repository.js';
+import type { RpaRepository } from './services/rpa-repository.js';
+import type { StorageStateRepository } from './services/storage-state-repository.js';
+import { exportProfileBackup, importProfileBackup } from './services/profile-backup.js';
 import { autofillAccount } from './services/account-autofill.js';
 import { runLaunchGate } from './services/launch-gate.js';
 
@@ -36,6 +39,8 @@ export interface HandlerDeps {
   profileRepo: ProfileRepository;
   proxyRepo: ProxyRepository;
   accountRepo: AccountRepository;
+  rpaRepo: RpaRepository;
+  storageStateRepo: StorageStateRepository;
   audit: AuditLog;
   sessions: SessionRepository;
   kernelRuntime: KernelRuntimeService;
@@ -43,6 +48,10 @@ export interface HandlerDeps {
   kernel?: BrowserKernel;
   /** 生产环境传 userData/rpa；测试缺省使用仓库已忽略的 data/rpa。 */
   rpaArtifactsDir?: string;
+  /** 生产由 Electron shell 打开；测试注入 spy，渲染层不接触本地路径。 */
+  openArtifact?: (path: string) => Promise<void>;
+  saveProfileBackup?: (fileName: string, contents: string) => Promise<string | undefined>;
+  readProfileBackup?: () => Promise<string | undefined>;
 }
 
 /** 主进程 IPC 处理器集合。类型与 IpcApi 严格对齐，新增通道会立即产生编译错误。 */
@@ -66,8 +75,8 @@ async function settleSequential<Input, Output>(
   return results;
 }
 
-export function createHandlers(deps: HandlerDeps): Handlers {
-  const kernel = deps.kernel ?? new BrowserKernel({
+export function createDesktopKernel(deps: HandlerDeps): BrowserKernel {
+  return new BrowserKernel({
     drivers: [new ChromiumCdpDriver(deps.kernelRuntime.driverOptions())],
     onExit: (profileId) => {
       const profile = deps.profileRepo.get(profileId);
@@ -115,11 +124,17 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       };
     },
   });
+}
+
+export function createHandlers(deps: HandlerDeps): Handlers {
+  const kernel = deps.kernel ?? createDesktopKernel(deps);
   const proxyManager = new ProxyManager();
+  const artifactsRoot = resolve(deps.rpaArtifactsDir ?? join(process.cwd(), 'data', 'rpa'));
   const rpaEngine = new RpaEngine({
     resolveContext: (profileId) => kernel.getAutomationContext(profileId),
-    artifactsDir: deps.rpaArtifactsDir ?? join(process.cwd(), 'data', 'rpa'),
+    artifactsDir: artifactsRoot,
     emit: (progress) => deps.emit('rpa:progress', progress),
+    onRunUpdate: (run) => deps.rpaRepo.saveRun(run),
   });
 
   // 健康检查缓存：住宅/双跳代理探测可达 30s+，建环境与预览不应每次重探
@@ -227,12 +242,18 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     'profile:delete': async (id) => {
       requireProfile(id);
+      if (kernel.isActive(id)) {
+        throw new ShadowEdgeError('E_PROFILE_BUSY', '环境仍在运行或启动中，请先停止后再删除');
+      }
       deps.profileRepo.delete(id);
       deps.audit.record('profile:delete', 'profile', id);
     },
 
     'profile:launch': async (options) => {
       const profile = requireProfile(options.profileId);
+      if (kernel.isActive(profile.id)) {
+        throw new ShadowEdgeError('E_PROFILE_BUSY', `环境 ${profile.id} 已在运行或启动中`);
+      }
       await runLaunchGate(
         { profile, ignoreProxyCheck: options.ignoreProxyCheck },
         {
@@ -240,12 +261,27 @@ export function createHandlers(deps: HandlerDeps): Handlers {
           checkProxy: getProxyHealth,
         },
       );
+      deps.profileRepo.save({ ...profile, status: 'launching' });
       deps.emit('profile:status', { profileId: profile.id, status: 'launching' });
       try {
         const result = await kernel.launch(profile, options);
-        if (!(await kernel.listRunning()).includes(profile.id)) {
+        // 同步检查避免在 await 间隙浏览器退出后，又被这里写回 running。
+        if (!kernel.isActive(profile.id)) {
           throw new ShadowEdgeError('E_KERNEL_LAUNCH_FAILED', '浏览器在启动完成后立即退出', {
             retryable: true,
+          });
+        }
+        try {
+          const pendingState = deps.storageStateRepo.reveal(profile.id);
+          if (pendingState) {
+            await kernel.getAutomationContext(profile.id).setStorageState(pendingState);
+            deps.storageStateRepo.delete(profile.id);
+          }
+        } catch (error) {
+          await kernel.close(profile.id).catch(() => undefined);
+          throw new ShadowEdgeError('E_KERNEL_LAUNCH_FAILED', '浏览器状态恢复失败，请重试', {
+            retryable: true,
+            cause: error,
           });
         }
         deps.profileRepo.save({ ...profile, status: 'running', lastUsedAt: result.startedAt });
@@ -254,9 +290,12 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         deps.emit('profile:status', { profileId: profile.id, status: 'running' });
         return result;
       } catch (error) {
-        deps.profileRepo.save({ ...profile, status: 'idle' });
+        // 并发请求失败不能把另一个已成功/正在启动的会话误标为 idle。
+        if (!kernel.isActive(profile.id)) {
+          deps.profileRepo.save({ ...profile, status: 'idle' });
+          deps.emit('profile:status', { profileId: profile.id, status: 'idle' });
+        }
         deps.audit.record('profile:launch-failed', 'profile', profile.id);
-        deps.emit('profile:status', { profileId: profile.id, status: 'idle' });
         throw error;
       }
     },
@@ -281,6 +320,45 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         await handlers['profile:close'](profileId);
         return { profileId };
       }),
+
+    'profile:export': async ({ profileId, passphrase }) => {
+      const profile = requireProfile(profileId);
+      const backup = await exportProfileBackup(
+        { profileRepo: deps.profileRepo, proxyRepo: deps.proxyRepo, storageStateRepo: deps.storageStateRepo, kernel },
+        profileId,
+        passphrase,
+      );
+      if (!deps.saveProfileBackup) {
+        throw new ShadowEdgeError('E_INTERNAL', '当前环境不支持保存备份文件');
+      }
+      const safeName = profile.name.replace(/[\\/:*?"<>|]/g, '_');
+      const path = await deps.saveProfileBackup(`${safeName}.sebackup`, backup.contents);
+      deps.audit.record('profile:export', 'profile', profileId, {
+        saved: path !== undefined,
+        cookieCount: backup.cookieCount,
+        originCount: backup.originCount,
+      });
+      return {
+        saved: path !== undefined,
+        path,
+        cookieCount: backup.cookieCount,
+        originCount: backup.originCount,
+      };
+    },
+
+    'profile:import': async ({ passphrase, name, contents }) => {
+      const source = contents ?? await deps.readProfileBackup?.();
+      if (source === undefined) return { imported: false, cookieCount: 0, originCount: 0 };
+      const imported = importProfileBackup(
+        { profileRepo: deps.profileRepo, proxyRepo: deps.proxyRepo, storageStateRepo: deps.storageStateRepo, kernel },
+        { contents: source, passphrase, name },
+      );
+      deps.audit.record('profile:import', 'profile', imported.profile.id, {
+        cookieCount: imported.cookieCount,
+        originCount: imported.originCount,
+      });
+      return { imported: true, ...imported };
+    },
 
     'fingerprint:preview': async ({ seed, proxyId, platform, overrides }) =>
       generateFingerprint({
@@ -351,7 +429,39 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       return result;
     },
 
-    'rpa:list': async () => [],
+    'rpa:list': async () => deps.rpaRepo.listWorkflows(),
+    'rpa:save': async (input) => {
+      if (!input.name.trim()) {
+        throw new ShadowEdgeError('E_RPA_INVALID_INPUT', '工作流名称不能为空');
+      }
+      const validation = validateGraph(input.graph);
+      if (!validation.valid) {
+        throw new ShadowEdgeError('E_RPA_INVALID_GRAPH', 'RPA 工作流图无效', {
+          details: { errors: validation.errors },
+        });
+      }
+      const existing = input.id ? deps.rpaRepo.getWorkflow(input.id) : undefined;
+      const workflow = {
+        id: input.id ?? randomUUID() as Uuid,
+        orgId: existing?.orgId ?? 'local',
+        name: input.name.trim(),
+        version: existing ? existing.version + 1 : 1,
+        graph: input.graph,
+        inputsSchema: input.inputsSchema,
+        createdBy: existing?.createdBy ?? 'local-user',
+        updatedAt: new Date().toISOString(),
+      };
+      deps.rpaRepo.saveWorkflow(workflow);
+      deps.audit.record('rpa:save', 'rpa', workflow.id, { version: workflow.version });
+      return workflow;
+    },
+    'rpa:delete': async (id) => {
+      if (!deps.rpaRepo.getWorkflow(id)) {
+        throw new ShadowEdgeError('E_RPA_WORKFLOW_NOT_FOUND', `RPA 工作流 ${id} 不存在`);
+      }
+      deps.rpaRepo.deleteWorkflow(id);
+      deps.audit.record('rpa:delete', 'rpa', id);
+    },
     'rpa:run': async ({ workflow, profileIds, inputs }) => {
       const runs = await rpaEngine.run(workflow, profileIds, inputs);
       for (const run of runs) {
@@ -363,11 +473,29 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       return runs;
     },
     'rpa:get': async (runId) => {
-      const run = rpaEngine.getRun(runId);
+      const run = rpaEngine.getRun(runId) ?? deps.rpaRepo.getRun(runId);
       if (!run) throw new ShadowEdgeError('E_RPA_RUN_NOT_FOUND', `RPA 运行 ${runId} 不存在`);
       return run;
     },
+    'rpa:listRuns': async (input) => {
+      const limit = Math.max(1, Math.min(input?.limit ?? 100, 200));
+      return deps.rpaRepo.listRuns(limit);
+    },
     'rpa:cancel': async (runId) => rpaEngine.cancel(runId),
+    'rpa:openArtifact': async ({ runId, uri }) => {
+      const run = rpaEngine.getRun(runId) ?? deps.rpaRepo.getRun(runId);
+      if (!run) throw new ShadowEdgeError('E_RPA_RUN_NOT_FOUND', `RPA 运行 ${runId} 不存在`);
+      const path = resolve(uri);
+      const runRoot = resolve(artifactsRoot, runId);
+      const belongsToRun = run.artifacts.some((artifact) => resolve(artifact.uri) === path);
+      if (!belongsToRun || !path.startsWith(runRoot + sep)) {
+        throw new ShadowEdgeError('E_PERMISSION_DENIED', '产物路径不属于本次 RPA 运行');
+      }
+      if (!deps.openArtifact) {
+        throw new ShadowEdgeError('E_INTERNAL', '当前环境不支持打开本地产物');
+      }
+      await deps.openArtifact(path);
+    },
 
     'sync:push': async (profileId) => {
       const profile = requireProfile(profileId);

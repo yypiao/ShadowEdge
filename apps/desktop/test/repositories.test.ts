@@ -107,6 +107,18 @@ describe('本地持久层', () => {
     expect(sessions.sweepOrphans()).toBe(1);
   });
 
+  it('重启恢复只清理运行中和启动中的假状态', () => {
+    profiles.save({ ...makeProfile('active-1'), status: 'running' });
+    profiles.save({ ...makeProfile('active-2'), status: 'launching' });
+    profiles.save({ ...makeProfile('inactive'), status: 'idle' });
+
+    expect(profiles.resetActiveStatuses()).toBe(2);
+    expect(profiles.get('active-1')?.status).toBe('idle');
+    expect(profiles.get('active-2')?.status).toBe('idle');
+    expect(profiles.get('inactive')?.status).toBe('idle');
+    expect(profiles.resetActiveStatuses()).toBe(0);
+  });
+
   it('审计日志落库', () => {
     const audit = new AuditLog(handle);
     audit.record('profile:create', 'profile', 'p9', { name: 'x' });

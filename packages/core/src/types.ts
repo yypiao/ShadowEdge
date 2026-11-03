@@ -188,6 +188,44 @@ export interface BrowserProfile {
   updatedAt: IsoDateTime;
 }
 
+export interface BrowserStorageState {
+  cookies: Array<{
+    name: string;
+    value: string;
+    domain: string;
+    path: string;
+    expires: number;
+    httpOnly: boolean;
+    secure: boolean;
+    sameSite: 'Strict' | 'Lax' | 'None';
+  }>;
+  origins: Array<{
+    origin: string;
+    localStorage: Array<{ name: string; value: string }>;
+  }>;
+}
+
+export interface ProfileBackupEnvelope {
+  format: 'shadowedge-profile-backup';
+  version: 1;
+  kdf: { name: 'PBKDF2-SHA256'; iterations: number; salt: string };
+  payload: { ciphertext: string; wrappedKey: string; iv: string };
+}
+
+export interface ProfileBackupExportResult {
+  saved: boolean;
+  path?: string;
+  cookieCount: number;
+  originCount: number;
+}
+
+export interface ProfileBackupImportResult {
+  imported: boolean;
+  profile?: BrowserProfile;
+  cookieCount: number;
+  originCount: number;
+}
+
 export interface ProfileCreateInput {
   name: string;
   platformTag?: string;
@@ -276,6 +314,13 @@ export interface RpaWorkflow {
   inputsSchema?: unknown;
   createdBy: Uuid;
   updatedAt: IsoDateTime;
+}
+
+export interface RpaWorkflowInput {
+  id?: Uuid;
+  name: string;
+  graph: RpaGraph;
+  inputsSchema?: unknown;
 }
 
 export type RpaRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';

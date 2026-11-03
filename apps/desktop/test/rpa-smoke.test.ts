@@ -13,6 +13,8 @@ import { AuditLog, SessionRepository } from '../src/main/services/local-records.
 import { ProfileRepository } from '../src/main/services/profile-repository.js';
 import { ProxyRepository } from '../src/main/services/proxy-repository.js';
 import { AccountRepository } from '../src/main/services/account-repository.js';
+import { RpaRepository } from '../src/main/services/rpa-repository.js';
+import { StorageStateRepository } from '../src/main/services/storage-state-repository.js';
 
 const executablePath = process.env.SHADOWEDGE_KERNEL_EXECUTABLE;
 const SMOKE = process.env.SHADOWEDGE_SMOKE === '1' && executablePath !== undefined;
@@ -59,6 +61,8 @@ describe.skipIf(!SMOKE)('RPA 真实 Chromium 端到端', () => {
       profileRepo: profiles,
       proxyRepo: new ProxyRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       accountRepo: new AccountRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
+      rpaRepo: new RpaRepository(handle),
+      storageStateRepo: new StorageStateRepository(handle, new EnvelopeCrypto('00'.repeat(32))),
       audit: new AuditLog(handle),
       sessions: new SessionRepository(handle),
       kernelRuntime: runtime,
@@ -108,7 +112,11 @@ describe.skipIf(!SMOKE)('RPA 真实 Chromium 端到端', () => {
         updatedAt: new Date().toISOString(),
       };
       const runs = await handlers['rpa:run']({
-        workflow,
+        workflow: await handlers['rpa:save']({
+          id: workflow.id,
+          name: workflow.name,
+          graph: workflow.graph,
+        }),
         profileIds: [profile.id],
         inputs: { name: 'Ada' },
       });
@@ -127,6 +135,15 @@ describe.skipIf(!SMOKE)('RPA 真实 Chromium 端到端', () => {
       expect(statSync(screenshot.uri).size).toBeGreaterThan(1000);
       expect(statSync(screenshot.uri).mode & 0o777).toBe(0o600);
       expect(readFileSync(screenshot.uri).subarray(1, 4).toString()).toBe('PNG');
+      const history = await handlers['rpa:listRuns']({ limit: 10 });
+      expect(history).toHaveLength(1);
+      expect(history[0]).toMatchObject({
+        id: runId,
+        status: 'succeeded',
+        finishedAt: finished.finishedAt,
+        outputs: { greeting: 'Hello Ada' },
+        artifacts: finished.artifacts,
+      });
       expect(progress.map((event) => event.step)).toEqual(
         expect.arrayContaining([
           'open',

@@ -10,6 +10,7 @@ export interface RpaEngineDeps {
   resolveContext: (profileId: Uuid) => RpaBrowserContext | Promise<RpaBrowserContext>;
   artifactsDir: string;
   emit?: (progress: IpcEvents['rpa:progress']) => void;
+  onRunUpdate?: (run: RpaRun) => void;
   random?: () => number;
 }
 
@@ -56,10 +57,12 @@ export class RpaEngine {
         completion: Promise.resolve(run),
       };
       this.runs.set(run.id, active);
+      this.deps.onRunUpdate?.(run);
       if (this.profileOwners.has(profileId)) {
         run.status = 'failed';
         run.error = `环境 ${profileId} 已有正在执行的 RPA 工作流`;
         run.finishedAt = new Date().toISOString();
+        this.deps.onRunUpdate?.(run);
         return run;
       }
       this.profileOwners.set(profileId, run.id);
@@ -99,6 +102,7 @@ export class RpaEngine {
     const { run, controller } = active;
     run.status = 'running';
     run.startedAt = new Date().toISOString();
+    this.deps.onRunUpdate?.(run);
     const nodes = linearNodes(workflow.graph);
     const runDir = join(this.deps.artifactsDir, run.id);
 
@@ -147,6 +151,7 @@ export class RpaEngine {
       }
     } finally {
       run.finishedAt = new Date().toISOString();
+      this.deps.onRunUpdate?.(run);
     }
     return run;
   }

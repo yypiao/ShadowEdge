@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CreateProfileDialog } from '../components/CreateProfileDialog.js';
+import { ProfileBackupDialog } from '../components/ProfileBackupDialog.js';
 import { toastError, useStore } from '../store.js';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -15,6 +16,7 @@ export function ProfilesPage() {
   const [kernels, setKernels] = useState<Record<string, string | undefined>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState<'launch' | 'close' | null>(null);
+  const [backup, setBackup] = useState<{ mode: 'export' | 'import'; profileId?: string } | null>(null);
 
   useEffect(() => {
     setSelectedIds((current) => {
@@ -126,13 +128,14 @@ export function ProfilesPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>环境列表</h2>
-        <button
-          type="button"
-          onClick={() => setCreating(true)}
-          style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: '#1976d2', color: '#fff', cursor: 'pointer', fontSize: 13 }}
-        >
-          + 新建 / 批量创建
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" onClick={() => setBackup({ mode: 'import' })} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #1976d2', background: '#fff', color: '#1976d2', cursor: 'pointer', fontSize: 13 }}>导入环境</button>
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: '#1976d2', color: '#fff', cursor: 'pointer', fontSize: 13 }}
+          >+ 新建 / 批量创建</button>
+        </div>
       </div>
 
       {profiles.length === 0 ? (
@@ -217,6 +220,9 @@ export function ProfilesPage() {
                         启动
                       </button>
                     )}
+                    {profile.status === 'running' && (
+                      <button type="button" disabled={batchBusy !== null} onClick={() => setBackup({ mode: 'export', profileId: profile.id })} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d1d5db', color: '#444', background: '#fff', cursor: 'pointer', fontSize: 12 }}>加密备份</button>
+                    )}
                   </div>
                 </article>
               );
@@ -232,6 +238,15 @@ export function ProfilesPage() {
             setCreating(false);
             void refresh();
           }}
+        />
+      )}
+
+      {backup && (
+        <ProfileBackupDialog
+          mode={backup.mode}
+          profileId={backup.profileId}
+          onClose={() => setBackup(null)}
+          onImported={() => void refresh()}
         />
       )}
     </div>

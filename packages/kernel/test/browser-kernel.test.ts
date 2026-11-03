@@ -22,11 +22,11 @@ function makeProfile(id = 'lifecycle'): BrowserProfile {
   };
 }
 
-function makeDriver() {
+function makeDriver(profileId = 'lifecycle') {
   let exitListener: (() => void) | undefined;
   let closeCalls = 0;
   const instance: RunningInstance = {
-    profileId: 'lifecycle',
+    profileId,
     pid: 321,
     startedAt: new Date().toISOString(),
     onExit: (listener) => {
@@ -108,6 +108,67 @@ describe('BrowserKernel 生命周期', () => {
     await expect(kernel.launch(profile, { profileId: profile.id })).rejects.toThrow(
       'launch failed',
     );
+    expect(await kernel.listRunning()).toEqual([]);
+  });
+
+  it('启动中拒绝重复启动，停止会等待启动收口后关闭实例', async () => {
+    const profile = makeProfile();
+    let launchCalls = 0;
+    let closeCalls = 0;
+    let release!: (instance: RunningInstance) => void;
+    const pending = new Promise<RunningInstance>((resolve) => {
+      release = resolve;
+    });
+    const driver: KernelDriver = {
+      name: 'delayed-driver',
+      launch: async () => {
+        launchCalls += 1;
+        return pending;
+      },
+    };
+    const kernel = new BrowserKernel({ drivers: [driver] });
+    const launching = kernel.launch(profile, { profileId: profile.id });
+    await expect(kernel.launch(profile, { profileId: profile.id })).rejects.toMatchObject({
+      code: 'E_PROFILE_BUSY',
+    });
+    expect(launchCalls).toBe(1);
+
+    const closing = kernel.close(profile.id);
+    release({
+      profileId: profile.id,
+      startedAt: new Date().toISOString(),
+      onExit: () => undefined,
+      close: async () => {
+        closeCalls += 1;
+      },
+    });
+    await launching;
+    await closing;
+    expect(closeCalls).toBe(1);
+    expect(kernel.isActive(profile.id)).toBe(false);
+  });
+
+  it('closeAll 回收全部运行实例', async () => {
+    const closed: string[] = [];
+    const driver: KernelDriver = {
+      name: 'multi-driver',
+      launch: async ({ profile }) => ({
+        profileId: profile.id,
+        startedAt: new Date().toISOString(),
+        onExit: () => undefined,
+        close: async () => {
+          closed.push(profile.id);
+        },
+      }),
+    };
+    const kernel = new BrowserKernel({ drivers: [driver] });
+    const first = makeProfile('first');
+    const second = makeProfile('second');
+    await kernel.launch(first, { profileId: first.id });
+    await kernel.launch(second, { profileId: second.id });
+
+    await kernel.closeAll();
+    expect(closed).toEqual([first.id, second.id]);
     expect(await kernel.listRunning()).toEqual([]);
   });
 });

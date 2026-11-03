@@ -156,6 +156,52 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_account_profile ON account_credentials(profile_id);
     `,
   },
+  {
+    id: 4,
+    name: 'rpa_workflows_and_runs',
+    sql: `
+      CREATE TABLE rpa_workflows (
+        id TEXT PRIMARY KEY,
+        org_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        graph TEXT NOT NULL,
+        inputs_schema TEXT,
+        created_by TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_rpa_workflows_updated ON rpa_workflows(updated_at);
+
+      CREATE TABLE rpa_runs (
+        id TEXT PRIMARY KEY,
+        workflow_id TEXT NOT NULL,
+        profile_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        error TEXT,
+        outputs TEXT NOT NULL,
+        artifacts TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_rpa_runs_created ON rpa_runs(created_at);
+      CREATE INDEX idx_rpa_runs_workflow ON rpa_runs(workflow_id);
+    `,
+  },
+  {
+    id: 5,
+    name: 'profile_pending_storage_states',
+    sql: `
+      CREATE TABLE profile_storage_states (
+        profile_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+        state_ciphertext TEXT NOT NULL,
+        state_wrapped_key TEXT NOT NULL,
+        state_iv TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 function tx(db: DatabaseSync, fn: () => void): void {

@@ -6,6 +6,8 @@ import { createConsoleLogger } from '@shadowedge/core';
 import { EnvelopeCrypto } from '@shadowedge/crypto';
 import { createHandlers } from '../src/main/handlers.js';
 import { AccountRepository } from '../src/main/services/account-repository.js';
+import { RpaRepository } from '../src/main/services/rpa-repository.js';
+import { StorageStateRepository } from '../src/main/services/storage-state-repository.js';
 import { openDatabase } from '../src/main/services/db.js';
 import { KernelRuntimeService } from '../src/main/services/kernel-runtime.js';
 import { AuditLog, SessionRepository } from '../src/main/services/local-records.js';
@@ -29,6 +31,8 @@ describe.skipIf(!SMOKE)('真实 Chromium 批量环境生命周期', () => {
       profileRepo: profiles,
       proxyRepo: new ProxyRepository(handle, crypto),
       accountRepo: new AccountRepository(handle, crypto),
+      rpaRepo: new RpaRepository(handle),
+      storageStateRepo: new StorageStateRepository(handle, crypto),
       audit: new AuditLog(handle),
       sessions: new SessionRepository(handle),
       kernelRuntime: runtime,
