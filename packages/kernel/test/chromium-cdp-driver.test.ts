@@ -35,6 +35,15 @@ describe('chromium-cdp 驱动', () => {
     expect(resolveKernelExecutable('/bin/sh')).toBe('/bin/sh');
   });
 
+  it('可执行路径解析器接收当前环境，支持按固定版本选择', () => {
+    const spec = makeSpec();
+    spec.profile.kernelVersion = '156.0.0.0';
+    expect(resolveKernelExecutable(
+      (profile) => profile?.kernelVersion === spec.profile.kernelVersion ? '/bin/sh' : '/nonexistent',
+      spec.profile,
+    )).toBe('/bin/sh');
+  });
+
   it('业务浏览器环境不继承本机数据 KEK', () => {
     const environment = browserChildEnvironment({
       SHADOWEDGE_KEK: 'must-not-leak',

@@ -51,7 +51,7 @@ cd "$CHROMIUM_ROOT/src"
 
 # 2. 锁定版本：checkout 到 chromium.version 指定的 tag，防 main 漂移
 if [[ "$SKIP_FETCH" == 0 ]]; then
-  git fetch --depth 1 origin "tag $TAG" || true
+  git fetch --depth 1 origin tag "$TAG" || true
   git checkout "tags/$TAG"
   gclient sync --no-history --with_branch_heads --with_tags --nohooks -D
   gclient runhooks

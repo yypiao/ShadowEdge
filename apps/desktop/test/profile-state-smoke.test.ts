@@ -39,6 +39,17 @@ async function writeState(values: { localValue: string; indexedValue: string }):
     tx.onerror = () => reject(tx.error);
   });
   db.close();
+  const root = await navigator.storage.getDirectory();
+  const handle = await root.getFileHandle('session.txt', { create: true });
+  const writable = await handle.createWritable();
+  await writable.write(values.indexedValue);
+  await writable.close();
+}
+
+async function readOpfsToken(): Promise<string> {
+  const root = await navigator.storage.getDirectory();
+  const handle = await root.getFileHandle('session.txt');
+  return (await handle.getFile()).text();
 }
 
 async function readIndexedToken(): Promise<string | undefined> {
@@ -129,6 +140,7 @@ describe.skipIf(!SMOKE)('真实 Chromium 加密快照与崩溃恢复', () => {
       await handlers['profile:close'](profile.id);
       expect(existsSync(profile.storage.userDataDir)).toBe(false);
       expect(states.reveal(profile.id)?.origins[0]?.indexedDB?.[0]?.name).toBe('session-db');
+      expect(states.reveal(profile.id)?.origins[0]?.opfs?.[0]?.path).toBe('session.txt');
       const encryptedRow = handle.db.prepare(
         'SELECT state_ciphertext || state_wrapped_key || state_iv AS payload FROM profile_storage_states',
       ).get() as { payload: string };
@@ -141,6 +153,7 @@ describe.skipIf(!SMOKE)('真实 Chromium 加密快照与崩溃恢复', () => {
       await restoredPage.goto(origin);
       expect(await restoredPage.evaluate(() => localStorage.getItem('login-state'))).toBe('local-before-close');
       expect(await restoredPage.evaluate(readIndexedToken)).toBe('indexed-before-close');
+      expect(await restoredPage.evaluate(readOpfsToken)).toBe('indexed-before-close');
       expect((await restored.cookies([origin])).find((cookie) => cookie.name === 'session')?.value).toBe('cookie-before-close');
 
       await restoredPage.evaluate(writeState, { localValue: 'local-after-crash', indexedValue: 'indexed-after-crash' });
@@ -160,6 +173,7 @@ describe.skipIf(!SMOKE)('真实 Chromium 加密快照与崩溃恢复', () => {
       await recoveredPage.goto(origin);
       expect(await recoveredPage.evaluate(() => localStorage.getItem('login-state'))).toBe('local-after-crash');
       expect(await recoveredPage.evaluate(readIndexedToken)).toBe('indexed-after-crash');
+      expect(await recoveredPage.evaluate(readOpfsToken)).toBe('indexed-after-crash');
       expect((await recovered.cookies([origin])).find((cookie) => cookie.name === 'session')?.value).toBe('cookie-before-close');
       expect((await recovered.cookies([origin])).find((cookie) => cookie.name === 'session_only')?.value).toBe('session-cookie-before-close');
       await handlers['profile:close'](profile.id);

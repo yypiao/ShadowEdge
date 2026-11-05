@@ -31,8 +31,8 @@
 | 0005 | 0005-audio-kernel-noise.patch | `AudioBuffer::getChannelData` 的 **IDL 入口重载**叠加 xorshift 微噪声（每 499 样本、±5e-6），per-buffer 一次性 | 同 156 内核下 JS 与 C++ 注入 audioFp 逐值一致 |
 | 0006 | 0006-named-native-tostring.patch | V8 `FunctionPrototypeToString` 仅解包带 ShadowEdge handler 自有标记且 target 为非用户 JS 的 Proxy；普通 Proxy、原型污染、revoked Proxy 保持原行为 | Worker/Blob/Canvas 带名原生串；普通 Proxy 负例与 CreepJS 不回退 |
 | 0007 | 0007-network-user-agent-metadata.patch | 浏览器进程从同一画像生成原生 `UserAgentMetadata`，覆盖导航、子资源与 Worker 的 `Accept-CH` 高低熵协商 | 首次请求不偷发高熵头；协商后完整版本、品牌、平台、架构等与画像一致，不泄露真实二进制版本 |
-| 0008 | 0008-all-worker-init-script.patch | 将 0003 的 ServiceWorker 原生求值扩展到所有 classic/module Worker 全局作用域；同一脚本在 Worker 自身代码前执行，覆盖 Dedicated、Shared 与嵌套 Worker | 五类真实 Worker 场景画像一致；内核模式不再包装 Worker/Blob/URL，也不携带自引用注入源码 |
-| 0009 | 0009-launch-token.patch | 浏览器进程原生校验 `EnvelopeCrypto` 的 `auth-token` 信封；每次启动随机 KEK 仅经环境传递，30 秒过期，校验后清除环境 | 无令牌、错 KEK、篡改或过期均拒启；桌面驱动合法令牌正常启动 |
+| 0008 | 0008-all-worker-init-script.patch | 将 0003 的 ServiceWorker 原生求值扩展到所有 classic/module Worker 全局作用域；同一脚本在 Worker 自身代码前执行，覆盖 Dedicated、Shared 与嵌套 Worker；注入统一经 Blink `ClassicScript` 生命周期执行，不再直接调用底层 `v8::Script::Run()` | 五类真实 Worker 场景画像一致；Release .73/.91 最小/完整注入均通过；内核模式不再包装 Worker/Blob/URL，也不携带自引用注入源码 |
+| 0009 | 0009-launch-token.patch | 浏览器进程原生校验 `EnvelopeCrypto` 的 `auth-token` 信封；每次启动随机 KEK 仅经环境传递，60 秒过期（协议上限），校验后清除环境 | 无令牌、错 KEK、篡改或过期均拒启；桌面驱动合法令牌正常启动 |
 
 **0005 关键教训**：加噪必须放在带 `ExceptionState` 的 IDL 入口重载，而非无异常版——
 内部 C++ 路径（如 OfflineAudioContext 渲染结果拷贝）走无异常版，若在空 buffer 上

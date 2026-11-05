@@ -2,9 +2,11 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isShadowEdgeError, ShadowEdgeError } from '@shadowedge/core';
 import type { IpcEvents, RpaRun, RpaWorkflow, Uuid } from '@shadowedge/core';
-import { linearNodes, validateGraph } from './graph.js';
+import { validateGraph } from './graph.js';
+import { loopCount, nextForCondition } from './control.js';
+import { withHardCancellation } from './cancellation.js';
 import { nodeExecutors, throwIfCancelled } from './executors.js';
-import type { RpaBrowserContext, RpaNodeExecutor } from './session.js';
+import type { RpaBrowserContext, RpaNodeExecution, RpaNodeExecutor } from './session.js';
 
 export interface RpaEngineDeps {
   resolveContext: (profileId: Uuid) => RpaBrowserContext | Promise<RpaBrowserContext>;
@@ -12,12 +14,15 @@ export interface RpaEngineDeps {
   emit?: (progress: IpcEvents['rpa:progress']) => void;
   onRunUpdate?: (run: RpaRun) => void;
   random?: () => number;
+  /** 返回原因时仅让当前环境失败，不影响同批其他环境。 */
+  profileUnavailable?: (profileId: Uuid) => string | undefined;
 }
 
 interface ActiveRun {
   run: RpaRun;
   controller: AbortController;
   completion: Promise<RpaRun>;
+  timedOut?: boolean;
 }
 
 export class RpaEngine {
@@ -58,9 +63,10 @@ export class RpaEngine {
       };
       this.runs.set(run.id, active);
       this.deps.onRunUpdate?.(run);
-      if (this.profileOwners.has(profileId)) {
+      const unavailable = this.deps.profileUnavailable?.(profileId);
+      if (unavailable || this.profileOwners.has(profileId)) {
         run.status = 'failed';
-        run.error = `环境 ${profileId} 已有正在执行的 RPA 工作流`;
+        run.error = unavailable ?? `环境 ${profileId} 已有正在执行的 RPA 工作流`;
         run.finishedAt = new Date().toISOString();
         this.deps.onRunUpdate?.(run);
         return run;
@@ -88,6 +94,10 @@ export class RpaEngine {
     return this.runs.get(runId)?.run;
   }
 
+  isProfileActive(profileId: Uuid): boolean {
+    return this.profileOwners.has(profileId);
+  }
+
   async wait(runId: Uuid): Promise<RpaRun> {
     const active = this.runs.get(runId);
     if (!active) throw new ShadowEdgeError('E_RPA_RUN_NOT_FOUND', `RPA 运行 ${runId} 不存在`);
@@ -103,8 +113,15 @@ export class RpaEngine {
     run.status = 'running';
     run.startedAt = new Date().toISOString();
     this.deps.onRunUpdate?.(run);
-    const nodes = linearNodes(workflow.graph);
     const runDir = join(this.deps.artifactsDir, run.id);
+    const timeoutMs = workflow.graph.timeoutMs ?? 300000;
+    const maxSteps = workflow.graph.maxSteps ?? 10000;
+    const deadlineAt = Date.now() + timeoutMs;
+    const timeout = setTimeout(() => {
+      active.timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    timeout.unref();
 
     try {
       this.progress(run.id, 'started', 0);
@@ -112,22 +129,58 @@ export class RpaEngine {
       const context = await this.deps.resolveContext(run.profileId);
       throwIfCancelled(controller.signal);
       const page = context.pages()[0] ?? (await context.newPage());
-      for (let index = 0; index < nodes.length; index += 1) {
-        const node = nodes[index]!;
+      const loopStates = new Map<string, { count: number; index: number }>();
+      const loopIndices: Record<string, number> = {};
+      const visited = new Set<string>();
+      let id: string | undefined = workflow.graph.entry;
+      let steps = 0;
+      while (id) {
         throwIfCancelled(controller.signal);
-        this.progress(run.id, node.id, Math.round((index / nodes.length) * 100));
-        await this.executeNode(node, {
+        steps += 1;
+        if (steps > maxSteps) {
+          throw new ShadowEdgeError('E_RPA_STEP_LIMIT', `RPA 运行超过最大步数 ${maxSteps}`);
+        }
+        const node = workflow.graph.nodes[id];
+        if (!node) throw new ShadowEdgeError('E_RPA_INVALID_GRAPH', `节点 ${id} 不存在`);
+        visited.add(id);
+        const percent = Math.min(99, Math.round((visited.size / Object.keys(workflow.graph.nodes).length) * 100));
+        this.progress(run.id, node.id, percent);
+        const execution: RpaNodeExecution = {
           run,
           node,
           page,
           inputs,
           signal: controller.signal,
-          percent: Math.round((index / nodes.length) * 100),
+          deadlineAt,
+          closePage: () => page.close(),
+          percent,
           random: this.random,
           outputs: run.outputs!,
+          loopIndices,
           artifactPath: (fileName) => join(runDir, fileName),
-        });
-        this.progress(run.id, node.id, Math.round(((index + 1) / nodes.length) * 100));
+        };
+        if (node.kind !== 'condition' && node.kind !== 'loop') await this.executeNode(node, execution);
+        if (node.kind === 'condition') {
+          id = nextForCondition(node, execution);
+        } else if (node.kind === 'loop') {
+          let state = loopStates.get(node.id);
+          if (!state) {
+            state = { count: loopCount(node, execution), index: 0 };
+            loopStates.set(node.id, state);
+          } else {
+            state.index += 1;
+          }
+          if (state.index < state.count) {
+            loopIndices[node.id] = state.index;
+            id = String(node.params.body);
+          } else {
+            loopStates.delete(node.id);
+            delete loopIndices[node.id];
+            id = node.next;
+          }
+        } else {
+          id = node.next;
+        }
       }
       if (Object.keys(run.outputs!).length > 0) {
         const path = join(runDir, 'outputs.json');
@@ -138,7 +191,11 @@ export class RpaEngine {
       run.status = 'succeeded';
       this.progress(run.id, 'succeeded', 100);
     } catch (error) {
-      if (
+      if (active.timedOut) {
+        run.status = 'failed';
+        run.error = `RPA 运行超过总超时 ${timeoutMs}ms`;
+        this.progress(run.id, 'failed', 100);
+      } else if (
         controller.signal.aborted ||
         (isShadowEdgeError(error) && error.code === 'E_RPA_CANCELLED')
       ) {
@@ -150,6 +207,7 @@ export class RpaEngine {
         this.progress(run.id, 'failed', 100);
       }
     } finally {
+      clearTimeout(timeout);
       run.finishedAt = new Date().toISOString();
       this.deps.onRunUpdate?.(run);
     }
@@ -174,7 +232,7 @@ export class RpaEngine {
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       throwIfCancelled(execution.signal);
       try {
-        await executor(execution);
+        await withHardCancellation(execution, () => executor(execution));
         return;
       } catch (error) {
         if (

@@ -104,6 +104,27 @@ describe('RPA 工作流与运行历史持久化', () => {
     expect(opened).toEqual([screenshot]);
   });
 
+  it('定时配置通过 IPC 持久化，并随工作流删除级联清理', async () => {
+    const profile = await handlers['profile:create']({ name: 'scheduled-profile', fingerprintSeed: 'scheduled-profile' });
+    const workflow = await handlers['rpa:save']({
+      name: '定时工作流',
+      graph: { entry: 'wait', nodes: { wait: { id: 'wait', kind: 'wait', params: { ms: 0 } } } },
+    });
+    const schedule = await handlers['rpa:setSchedule']({
+      workflowId: workflow.id,
+      profileIds: [profile.id, profile.id],
+      intervalMinutes: 5,
+      enabled: true,
+    });
+    expect(schedule.profileIds).toEqual([profile.id]);
+    expect(schedule.enabled).toBe(true);
+    expect(await handlers['rpa:listSchedules'](undefined)).toEqual([schedule]);
+    const disabled = await handlers['rpa:setSchedule']({ ...schedule, enabled: false });
+    expect(disabled.enabled).toBe(false);
+    await handlers['rpa:delete'](workflow.id);
+    expect(await handlers['rpa:listSchedules'](undefined)).toEqual([]);
+  });
+
   it('重启恢复只中断未完成的运行', () => {
     const base: RpaRun = {
       id: 'queued',

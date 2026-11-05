@@ -14,7 +14,7 @@ import type { ProfileRepository } from './profile-repository.js';
 import type { ProxyRepository } from './proxy-repository.js';
 import type { StorageStateRepository } from './storage-state-repository.js';
 import { managedProfilePath } from './profile-directory.js';
-import { captureStorageState, countIndexedDatabases } from './profile-state.js';
+import { captureStorageState, countIndexedDatabases, countOpfsFiles, withinOpfsBudget } from './profile-state.js';
 import { normalizeProfileName } from './profile-input.js';
 
 const KDF_ITERATIONS = 210000;
@@ -32,12 +32,15 @@ interface BackupDeps {
   storageStateRepo: StorageStateRepository;
   kernel: BrowserKernel;
   profilesDir: string;
+  /** 旧备份没有固定版本时，按导入这一刻的默认签名版本固定。 */
+  defaultKernelVersion?: string;
 }
 
 interface BackupCounts {
   cookieCount: number;
   originCount: number;
   indexedDbCount: number;
+  opfsFileCount: number;
 }
 
 function counts(state: BrowserStorageState): BackupCounts {
@@ -45,6 +48,7 @@ function counts(state: BrowserStorageState): BackupCounts {
     cookieCount: state.cookies.length,
     originCount: state.origins.length,
     indexedDbCount: countIndexedDatabases(state),
+    opfsFileCount: countOpfsFiles(state),
   };
 }
 
@@ -134,6 +138,9 @@ export function importProfileBackup(
     orgId: 'local',
     name: normalizeProfileName(input.name ?? `${payload.profile.name}（导入）`),
     proxyId: payload.profile.proxyId ? proxyIds.get(payload.profile.proxyId) : undefined,
+    kernelVersion: payload.profile.kernelVersion ?? deps.defaultKernelVersion,
+    // 导入的是独立环境，不能保留指向原设备环境的灰度关系。
+    kernelUpgradeSourceId: undefined,
     ownerId: 'local-user',
     sharedWith: [],
     storage: {
@@ -214,6 +221,10 @@ function parsePayload(value: unknown): BackupPayload {
 function isBrowserProfile(value: unknown): value is BrowserProfile {
   if (!isRecord(value) || typeof value.id !== 'string' ||
     typeof value.name !== 'string' || value.name.length > 120 ||
+    (value.platformTag !== undefined && typeof value.platformTag !== 'string') ||
+    (value.platformSiteId !== undefined && typeof value.platformSiteId !== 'string') ||
+    (value.kernelVersion !== undefined && (typeof value.kernelVersion !== 'string' || !/^[\w.-]{1,80}$/.test(value.kernelVersion))) ||
+    (value.kernelUpgradeSourceId !== undefined && typeof value.kernelUpgradeSourceId !== 'string') ||
     !isRecord(value.storage) || typeof value.storage.userDataDir !== 'string' ||
     !['auto', 'manual', 'local-only'].includes(String(value.storage.syncMode)) ||
     !['chromium-patched', 'chromium-cdp', 'firefox-gecko'].includes(String(value.kernel)) ||
@@ -232,15 +243,40 @@ function isBrowserProfile(value: unknown): value is BrowserProfile {
 
 function isStorageState(value: unknown): value is BrowserStorageState {
   if (!isRecord(value) || !Array.isArray(value.cookies) || !Array.isArray(value.origins)) return false;
-  return value.cookies.every((cookie) => isRecord(cookie) &&
+  const validCookies = value.cookies.every((cookie): cookie is BrowserStorageState['cookies'][number] => isRecord(cookie) &&
     ['name', 'value', 'domain', 'path'].every((key) => typeof cookie[key] === 'string') &&
     typeof cookie.expires === 'number' && Number.isFinite(cookie.expires) &&
     typeof cookie.httpOnly === 'boolean' && typeof cookie.secure === 'boolean' &&
-    ['Strict', 'Lax', 'None'].includes(String(cookie.sameSite))) &&
-    value.origins.every((origin) => isRecord(origin) && typeof origin.origin === 'string' &&
+    ['Strict', 'Lax', 'None'].includes(String(cookie.sameSite)));
+  const validOrigins = value.origins.every((origin): origin is BrowserStorageState['origins'][number] =>
+    isRecord(origin) && typeof origin.origin === 'string' &&
       Array.isArray(origin.localStorage) && origin.localStorage.every((item) =>
         isRecord(item) && typeof item.name === 'string' && typeof item.value === 'string') &&
-      (origin.indexedDB === undefined || isIndexedDb(origin.indexedDB)));
+      (origin.indexedDB === undefined || isIndexedDb(origin.indexedDB)) &&
+      (origin.opfs === undefined || isOpfs(origin.opfs)));
+  if (!validCookies || !validOrigins) return false;
+  return withinOpfsBudget({ origins: value.origins });
+}
+
+function isOpfs(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length > 4000) return false;
+  for (const entry of value) {
+    if (!isRecord(entry) || typeof entry.path !== 'string' || !validOpfsPath(entry.path)) return false;
+    if (entry.type === 'directory') continue;
+    if (entry.type !== 'file' || typeof entry.base64 !== 'string' || !validBase64(entry.base64)) return false;
+  }
+  return true;
+}
+
+function validOpfsPath(path: string): boolean {
+  return path.length > 0 && path.length <= 1024 && !path.startsWith('/') && !path.endsWith('/') &&
+    !path.includes('\\') && !path.includes('\0') &&
+    path.split('/').every((part) => part.length > 0 && part !== '.' && part !== '..');
+}
+
+function validBase64(value: string): boolean {
+  return value.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(value) &&
+    Buffer.from(value, 'base64').toString('base64') === value;
 }
 
 function isIndexedDb(value: unknown): boolean {

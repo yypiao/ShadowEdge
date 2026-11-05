@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { accessSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { KernelRuntimeConfig, KernelRuntimeStatus } from '@shadowedge/core';
+import type { BrowserProfile, KernelRuntimeConfig, KernelRuntimeStatus } from '@shadowedge/core';
 import { ShadowEdgeError } from '@shadowedge/core';
 import type { ChromiumCdpDriverOptions } from '@shadowedge/kernel';
 
@@ -16,6 +16,8 @@ export class KernelRuntimeService {
   constructor(
     private readonly dataDir: string,
     private readonly env: RuntimeEnvironment = process.env,
+    private readonly verifyInstalled?: (version?: string) => void,
+    private readonly resolveInstalled?: (version?: string) => string | undefined,
   ) {
     this.config = this.load();
   }
@@ -45,15 +47,30 @@ export class KernelRuntimeService {
     return this.getStatus();
   }
 
-  /** 每次启动读取最新配置，设置后无需重启应用。 */
+  /** 每次启动读取最新配置；固定版本环境绕过全局配置和 current 软链。 */
   driverOptions(): ChromiumCdpDriverOptions {
     return {
-      executablePath: () => this.resolve().path,
+      executablePath: (profile) => {
+        const resolved = this.resolve(profile);
+        if (resolved.source === 'installed') this.verifyInstalled?.(profile?.kernelVersion);
+        return resolved.path;
+      },
       fallbackToPatchright: () => this.config.fallbackPolicy === 'allow-patchright',
     };
   }
 
-  private resolve(): { path?: string; source: KernelRuntimeStatus['source'] } {
+  private resolve(profile?: BrowserProfile): { path?: string; source: KernelRuntimeStatus['source'] } {
+    if (profile?.kernelVersion) {
+      const pinned = this.resolveInstalled?.(profile.kernelVersion) ??
+        installedExecutable(this.dataDir, profile.kernelVersion);
+      if (!usableExecutable(pinned)) {
+        throw new ShadowEdgeError(
+          'E_KERNEL_VERSION_NOT_FOUND',
+          `环境固定的内核版本 ${profile.kernelVersion} 未安装或不可执行`,
+        );
+      }
+      return { path: pinned, source: 'installed' };
+    }
     if (this.config.executablePath) {
       return usableExecutable(this.config.executablePath)
         ? { path: this.config.executablePath, source: 'configured' }
@@ -64,7 +81,13 @@ export class KernelRuntimeService {
         ? { path: this.env.SHADOWEDGE_KERNEL_EXECUTABLE, source: 'environment' }
         : { source: 'none' };
     }
-    const installed = installedExecutable(this.dataDir);
+    const installed = this.resolveInstalled?.() ?? installedExecutable(this.dataDir);
+    if (profile && usableExecutable(installed)) {
+      throw new ShadowEdgeError(
+        'E_KERNEL_VERSION_NOT_PINNED',
+        '该历史环境尚未固定内核版本；请先完成迁移，禁止静默跟随全局版本',
+      );
+    }
     return usableExecutable(installed)
       ? { path: installed, source: 'installed' }
       : { source: 'none' };
@@ -103,11 +126,14 @@ export class KernelRuntimeService {
   }
 }
 
-function installedExecutable(dataDir: string): string {
+function installedExecutable(dataDir: string, version?: string): string {
+  const root = version
+    ? join(dataDir, 'kernels', 'versions', version, 'payload')
+    : join(dataDir, 'kernels', 'current');
   if (process.platform === 'darwin') {
-    return join(dataDir, 'kernels', 'current', 'Chromium.app', 'Contents', 'MacOS', 'Chromium');
+    return join(root, 'Chromium.app', 'Contents', 'MacOS', 'Chromium');
   }
-  return join(dataDir, 'kernels', 'current', process.platform === 'win32' ? 'chrome.exe' : 'chrome');
+  return join(root, process.platform === 'win32' ? 'chrome.exe' : 'chrome');
 }
 
 function usableExecutable(path: string): boolean {

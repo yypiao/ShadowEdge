@@ -6,6 +6,9 @@ interface ProfileRow {
   org_id: string;
   name: string;
   platform_tag: string | null;
+  platform_site_id: string | null;
+  kernel_version: string | null;
+  kernel_upgrade_source_id: string | null;
   group_id: string | null;
   kernel: string;
   fingerprint: string;
@@ -28,6 +31,9 @@ function rowToProfile(row: ProfileRow): BrowserProfile {
     orgId: row.org_id,
     name: row.name,
     platformTag: row.platform_tag ?? undefined,
+    platformSiteId: row.platform_site_id ?? undefined,
+    kernelVersion: row.kernel_version ?? undefined,
+    kernelUpgradeSourceId: row.kernel_upgrade_source_id ?? undefined,
     groupId: row.group_id ?? undefined,
     kernel: row.kernel as BrowserProfile['kernel'],
     fingerprint: rowToFingerprint(row),
@@ -78,11 +84,13 @@ export class ProfileRepository {
   save(profile: BrowserProfile): void {
     this.handle.db
       .prepare(
-        `INSERT INTO profiles (id, org_id, name, platform_tag, group_id, kernel, fingerprint, catalog_version, proxy_id,
+        `INSERT INTO profiles (id, org_id, name, platform_tag, platform_site_id, kernel_version, kernel_upgrade_source_id, group_id, kernel, fingerprint, catalog_version, proxy_id,
            owner_id, shared_with, storage, startup_urls, notes, status, last_used_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            org_id=excluded.org_id, name=excluded.name, platform_tag=excluded.platform_tag,
+           platform_site_id=excluded.platform_site_id, kernel_version=excluded.kernel_version,
+           kernel_upgrade_source_id=excluded.kernel_upgrade_source_id,
            group_id=excluded.group_id, kernel=excluded.kernel, fingerprint=excluded.fingerprint,
            catalog_version=excluded.catalog_version, proxy_id=excluded.proxy_id, owner_id=excluded.owner_id, shared_with=excluded.shared_with,
            storage=excluded.storage, startup_urls=excluded.startup_urls, notes=excluded.notes,
@@ -93,6 +101,9 @@ export class ProfileRepository {
         profile.orgId,
         profile.name,
         profile.platformTag ?? null,
+        profile.platformSiteId ?? null,
+        profile.kernelVersion ?? null,
+        profile.kernelUpgradeSourceId ?? null,
         profile.groupId ?? null,
         profile.kernel,
         JSON.stringify(profile.fingerprint),
@@ -108,6 +119,26 @@ export class ProfileRepository {
         profile.createdAt,
         profile.updatedAt,
       );
+  }
+
+  /** 仅在迁移或首次引入签名分发时回填；已有固定版本永不覆盖。 */
+  pinMissingKernelVersions(version: string | undefined): number {
+    if (!version) return 0;
+    const missing = allRows<{ id: string }>(this.handle.db, 'SELECT id FROM profiles WHERE kernel_version IS NULL');
+    if (missing.length === 0) return 0;
+    return this.transaction(() => {
+      const update = this.handle.db.prepare('UPDATE profiles SET kernel_version = ? WHERE id = ? AND kernel_version IS NULL');
+      const audit = this.handle.db.prepare(
+        "INSERT INTO audit_local (at, actor, action, target_type, target_id, detail) VALUES (?, 'system', 'migration:kernel-version', 'profile', ?, ?)",
+      );
+      let count = 0;
+      for (const row of missing) {
+        update.run(version, row.id);
+        audit.run(new Date().toISOString(), row.id, JSON.stringify({ kernelVersion: version }));
+        count += 1;
+      }
+      return count;
+    });
   }
 
   delete(id: Uuid): void {

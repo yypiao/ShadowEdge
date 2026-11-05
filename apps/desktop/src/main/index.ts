@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, net, protocol, shell } from 'electron';
 import { join, normalize, sep } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import {
   createConsoleLogger,
@@ -17,6 +18,8 @@ import { ProxyRepository } from './services/proxy-repository.js';
 import { AccountRepository } from './services/account-repository.js';
 import { AuditLog, SessionRepository } from './services/local-records.js';
 import { KernelRuntimeService } from './services/kernel-runtime.js';
+import { KernelDistributionService } from './services/kernel-distribution.js';
+import { selectKernelPackageDialog } from './services/kernel-distribution-dialog.js';
 import { RpaRepository } from './services/rpa-repository.js';
 import { StorageStateRepository } from './services/storage-state-repository.js';
 import { readProfileBackupDialog, saveProfileBackupDialog } from './services/backup-dialog.js';
@@ -31,6 +34,7 @@ let activeDatabase: ShadowEdgeDb | undefined;
 let activeProfiles: ProfileRepository | undefined;
 let activeSessions: SessionRepository | undefined;
 let closeActiveProfiles: (() => Promise<void>) | undefined;
+let closeActiveRpaScheduler: (() => Promise<void>) | undefined;
 let shutdownStarted = false;
 
 // file:// 下 ES module 受 CORS 限制无法加载，注册特权自定义协议作为渲染层 origin。
@@ -93,8 +97,8 @@ function registerIpc(): void {
   const dataDir = app.getPath('userData');
   const handle = openDatabase(join(dataDir, 'shadowedge.db'));
   const profiles = new ProfileRepository(handle);
-  const rpaRepo = new RpaRepository(handle);
   const keyring = loadKeyring(dataDir);
+  const rpaRepo = new RpaRepository(handle, keyring);
   const profilesDir = join(dataDir, 'profiles');
   migrateProfileDirectories(profiles, profilesDir, process.cwd());
   const sessions = new SessionRepository(handle);
@@ -110,6 +114,27 @@ function registerIpc(): void {
     });
   }
 
+  const trustedKernelKey = process.env.SHADOWEDGE_KERNEL_PUBLIC_KEY ??
+    (process.env.SHADOWEDGE_KERNEL_PUBLIC_KEY_PATH
+      ? readFileSync(process.env.SHADOWEDGE_KERNEL_PUBLIC_KEY_PATH, 'utf8')
+      : undefined);
+  const kernelDistribution = new KernelDistributionService(dataDir, { publicKey: trustedKernelKey });
+  const kernelRuntime = new KernelRuntimeService(
+    dataDir,
+    process.env,
+    (version) => version ? kernelDistribution.verifyVersion(version) : kernelDistribution.verifyActive(),
+    (version) => {
+      if (version) return kernelDistribution.getExecutablePath(version);
+      const status = kernelDistribution.getStatus();
+      return status.available ? status.executablePath : undefined;
+    },
+  );
+  const defaultKernelVersion = kernelRuntime.getStatus().source === 'installed'
+    ? kernelDistribution.getStatus().activeVersion
+    : undefined;
+  const pinnedProfiles = profiles.pinMissingKernelVersions(defaultKernelVersion);
+  if (pinnedProfiles > 0) logger.info('历史环境已固定当前内核版本', { profiles: pinnedProfiles });
+
   const deps: HandlerDeps = {
     logger: logger.child({ component: 'handlers' }),
     emit: (event, payload) => mainWindow?.webContents.send(event, payload),
@@ -121,7 +146,9 @@ function registerIpc(): void {
     storageStateRepo: new StorageStateRepository(handle, keyring),
     audit: new AuditLog(handle),
     sessions,
-    kernelRuntime: new KernelRuntimeService(dataDir),
+    kernelRuntime,
+    kernelDistribution,
+    selectKernelPackage: selectKernelPackageDialog,
     rpaArtifactsDir: join(dataDir, 'rpa'),
     profilesDir,
     openArtifact: async (path) => {
@@ -130,6 +157,10 @@ function registerIpc(): void {
     },
     saveProfileBackup: saveProfileBackupDialog,
     readProfileBackup: readProfileBackupDialog,
+    onRpaScheduler: (scheduler) => {
+      closeActiveRpaScheduler = () => scheduler.stop();
+      scheduler.start();
+    },
   };
   activeKernel = createDesktopKernel(deps);
   activeDatabase = handle;
@@ -187,6 +218,11 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   shutdownStarted = true;
   void (async () => {
+    try {
+      await closeActiveRpaScheduler?.();
+    } catch (error) {
+      logger.error('退出时停止 RPA 定时调度失败', { error: String(error) });
+    }
     try {
       await closeActiveProfiles?.();
     } catch (error) {

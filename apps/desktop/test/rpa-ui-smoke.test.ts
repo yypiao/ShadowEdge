@@ -54,6 +54,12 @@ describe.skipIf(!SMOKE)('Electron RPA 工作流闭环', () => {
       await profileCard.getByText('● 运行中', { exact: true }).waitFor();
 
       await page.getByRole('button', { name: '自动化', exact: true }).click();
+      await page.getByLabel('录制环境').selectOption({ label: 'rpa-ui' });
+      await page.getByLabel('录制起始 URL').fill(origin);
+      await page.getByRole('button', { name: '开始录制', exact: true }).click();
+      await page.getByRole('button', { name: '停止并生成工作流', exact: true }).click();
+      await page.getByText('录制已生成，可编辑、保存并回放', { exact: true }).waitFor();
+      expect(await page.locator('[data-node-kind]').count()).toBe(1);
       await page.getByRole('button', { name: '新建工作流', exact: true }).click();
       await page.getByLabel('工作流名称').fill('UI RPA');
       await page.getByLabel('页面 URL').fill(origin);
@@ -65,9 +71,19 @@ describe.skipIf(!SMOKE)('Electron RPA 工作流闭环', () => {
       await addNode('点击元素');
       await addNode('提取文本');
       await addNode('截图');
-      expect(await page.locator('[data-node-kind]').count()).toBe(5);
+      await addNode('条件分支');
+      await addNode('等待');
+      await addNode('计数循环');
+      await page.locator('[data-node-kind="loop"] input[type="number"]').fill('2');
+      expect(await page.locator('[data-node-kind]').count()).toBe(8);
       await page.getByRole('button', { name: '保存工作流', exact: true }).click();
       await page.getByText('工作流「UI RPA」已保存', { exact: true }).waitFor();
+      await page.getByLabel('定时环境', { exact: true }).selectOption({ label: 'rpa-ui' });
+      await page.getByLabel('定时间隔', { exact: true }).fill('5');
+      await page.getByRole('button', { name: '启用定时', exact: true }).click();
+      await page.getByText('定时任务已启用', { exact: true }).waitFor();
+      await page.getByRole('button', { name: '停用定时', exact: true }).click();
+      await page.getByText('定时任务已停用', { exact: true }).waitFor();
 
       await page.getByLabel('运行环境 rpa-ui').check();
       await page.getByRole('button', { name: '运行工作流', exact: true }).click();
@@ -77,9 +93,10 @@ describe.skipIf(!SMOKE)('Electron RPA 工作流闭环', () => {
 
       const dbPath = join(dir, 'electron-data', 'shadowedge.db');
       const db = new DatabaseSync(dbPath, { readOnly: true });
-      const workflow = db.prepare('SELECT name, version FROM rpa_workflows').get() as {
+      const workflow = db.prepare('SELECT name, version, graph FROM rpa_workflows').get() as {
         name: string;
         version: number;
+        graph: string;
       };
       const run = db.prepare('SELECT status, outputs, artifacts FROM rpa_runs').get() as {
         status: string;
@@ -87,7 +104,11 @@ describe.skipIf(!SMOKE)('Electron RPA 工作流闭环', () => {
         artifacts: string;
       };
       db.close();
-      expect(workflow).toEqual({ name: 'UI RPA', version: 1 });
+      expect(workflow).toMatchObject({ name: 'UI RPA', version: 1 });
+      const graph = JSON.parse(workflow.graph) as { nodes: Record<string, { kind: string }> };
+      expect(Object.values(graph.nodes).map((node) => node.kind)).toEqual(
+        expect.arrayContaining(['condition', 'loop']),
+      );
       expect(run.status).toBe('succeeded');
       expect(JSON.parse(run.outputs)).toEqual({ result: 'Hello Ada' });
       const artifacts = JSON.parse(run.artifacts) as Array<{ uri: string }>;

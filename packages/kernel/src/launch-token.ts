@@ -2,7 +2,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { EnvelopeCrypto } from '@shadowedge/crypto';
 
 export const KERNEL_LAUNCH_KEK_ENV = 'SHADOWEDGE_LAUNCH_KEK';
-const TOKEN_TTL_SECONDS = 30;
+// 与 Chromium 0009 的协议上限一致；component 冷启动可能在校验前耗时超过 30 秒。
+const TOKEN_TTL_SECONDS = 60;
 
 export interface KernelLaunchAuthorization {
   token: string;

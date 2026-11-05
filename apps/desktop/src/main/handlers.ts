@@ -27,6 +27,7 @@ import type { ProfileRepository } from './services/profile-repository.js';
 import type { ProxyRepository } from './services/proxy-repository.js';
 import type { AuditLog, SessionRepository } from './services/local-records.js';
 import type { KernelRuntimeService } from './services/kernel-runtime.js';
+import type { KernelDistributionService } from './services/kernel-distribution.js';
 import type { AccountRepository } from './services/account-repository.js';
 import type { RpaRepository } from './services/rpa-repository.js';
 import type { StorageStateRepository } from './services/storage-state-repository.js';
@@ -36,7 +37,11 @@ import { runLaunchGate } from './services/launch-gate.js';
 import type { GroupRepository } from './services/group-repository.js';
 import { deleteProfileWithDirectory, managedProfilePath, removeProfileDirectory } from './services/profile-directory.js';
 import { normalizeCreateInput, normalizeUpdateInput } from './services/profile-input.js';
+import { checkPlatformRegion, findPlatformSite, listPlatformPolicies } from './services/platform-policies.js';
 import { captureStorageState, openStartupPages, restoreOrCheckpointState, storageStateFailure } from './services/profile-state.js';
+import { commitKernelUpgrade, prepareKernelUpgrade } from './services/kernel-upgrade.js';
+import { RpaRecorder } from './services/rpa-recorder.js';
+import { RpaScheduler } from './services/rpa-scheduler.js';
 
 export interface HandlerDeps {
   logger: Logger;
@@ -50,6 +55,8 @@ export interface HandlerDeps {
   audit: AuditLog;
   sessions: SessionRepository;
   kernelRuntime: KernelRuntimeService;
+  kernelDistribution?: KernelDistributionService;
+  selectKernelPackage?: () => Promise<string | undefined>;
   /** 测试可注入确定性内核；生产缺省创建真实 Chromium 驱动。 */
   kernel?: BrowserKernel;
   /** 生产环境传 userData/rpa；测试缺省使用仓库已忽略的 data/rpa。 */
@@ -60,6 +67,8 @@ export interface HandlerDeps {
   openArtifact?: (path: string) => Promise<void>;
   saveProfileBackup?: (fileName: string, contents: string) => Promise<string | undefined>;
   readProfileBackup?: () => Promise<string | undefined>;
+  /** 生产环境接管定时器生命周期；单元测试可手动 tick，避免后台访问已关闭数据库。 */
+  onRpaScheduler?: (scheduler: RpaScheduler) => void;
 }
 
 /** 主进程 IPC 处理器集合。类型与 IpcApi 严格对齐，新增通道会立即产生编译错误。 */
@@ -139,13 +148,49 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   const proxyManager = new ProxyManager();
   const profilesDir = resolve(deps.profilesDir ?? join(process.cwd(), 'data', 'profiles'));
   const artifactsRoot = resolve(deps.rpaArtifactsDir ?? join(process.cwd(), 'data', 'rpa'));
+  const rpaRecorder = new RpaRecorder(kernel);
   const rpaEngine = new RpaEngine({
     resolveContext: (profileId) => kernel.getAutomationContext(profileId),
     artifactsDir: artifactsRoot,
     emit: (progress) => deps.emit('rpa:progress', progress),
     onRunUpdate: (run) => deps.rpaRepo.saveRun(run),
+    profileUnavailable: (profileId) => rpaRecorder.isRecording(profileId)
+      ? `环境 ${profileId} 正在录制，请先停止录制`
+      : undefined,
   });
-
+  const rpaScheduler = new RpaScheduler({
+    repository: deps.rpaRepo,
+    runAndWait: async (workflow, profileIds, inputs) => {
+      const settled: Awaited<ReturnType<RpaEngine['wait']>>[] = [];
+      // 定时任务逐环境串行，避免无人值守时同时推高多个 Chromium 的内存。
+      for (const profileId of profileIds) {
+        let launchedBySchedule = false;
+        try {
+          if (!kernel.isActive(profileId)) {
+            await handlers['profile:launch']({ profileId });
+            launchedBySchedule = true;
+          }
+        } catch {
+          // 交给引擎生成该环境的失败运行记录，剩余环境仍按顺序执行。
+        }
+        try {
+          const run = (await rpaEngine.run(workflow, [profileId], inputs))[0]!;
+          settled.push(run.status === 'queued' || run.status === 'running'
+            ? await rpaEngine.wait(run.id)
+            : run);
+        } finally {
+          if (launchedBySchedule) await handlers['profile:close'](profileId);
+        }
+      }
+      return settled;
+    },
+    onRun: (schedule, runs) => {
+      deps.audit.record('rpa:schedule:run', 'rpa', schedule.workflowId, {
+        runs: runs.length,
+        succeeded: runs.filter((run) => run.status === 'succeeded').length,
+      });
+    },
+  });
   // 健康检查缓存：住宅/双跳代理探测可达 30s+，建环境与预览不应每次重探
   const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
   const healthCache = new Map<Uuid, { health: ProxyHealth; at: number }>();
@@ -203,12 +248,29 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     }
   };
 
+  const requireKernelDistribution = (): KernelDistributionService => {
+    if (!deps.kernelDistribution) {
+      throw new ShadowEdgeError('E_INTERNAL', '当前环境未配置内核分发服务');
+    }
+    return deps.kernelDistribution;
+  };
+
+  const requireNoActiveProfiles = async (): Promise<void> => {
+    if ((await kernel.listActive()).length > 0) {
+      throw new ShadowEdgeError('E_PROFILE_BUSY', '请先停止全部环境，再切换内核版本');
+    }
+  };
+
+  const defaultKernelVersion = () => deps.kernelRuntime.getStatus().source === 'installed'
+    ? deps.kernelDistribution?.getStatus().activeVersion
+    : undefined;
   const backupDeps = () => ({
     profileRepo: deps.profileRepo,
     proxyRepo: deps.proxyRepo,
     storageStateRepo: deps.storageStateRepo,
     kernel,
     profilesDir,
+    defaultKernelVersion: defaultKernelVersion(),
   });
 
   const handlers: Handlers = {
@@ -241,8 +303,16 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'profile:create': async (rawInput) => {
       const input = normalizeCreateInput(rawInput);
       requireGroup(input.groupId);
+      const selectedSite = input.platformSiteId ? findPlatformSite(input.platformSiteId) : undefined;
+      if (selectedSite && selectedSite.platformTag !== input.platformTag) {
+        throw new ShadowEdgeError('E_PROFILE_INVALID', '业务平台与所选站点不一致');
+      }
+      if (selectedSite && input.startupUrls?.length === 20 && !input.startupUrls.includes(selectedSite.url)) {
+        throw new ShadowEdgeError('E_PROFILE_INVALID', '站点首页与自定义启动页合计不能超过 20 个');
+      }
       const now = new Date().toISOString();
       const id = randomUUID() as Uuid;
+      const kernelVersion = defaultKernelVersion();
       const seed = input.fingerprintSeed ?? randomUUID();
       const overrides = await geoFollowOverrides(input.proxyId, input.overrides);
       const profile: BrowserProfile = {
@@ -250,8 +320,10 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         orgId: 'local',
         name: input.name,
         platformTag: input.platformTag,
+        platformSiteId: selectedSite?.id,
         groupId: input.groupId,
         kernel: 'chromium-patched',
+        kernelVersion,
         // 缺省跟随宿主机平台（紫鸟式同系微调哲学）；显式指定则尊重用户选择
         fingerprint: generateFingerprint({
           seed,
@@ -263,7 +335,9 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         ownerId: 'local-user',
         sharedWith: [],
         storage: { userDataDir: managedProfilePath(profilesDir, id), remoteRevision: 0, syncMode: 'auto' },
-        startupUrls: input.startupUrls ?? [],
+        startupUrls: selectedSite
+          ? [selectedSite.url, ...(input.startupUrls ?? []).filter((url) => url !== selectedSite.url)]
+          : input.startupUrls ?? [],
         notes: input.notes,
         status: 'idle',
         createdAt: now,
@@ -286,12 +360,76 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       const updated: BrowserProfile = {
         ...profile,
         ...normalized,
+        // 普通编辑会脱离一键站点策略；需要区域约束时通过 switchSite 明确重选。
+        platformSiteId: normalized.platformTag !== undefined || normalized.startupUrls !== undefined
+          ? undefined
+          : profile.platformSiteId,
         id,
         updatedAt: new Date().toISOString(),
       };
       deps.profileRepo.save(updated);
       deps.audit.record('profile:update', 'profile', id, { fields: Object.keys(normalized) });
       return updated;
+    },
+
+    'profile:prepareKernelUpgrade': async ({ profileId, targetVersion }) => {
+      const source = requireProfile(profileId);
+      const distribution = requireKernelDistribution();
+      const clone = prepareKernelUpgrade(source, targetVersion, distribution, profilesDir);
+      const pendingState = deps.storageStateRepo.reveal(source.id);
+      deps.profileRepo.transaction(() => {
+        deps.profileRepo.save(clone);
+        if (pendingState) deps.storageStateRepo.save(clone.id, pendingState);
+      });
+      deps.audit.record('profile:kernel-upgrade-prepare', 'profile', clone.id, {
+        sourceProfileId: source.id,
+        fromVersion: source.kernelVersion,
+        targetVersion,
+      });
+      return clone;
+    },
+    'profile:commitKernelUpgrade': async ({ profileId, upgradeProfileId, confirmed }) => {
+      const source = requireProfile(profileId);
+      const clone = requireProfile(upgradeProfileId);
+      const updated = commitKernelUpgrade(source, clone, confirmed, requireKernelDistribution());
+      deps.profileRepo.save(updated);
+      deps.audit.record('profile:kernel-upgrade-commit', 'profile', source.id, {
+        upgradeProfileId,
+        fromVersion: source.kernelVersion,
+        targetVersion: updated.kernelVersion,
+        confirmed,
+      });
+      return updated;
+    },
+
+    'platformPolicy:list': async () => listPlatformPolicies(),
+    'profile:switchSite': async ({ profileId, siteId }) => {
+      const current = requireProfile(profileId);
+      if (current.status === 'launching') {
+        throw new ShadowEdgeError('E_PROFILE_BUSY', '环境正在启动，请稍后再切换站点');
+      }
+      const selected = findPlatformSite(siteId);
+      if (current.proxyId) checkPlatformRegion(
+        { ...current, platformTag: selected.platformTag, platformSiteId: selected.id, startupUrls: [selected.url] },
+        await getProxyHealth(current.proxyId),
+      );
+      const profile: BrowserProfile = {
+        ...current,
+        platformTag: selected.platformTag,
+        platformSiteId: selected.id,
+        startupUrls: [selected.url],
+        updatedAt: new Date().toISOString(),
+      };
+      deps.profileRepo.save(profile);
+      const opened = current.status === 'running' && kernel.supportsAutomationContext(profileId);
+      const failures = opened
+        ? await openStartupPages(kernel.getAutomationContext(profileId), [selected.url])
+        : [];
+      deps.audit.record('profile:switch-site', 'profile', profileId, { siteId });
+      if (failures.length > 0) {
+        deps.emit('app:toast', { level: 'warn', message: '目标站点未能加载，但站点配置已保存，环境仍保持运行' });
+      }
+      return { profile, opened, failures };
     },
 
     'profile:delete': async (id) => {
@@ -430,6 +568,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         cookieCount: backup.cookieCount,
         originCount: backup.originCount,
         indexedDbCount: backup.indexedDbCount,
+        opfsFileCount: backup.opfsFileCount,
       });
       return {
         saved: path !== undefined,
@@ -437,12 +576,13 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         cookieCount: backup.cookieCount,
         originCount: backup.originCount,
         indexedDbCount: backup.indexedDbCount,
+        opfsFileCount: backup.opfsFileCount,
       };
     },
 
     'profile:import': async ({ passphrase, name, contents }) => {
       const source = contents ?? await deps.readProfileBackup?.();
-      if (source === undefined) return { imported: false, cookieCount: 0, originCount: 0, indexedDbCount: 0 };
+      if (source === undefined) return { imported: false, cookieCount: 0, originCount: 0, indexedDbCount: 0, opfsFileCount: 0 };
       const imported = importProfileBackup(
         backupDeps(),
         { contents: source, passphrase, name },
@@ -451,6 +591,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         cookieCount: imported.cookieCount,
         originCount: imported.originCount,
         indexedDbCount: imported.indexedDbCount,
+        opfsFileCount: imported.opfsFileCount,
       });
       return { imported: true, ...imported };
     },
@@ -473,6 +614,26 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         available: status.available,
         fallbackPolicy: status.fallbackPolicy,
       });
+      return status;
+    },
+
+    'kernelDistribution:status': async () => requireKernelDistribution().getStatus(),
+    'kernelDistribution:install': async () => {
+      const distribution = requireKernelDistribution();
+      if (!deps.selectKernelPackage) {
+        throw new ShadowEdgeError('E_INTERNAL', '当前环境不支持选择内核安装包');
+      }
+      const archivePath = await deps.selectKernelPackage();
+      if (!archivePath) return { installed: false, status: distribution.getStatus() };
+      await requireNoActiveProfiles();
+      const status = distribution.install(archivePath);
+      deps.audit.record('kernel:install', 'kernel', status.activeVersion ?? 'unknown');
+      return { installed: true, status };
+    },
+    'kernelDistribution:activate': async ({ version }) => {
+      await requireNoActiveProfiles();
+      const status = requireKernelDistribution().activate(version);
+      deps.audit.record('kernel:activate', 'kernel', version);
       return status;
     },
 
@@ -567,6 +728,41 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       }
       return runs;
     },
+    'rpa:startRecording': async ({ profileId, startUrl }) => {
+      requireProfile(profileId);
+      if (rpaEngine.isProfileActive(profileId)) {
+        throw new ShadowEdgeError('E_PROFILE_BUSY', `环境 ${profileId} 正在执行 RPA，不能同时录制`);
+      }
+      const state = await rpaRecorder.start(profileId, startUrl);
+      deps.audit.record('rpa:recording:start', 'rpa', profileId);
+      return state;
+    },
+    'rpa:stopRecording': async (profileId) => {
+      const result = await rpaRecorder.stop(profileId);
+      deps.audit.record('rpa:recording:stop', 'rpa', profileId, {
+        ignoredPasswordFields: result.ignoredPasswordFields,
+        droppedActions: result.droppedActions,
+      });
+      return result;
+    },
+    'rpa:setSchedule': async (input) => {
+      if (!deps.rpaRepo.getWorkflow(input.workflowId)) {
+        throw new ShadowEdgeError('E_RPA_WORKFLOW_NOT_FOUND', `RPA 工作流 ${input.workflowId} 不存在`);
+      }
+      for (const profileId of input.profileIds) requireProfile(profileId);
+      if (input.inputs !== undefined &&
+        (typeof input.inputs !== 'object' || input.inputs === null || Array.isArray(input.inputs))) {
+        throw new ShadowEdgeError('E_RPA_INVALID_INPUT', '定时输入参数必须是 JSON 对象');
+      }
+      const schedule = rpaScheduler.configure(input);
+      deps.audit.record('rpa:schedule:save', 'rpa', input.workflowId, {
+        enabled: schedule.enabled,
+        intervalMinutes: schedule.intervalMinutes,
+        profileCount: schedule.profileIds.length,
+      });
+      return schedule;
+    },
+    'rpa:listSchedules': async () => deps.rpaRepo.listSchedules(),
     'rpa:get': async (runId) => {
       const run = rpaEngine.getRun(runId) ?? deps.rpaRepo.getRun(runId);
       if (!run) throw new ShadowEdgeError('E_RPA_RUN_NOT_FOUND', `RPA 运行 ${runId} 不存在`);
@@ -609,5 +805,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     'app:info': async () => ({ version: '0.1.0', platform: process.platform }),
   };
+  // 重启恢复的到期任务必须等 handlers 完整可调用后再启动调度器。，必须等 handlers 完整可调用后再启动调度器。
+  deps.onRpaScheduler?.(rpaScheduler);
   return handlers;
 }

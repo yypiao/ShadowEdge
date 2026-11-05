@@ -27,20 +27,31 @@ export function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-function nodeError(node: RpaNode, message: string): ShadowEdgeError {
+export function nodeError(node: RpaNode, message: string): ShadowEdgeError {
   return new ShadowEdgeError('E_RPA_NODE_FAILED', `节点 ${node.id}: ${message}`, {
     details: { nodeId: node.id, kind: node.kind },
   });
 }
 
-function interpolate(value: string, execution: RpaNodeExecution): string {
-  return value.replace(/\{\{\s*inputs\.([\w-]+)\s*\}\}/g, (_match, key: string) => {
-    const input = execution.inputs[key];
-    if (typeof input !== 'string' && typeof input !== 'number' && typeof input !== 'boolean') {
-      throw nodeError(execution.node, `inputs.${key} 必须是字符串、数字或布尔值`);
-    }
-    return String(input);
-  });
+export function interpolate(value: string, execution: RpaNodeExecution): string {
+  return value.replace(
+    /\{\{\s*(inputs|outputs|loop)\.([\w-]+)(?:\.(index))?\s*\}\}/g,
+    (_match, namespace: string, key: string, suffix: string | undefined) => {
+      if (namespace === 'loop') {
+        if (suffix !== 'index' || execution.loopIndices[key] === undefined) {
+          throw nodeError(execution.node, `loop.${key}.index 不在有效循环作用域内`);
+        }
+        return String(execution.loopIndices[key]);
+      }
+      const source = namespace === 'inputs' ? execution.inputs : execution.outputs;
+      const resolved = source[key];
+      if (resolved === undefined || (resolved !== null && typeof resolved !== 'string' &&
+        typeof resolved !== 'number' && typeof resolved !== 'boolean')) {
+        throw nodeError(execution.node, `${namespace}.${key} 必须是已产生的字符串、数字或布尔值`);
+      }
+      return resolved === null ? '' : String(resolved);
+    },
+  );
 }
 
 function requiredString(execution: RpaNodeExecution, key: string): string {
@@ -65,6 +76,13 @@ function optionalBoolean(execution: RpaNodeExecution, key: string, fallback: boo
   return value;
 }
 
+function nodeTimeout(execution: RpaNodeExecution, requested: number): number {
+  throwIfCancelled(execution.signal);
+  const remaining = execution.deadlineAt - Date.now();
+  if (remaining <= 0) throw new ShadowEdgeError('E_RPA_CANCELLED', 'RPA 运行已超过总截止时间');
+  return Math.max(1, Math.min(requested, remaining));
+}
+
 const navigate: RpaNodeExecutor = async (execution) => {
   const url = requiredString(execution, 'url');
   const parsed = new URL(url);
@@ -77,7 +95,7 @@ const navigate: RpaNodeExecutor = async (execution) => {
   }
   await execution.page.goto(url, {
     waitUntil,
-    timeout: optionalNumber(execution, 'timeout', 15000),
+    timeout: nodeTimeout(execution, optionalNumber(execution, 'timeout', 15000)),
   });
 };
 
@@ -85,7 +103,7 @@ const click: RpaNodeExecutor = async (execution) => {
   const locator = execution.page.locator(requiredString(execution, 'selector'));
   await locator.waitFor({
     state: 'visible',
-    timeout: optionalNumber(execution, 'timeout', 10000),
+    timeout: nodeTimeout(execution, optionalNumber(execution, 'timeout', 10000)),
   });
   const box = await locator.boundingBox();
   if (!box) throw nodeError(execution.node, '元素没有可点击区域');

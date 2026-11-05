@@ -1,0 +1,38 @@
+{
+  "format": "shadowedge-probe-comparison",
+  "version": 1,
+  "generatedAt": "2026-11-05T02:03:34.798Z",
+  "baseline": {
+    "startedAt": "2026-11-05T02:02:47.530Z",
+    "finishedAt": "2026-11-05T02:03:11.441Z",
+    "summary": {
+      "ok": true,
+      "total": 16,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 1,
+      "passRate": 100
+    },
+    "path": "/Users/mac/ShadowEdge/experiments/probes/results/t36-baseline-156.0.8078.73.json"
+  },
+  "candidate": {
+    "startedAt": "2026-11-05T02:03:11.626Z",
+    "finishedAt": "2026-11-05T02:03:34.546Z",
+    "summary": {
+      "ok": true,
+      "total": 16,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 1,
+      "passRate": 100
+    },
+    "path": "/Users/mac/ShadowEdge/experiments/probes/results/t36-candidate-156.0.8078.91.json"
+  },
+  "summary": {
+    "ok": true,
+    "total": 16,
+    "unchanged": 16,
+    "changed": 0
+  },
+  "differences": []
+}

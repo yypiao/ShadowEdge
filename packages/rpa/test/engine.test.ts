@@ -44,8 +44,14 @@ class FakePage implements RpaPage {
   readonly input = new FakeLocator();
   readonly urls: string[] = [];
   gotoFailures = 0;
+  blockGoto = false;
+  closed = false;
+  private rejectBlockedGoto?: (error: Error) => void;
 
   async goto(url: string): Promise<null> {
+    if (this.blockGoto) {
+      return new Promise<null>((_resolve, reject) => { this.rejectBlockedGoto = reject; });
+    }
     if (this.gotoFailures > 0) {
       this.gotoFailures -= 1;
       throw new Error('temporary navigation failure');
@@ -55,6 +61,10 @@ class FakePage implements RpaPage {
   }
   locator(selector: string): RpaLocator {
     return selector === '#input' ? this.input : new FakeLocator();
+  }
+  async close(): Promise<void> {
+    this.closed = true;
+    this.rejectBlockedGoto?.(new Error('page closed'));
   }
   async screenshot(options: { path: string; fullPage: boolean; type: 'png' }): Promise<Uint8Array> {
     writeFileSync(options.path, 'fake-png');
@@ -224,6 +234,158 @@ describe('RpaEngine 真实节点执行语义', () => {
     expect(result.outputs).toEqual({});
   });
 
+  it('条件选择真分支，提取结果与 inputs 可在后续输入复用', async () => {
+    const page = new FakePage();
+    const { engine } = setup(page);
+    const result = await finish(engine, await engine.run(workflow({
+      entry: 'extract',
+      nodes: {
+        extract: { id: 'extract', kind: 'extract', params: { selector: '#result', key: 'result' }, next: 'condition' },
+        condition: {
+          id: 'condition', kind: 'condition',
+          params: { left: '{{outputs.result}}', operator: 'equals', right: 'extracted' },
+          next: 'type', elseNext: 'bad',
+        },
+        type: {
+          id: 'type', kind: 'type',
+          params: { selector: '#input', text: '{{outputs.result}}-{{inputs.suffix}}' },
+        },
+        bad: { id: 'bad', kind: 'navigate', params: { url: 'https://wrong.example' } },
+      },
+    }), ['profile-a'], { suffix: 'done' }));
+    expect(result.status).toBe('succeeded');
+    expect(page.input.value).toBe('extracted-done');
+    expect(page.urls).toEqual([]);
+  });
+
+  it('计数循环精确执行三次并暴露从零开始的循环索引', async () => {
+    const page = new FakePage();
+    const { engine, progress } = setup(page);
+    const result = await finish(engine, await engine.run(workflow({
+      entry: 'repeat',
+      nodes: {
+        repeat: { id: 'repeat', kind: 'loop', params: { count: 3, body: 'type' }, next: 'extract' },
+        type: {
+          id: 'type', kind: 'type',
+          params: { selector: '#input', text: 'item-{{loop.repeat.index}}' },
+          next: 'repeat',
+        },
+        extract: { id: 'extract', kind: 'extract', params: { selector: '#result', key: 'done' } },
+      },
+    }), ['profile-a']));
+    expect(result.status).toBe('succeeded');
+    expect(page.input.value).toBe('item-2');
+    expect(progress.filter((event) => event.step === 'type')).toHaveLength(3);
+  });
+
+  it('循环次数可来自 inputs，零次循环跳过循环体', async () => {
+    const page = new FakePage();
+    const { engine } = setup(page);
+    const result = await finish(engine, await engine.run(workflow({
+      entry: 'repeat',
+      nodes: {
+        repeat: { id: 'repeat', kind: 'loop', params: { count: '{{inputs.count}}', body: 'type' }, next: 'extract' },
+        type: { id: 'type', kind: 'type', params: { selector: '#input', text: 'never' }, next: 'repeat' },
+        extract: { id: 'extract', kind: 'extract', params: { selector: '#result', key: 'done' } },
+      },
+    }), ['profile-a'], { count: 0 }));
+    expect(result.status).toBe('succeeded');
+    expect(page.input.value).toBe('');
+    expect(result.outputs).toEqual({ done: 'extracted' });
+  });
+
+  it('最大步数能终止错误的高次数循环', async () => {
+    const page = new FakePage();
+    const { engine } = setup(page);
+    const result = await finish(engine, await engine.run(workflow({
+      entry: 'repeat', maxSteps: 2,
+      nodes: {
+        repeat: { id: 'repeat', kind: 'loop', params: { count: 3, body: 'type' } },
+        type: { id: 'type', kind: 'type', params: { selector: '#input', text: 'x' }, next: 'repeat' },
+      },
+    }), ['profile-a']));
+    expect(result.status).toBe('failed');
+    expect(result.error).toContain('最大步数 2');
+  });
+
+  it('整体超时标记 failed 而不是用户取消', async () => {
+    const page = new FakePage();
+    const { engine } = setup(page);
+    const result = await finish(engine, await engine.run(workflow({
+      entry: 'wait', timeoutMs: 20,
+      nodes: { wait: { id: 'wait', kind: 'wait', params: { ms: 10000 } } },
+    }), ['profile-a']));
+    expect(result.status).toBe('failed');
+    expect(result.error).toContain('总超时 20ms');
+  });
+
+  it('挂起导航在总超时时关闭页面、停止后续节点并释放环境锁', async () => {
+    const page = new FakePage();
+    page.blockGoto = true;
+    const { engine } = setup(page);
+    const definition = workflow({
+      entry: 'open', timeoutMs: 20,
+      nodes: {
+        open: { id: 'open', kind: 'navigate', params: { url: 'https://example.com', timeout: 60000 }, next: 'type' },
+        type: { id: 'type', kind: 'type', params: { selector: '#input', text: 'must-not-run' } },
+      },
+    });
+    const first = (await engine.run(definition, ['profile-a']))[0]!;
+    const result = await engine.wait(first.id);
+    expect(result.status).toBe('failed');
+    expect(result.error).toContain('总超时 20ms');
+    expect(page.closed).toBe(true);
+    expect(page.input.value).toBe('');
+
+    const next = (await engine.run(workflow({
+      entry: 'wait', nodes: { wait: { id: 'wait', kind: 'wait', params: { ms: 0 } } },
+    }), ['profile-a']))[0]!;
+    expect((await engine.wait(next.id)).status).toBe('succeeded');
+  });
+
+  it('手动取消挂起导航会等待页面关闭并释放环境锁', async () => {
+    const page = new FakePage();
+    page.blockGoto = true;
+    const { engine } = setup(page);
+    const first = (await engine.run(workflow({
+      entry: 'open',
+      nodes: {
+        open: { id: 'open', kind: 'navigate', params: { url: 'https://example.com', timeout: 60000 }, next: 'shot' },
+        shot: { id: 'shot', kind: 'screenshot', params: { key: 'must-not-exist' } },
+      },
+    }), ['profile-a']))[0]!;
+    await engine.cancel(first.id);
+    const result = await engine.wait(first.id);
+    expect(result.status).toBe('cancelled');
+    expect(result.artifacts).toEqual([]);
+    expect(page.closed).toBe(true);
+
+    const next = (await engine.run(workflow({
+      entry: 'wait', nodes: { wait: { id: 'wait', kind: 'wait', params: { ms: 0 } } },
+    }), ['profile-a']))[0]!;
+    expect((await engine.wait(next.id)).status).toBe('succeeded');
+  });
+
+  it('缺失输出可进入 notExists 分支，不会误报节点执行失败', async () => {
+    const page = new FakePage();
+    const { engine } = setup(page);
+    const result = await finish(engine, await engine.run(workflow({
+      entry: 'condition',
+      nodes: {
+        condition: {
+          id: 'condition', kind: 'condition',
+          params: { left: '{{outputs.notCreated}}', operator: 'notExists' },
+          next: 'empty', elseNext: 'wrong',
+        },
+        empty: { id: 'empty', kind: 'extract', params: { selector: '#result', key: 'branch' } },
+        wrong: { id: 'wrong', kind: 'type', params: { selector: '#input', text: 'wrong' } },
+      },
+    }), ['profile-a']));
+    expect(result.status).toBe('succeeded');
+    expect(result.outputs).toEqual({ branch: 'extracted' });
+    expect(page.input.value).toBe('');
+  });
+
   it('cancel 能中断等待并标记 cancelled', async () => {
     const page = new FakePage();
     const { engine } = setup(page);
@@ -310,5 +472,23 @@ describe('RpaEngine 真实节点执行语义', () => {
     );
     expect(result.status).toBe('failed');
     expect(result.error).toContain('not running');
+  });
+
+  it('外部占用只让对应批量项失败', async () => {
+    const artifactsDir = mkdtempSync(join(tmpdir(), 'shadowedge-rpa-test-'));
+    tempDirs.push(artifactsDir);
+    const page = new FakePage();
+    const engine = new RpaEngine({
+      resolveContext: () => ({ pages: () => [page], newPage: async () => page }),
+      artifactsDir,
+      profileUnavailable: (profileId) => profileId === 'recording' ? '环境正在录制' : undefined,
+    });
+    const runs = await engine.run(workflow({
+      entry: 'wait', nodes: { wait: { id: 'wait', kind: 'wait', params: { ms: 0 } } },
+    }), ['recording', 'available']);
+    expect(runs[0]?.status).toBe('failed');
+    expect(runs[1]?.status).not.toBe('failed');
+    expect(runs[0]?.error).toBe('环境正在录制');
+    expect((await engine.wait(runs[1]!.id)).status).toBe('succeeded');
   });
 });

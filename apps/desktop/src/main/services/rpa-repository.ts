@@ -1,4 +1,6 @@
-import type { RpaRun, RpaWorkflow, Uuid } from '@shadowedge/core';
+import type { RpaRun, RpaSchedule, RpaWorkflow, Uuid } from '@shadowedge/core';
+import { ShadowEdgeError } from '@shadowedge/core';
+import type { EnvelopeCrypto } from '@shadowedge/crypto';
 import { allRows, getRow, type ShadowEdgeDb } from './db.js';
 
 interface WorkflowRow {
@@ -22,6 +24,20 @@ interface RunRow {
   error: string | null;
   outputs: string;
   artifacts: string;
+}
+
+interface ScheduleRow {
+  workflow_id: string;
+  profile_ids: string;
+  interval_minutes: number;
+  enabled: number;
+  next_run_at: string;
+  last_run_at: string | null;
+  last_error: string | null;
+  updated_at: string;
+  inputs_ciphertext: string | null;
+  inputs_wrapped_key: string | null;
+  inputs_iv: string | null;
 }
 
 function toWorkflow(row: WorkflowRow): RpaWorkflow {
@@ -51,8 +67,24 @@ function toRun(row: RunRow): RpaRun {
   };
 }
 
+function toSchedule(row: ScheduleRow): RpaSchedule {
+  return {
+    workflowId: row.workflow_id,
+    profileIds: JSON.parse(row.profile_ids) as Uuid[],
+    intervalMinutes: row.interval_minutes,
+    enabled: row.enabled === 1,
+    nextRunAt: row.next_run_at,
+    lastRunAt: row.last_run_at ?? undefined,
+    lastError: row.last_error ?? undefined,
+    updatedAt: row.updated_at,
+  };
+}
+
 export class RpaRepository {
-  constructor(private readonly handle: ShadowEdgeDb) {}
+  constructor(
+    private readonly handle: ShadowEdgeDb,
+    private readonly crypto?: EnvelopeCrypto,
+  ) {}
 
   listWorkflows(): RpaWorkflow[] {
     return allRows<WorkflowRow>(
@@ -92,6 +124,84 @@ export class RpaRepository {
 
   deleteWorkflow(id: Uuid): void {
     this.handle.db.prepare('DELETE FROM rpa_workflows WHERE id = ?').run(id);
+  }
+
+  saveSchedule(schedule: RpaSchedule, inputs?: Record<string, unknown>): void {
+    if (inputs !== undefined && !this.crypto) {
+      throw new ShadowEdgeError('E_INTERNAL', '定时输入参数需要配置本地加密密钥');
+    }
+    const sealed = inputs === undefined
+      ? undefined
+      : this.crypto!.seal(JSON.stringify(inputs), 'rpa-schedule-input');
+    this.handle.db.prepare(
+      `INSERT INTO rpa_schedules
+        (workflow_id, profile_ids, interval_minutes, enabled, next_run_at,
+        last_run_at, last_error, updated_at, inputs_ciphertext, inputs_wrapped_key, inputs_iv)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(workflow_id) DO UPDATE SET
+        profile_ids=excluded.profile_ids, interval_minutes=excluded.interval_minutes,
+        enabled=excluded.enabled, next_run_at=excluded.next_run_at,
+        last_run_at=excluded.last_run_at, last_error=excluded.last_error,
+        updated_at=excluded.updated_at,
+        inputs_ciphertext=COALESCE(excluded.inputs_ciphertext, rpa_schedules.inputs_ciphertext),
+        inputs_wrapped_key=COALESCE(excluded.inputs_wrapped_key, rpa_schedules.inputs_wrapped_key),
+        inputs_iv=COALESCE(excluded.inputs_iv, rpa_schedules.inputs_iv)`,
+    ).run(
+      schedule.workflowId,
+      JSON.stringify(schedule.profileIds),
+      schedule.intervalMinutes,
+      schedule.enabled ? 1 : 0,
+      schedule.nextRunAt,
+      schedule.lastRunAt ?? null,
+      schedule.lastError ?? null,
+      schedule.updatedAt,
+      sealed?.ciphertext ?? null,
+      sealed?.wrappedKey ?? null,
+      sealed?.iv ?? null,
+    );
+  }
+
+  getScheduleInputs(workflowId: Uuid): Record<string, unknown> | undefined {
+    const row = getRow<Pick<ScheduleRow, 'inputs_ciphertext' | 'inputs_wrapped_key' | 'inputs_iv'>>(
+      this.handle.db,
+      `SELECT inputs_ciphertext, inputs_wrapped_key, inputs_iv
+       FROM rpa_schedules WHERE workflow_id = ?`,
+      workflowId,
+    );
+    if (!row?.inputs_ciphertext || !row.inputs_wrapped_key || !row.inputs_iv) return undefined;
+    if (!this.crypto) {
+      throw new ShadowEdgeError('E_INTERNAL', '定时输入参数需要配置本地加密密钥');
+    }
+    return JSON.parse(this.crypto.unseal(
+      row.inputs_ciphertext,
+      row.inputs_wrapped_key,
+      row.inputs_iv,
+      'rpa-schedule-input',
+    )) as Record<string, unknown>;
+  }
+
+  getSchedule(workflowId: Uuid): RpaSchedule | undefined {
+    const row = getRow<ScheduleRow>(
+      this.handle.db,
+      'SELECT * FROM rpa_schedules WHERE workflow_id = ?',
+      workflowId,
+    );
+    return row ? toSchedule(row) : undefined;
+  }
+
+  listSchedules(): RpaSchedule[] {
+    return allRows<ScheduleRow>(
+      this.handle.db,
+      'SELECT * FROM rpa_schedules ORDER BY updated_at DESC',
+    ).map(toSchedule);
+  }
+
+  listDueSchedules(now: string): RpaSchedule[] {
+    return allRows<ScheduleRow>(
+      this.handle.db,
+      'SELECT * FROM rpa_schedules WHERE enabled = 1 AND next_run_at <= ? ORDER BY next_run_at',
+      now,
+    ).map(toSchedule);
   }
 
   saveRun(run: RpaRun): void {

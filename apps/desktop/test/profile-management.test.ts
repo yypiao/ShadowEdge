@@ -107,4 +107,32 @@ describe('环境分组、编辑与删除', () => {
     await handlers['profile:close'](profile.id);
     await handlers['profile:delete'](profile.id);
   });
+
+  it('切换站点只更新平台与启动页，seed 画像保持逐字段不变', async () => {
+    const profile = await handlers['profile:create']({
+      name: 'site-switch', fingerprintSeed: 'stable-site-seed', platformTag: 'amazon',
+      platformSiteId: 'amazon-us', startupUrls: ['https://example.com/custom'],
+    });
+    expect(profile.startupUrls).toEqual(['https://www.amazon.com/', 'https://example.com/custom']);
+    const before = structuredClone(profile.fingerprint);
+    const switched = await handlers['profile:switchSite']({ profileId: profile.id, siteId: 'amazon-de' });
+    expect(switched.opened).toBe(false);
+    expect(switched.profile.platformTag).toBe('amazon');
+    expect(switched.profile.platformSiteId).toBe('amazon-de');
+    expect(switched.profile.startupUrls).toEqual(['https://www.amazon.de/']);
+    expect(switched.profile.fingerprint).toEqual(before);
+    expect(switched.profile.fingerprint.seed).toBe('stable-site-seed');
+
+    await expect(handlers['profile:switchSite']({ profileId: profile.id, siteId: 'missing-site' }))
+      .rejects.toMatchObject({ code: 'E_PROFILE_INVALID' });
+    expect(profiles.get(profile.id)?.startupUrls).toEqual(['https://www.amazon.de/']);
+
+    const edited = await handlers['profile:update']({
+      id: profile.id, patch: { startupUrls: ['https://example.com/custom'] },
+    });
+    expect(edited.platformSiteId).toBeUndefined();
+    expect(edited.name).toBe('site-switch');
+    expect(edited.platformTag).toBe('amazon');
+    expect(edited.fingerprint).toEqual(before);
+  });
 });

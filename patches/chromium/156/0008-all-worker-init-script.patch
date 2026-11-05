@@ -1,8 +1,7 @@
 ShadowEdge: depends on 0003-serviceworker-init-script.patch.
 --- a/third_party/blink/renderer/core/workers/worker_global_scope.cc
 +++ b/third_party/blink/renderer/core/workers/worker_global_scope.cc
-@@ -766,12 +766,13 @@
-       task_attribution_resource_timing_scope =
+@@ -767,10 +767,11 @@
            SetTaskStateVariable(resource_timing_context, GetExecutionContext());
      }
 -    // ShadowEdge: ServiceWorker global scopes cannot be reached by
@@ -18,13 +17,30 @@ ShadowEdge: depends on 0003-serviceworker-init-script.patch.
 +    {
        static const base::NoDestructor<std::string> shadowedge_init_script([] {
          const base::CommandLine& cmd = *base::CommandLine::ForCurrentProcess();
-         if (!cmd.HasSwitch("shadowedge-init-script"))
-@@ -793,7 +794,7 @@
-                                     static_cast<int>(shadowedge_init_script->size()))
-                 .ToLocalChecked();
-         v8::Local<v8::Script> compiled;
+@@ -784,17 +785,13 @@
+       }());
+       if (!shadowedge_init_script->empty()) {
+-        v8::Isolate* isolate = script_state->GetIsolate();
+-        ScriptState::Scope script_scope(script_state);
+-        v8::Local<v8::Context> v8_context = script_state->GetContext();
+-        v8::TryCatch try_catch(isolate);
+-        v8::Local<v8::String> source =
+-            v8::String::NewFromUtf8(isolate, shadowedge_init_script->data(),
+-                                    v8::NewStringType::kNormal,
+-                                    static_cast<int>(shadowedge_init_script->size()))
+-                .ToLocalChecked();
+-        v8::Local<v8::Script> compiled;
 -        // 注入失败不阻断 SW 安装：宁可裸奔也不破坏站点功能（可观测性靠探针）。
+-        if (v8::Script::Compile(v8_context, source).ToLocal(&compiled))
+-          std::ignore = compiled->Run(v8_context);
++        // Use Blink's normal script runner instead of invoking V8 directly.
++        // Besides preserving worker script lifecycle hooks, this avoids a
++        // release-only stalled evaluation observed with Script::Run().
++        ClassicScript* init_script = ClassicScript::CreateUnspecifiedScript(
++            String::FromUtf8(*shadowedge_init_script));
 +        // 注入失败不阻断 Worker 启动：宁可裸奔也不破坏站点功能（可观测性靠探针）。
-         if (v8::Script::Compile(v8_context, source).ToLocal(&compiled))
-           std::ignore = compiled->Run(v8_context);
++        std::ignore = init_script->RunScriptOnScriptStateAndReturnValue(
++            script_state,
++            ExecuteScriptPolicy::kExecuteScriptWhenScriptsDisabled);
        }
+     }

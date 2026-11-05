@@ -1,0 +1,289 @@
+{
+  "format": "shadowedge-probe-report",
+  "version": 1,
+  "startedAt": "2026-11-05T02:02:47.530Z",
+  "finishedAt": "2026-11-05T02:03:11.441Z",
+  "config": {
+    "executablePath": "/Volumes/ChromiumBuild/shadowedge-t36/work/stage-156.0.8078.73/Chromium.app/Contents/MacOS/Chromium",
+    "restarts": 20,
+    "isolation": true,
+    "headless": false
+  },
+  "summary": {
+    "ok": true,
+    "total": 16,
+    "passed": 15,
+    "failed": 0,
+    "skipped": 1,
+    "passRate": 100
+  },
+  "checks": [
+    {
+      "id": "main-image",
+      "category": "fingerprint",
+      "passed": true,
+      "details": {
+        "expected": {
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "platform": "MacIntel",
+          "languages": [
+            "zh-CN",
+            "zh"
+          ],
+          "hardwareConcurrency": 12,
+          "deviceMemory": 4
+        },
+        "actual": {
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "platform": "MacIntel",
+          "languages": [
+            "zh-CN",
+            "zh"
+          ],
+          "hardwareConcurrency": 12,
+          "deviceMemory": 4
+        }
+      }
+    },
+    {
+      "id": "navigator.webdriver",
+      "category": "automation",
+      "passed": true,
+      "details": false
+    },
+    {
+      "id": "worker-image",
+      "category": "worker",
+      "passed": true,
+      "details": {
+        "expected": {
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "platform": "MacIntel",
+          "languages": [
+            "zh-CN",
+            "zh"
+          ],
+          "hardwareConcurrency": 12,
+          "deviceMemory": 4
+        },
+        "actual": {
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "platform": "MacIntel",
+          "languages": [
+            "zh-CN",
+            "zh"
+          ],
+          "hardwareConcurrency": 12,
+          "deviceMemory": 4
+        }
+      }
+    },
+    {
+      "id": "service-worker-image",
+      "category": "worker",
+      "passed": true,
+      "details": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "platform": "MacIntel",
+        "languages": [
+          "zh-CN",
+          "zh"
+        ],
+        "hardwareConcurrency": 12,
+        "deviceMemory": 4
+      }
+    },
+    {
+      "id": "worker-automation",
+      "category": "automation",
+      "passed": true,
+      "details": {
+        "worker": null,
+        "serviceWorker": null
+      }
+    },
+    {
+      "id": "network-request-image",
+      "category": "network",
+      "passed": true,
+      "details": {
+        "connection": "keep-alive",
+        "pragma": "no-cache",
+        "cache-control": "no-cache",
+        "sec-ch-ua-full-version-list": "\"Chromium\";v=\"130.0.6778.86\", \"Google Chrome\";v=\"130.0.6778.86\", \"Not?A_Brand\";v=\"99.0.0.0\"",
+        "sec-ch-ua-platform": "\"macOS\"",
+        "accept-language": "zh-CN",
+        "sec-ch-ua": "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"",
+        "sec-ch-ua-bitness": "\"64\"",
+        "sec-ch-ua-model": "\"\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-arch": "\"x86\"",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "sec-ch-ua-platform-version": "\"14_6\"",
+        "accept": "*/*",
+        "sec-fetch-site": "same-origin",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-dest": "empty",
+        "accept-encoding": "gzip, deflate, br, zstd"
+      }
+    },
+    {
+      "id": "network-client-hints-negotiation",
+      "category": "network",
+      "passed": true,
+      "details": {
+        "expected": [
+          {
+            "brand": "Chromium",
+            "version": "130.0.6778.86"
+          },
+          {
+            "brand": "Google Chrome",
+            "version": "130.0.6778.86"
+          },
+          {
+            "brand": "Not?A_Brand",
+            "version": "99.0.0.0"
+          }
+        ],
+        "actual": {
+          "connection": "keep-alive",
+          "pragma": "no-cache",
+          "cache-control": "no-cache",
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"130.0.6778.86\", \"Google Chrome\";v=\"130.0.6778.86\", \"Not?A_Brand\";v=\"99.0.0.0\"",
+          "sec-ch-ua-platform": "\"macOS\"",
+          "accept-language": "zh-CN",
+          "sec-ch-ua": "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"",
+          "sec-ch-ua-bitness": "\"64\"",
+          "sec-ch-ua-model": "\"\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-arch": "\"x86\"",
+          "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "sec-ch-ua-platform-version": "\"14_6\"",
+          "accept": "*/*",
+          "sec-fetch-site": "same-origin",
+          "sec-fetch-mode": "cors",
+          "sec-fetch-dest": "empty",
+          "accept-encoding": "gzip, deflate, br, zstd"
+        }
+      }
+    },
+    {
+      "id": "network-first-request-minimal",
+      "category": "network",
+      "passed": true,
+      "details": {
+        "sec-ch-ua": "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"macOS\"",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "id": "webrtc-private-ip",
+      "category": "network",
+      "passed": true,
+      "details": []
+    },
+    {
+      "id": "proxy-exit-ip",
+      "category": "network",
+      "skipped": true,
+      "reason": "未提供 --expected-exit-ip；本地探针不伪造代理出口结论"
+    },
+    {
+      "id": "cookie-isolation",
+      "category": "isolation",
+      "passed": true,
+      "details": {
+        "a": [
+          {
+            "name": "probe-isolation",
+            "value": "profile-a-token",
+            "domain": "127.0.0.1",
+            "path": "/",
+            "expires": -1,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "Lax"
+          }
+        ],
+        "b": [
+          {
+            "name": "probe-isolation",
+            "value": "profile-b-token",
+            "domain": "127.0.0.1",
+            "path": "/",
+            "expires": -1,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "Lax"
+          }
+        ]
+      }
+    },
+    {
+      "id": "local-storage-isolation",
+      "category": "isolation",
+      "passed": true,
+      "details": {
+        "localStorage": "profile-b-token",
+        "indexedDB": "profile-b-token"
+      }
+    },
+    {
+      "id": "indexed-db-isolation",
+      "category": "isolation",
+      "passed": true,
+      "details": {
+        "localStorage": "profile-b-token",
+        "indexedDB": "profile-b-token"
+      }
+    },
+    {
+      "id": "fingerprint-isolation",
+      "category": "isolation",
+      "passed": true,
+      "details": {
+        "a": "7e78784c3825fcd7f674d695c59c3f5bb83394bc20008eacc740b4f37516435a",
+        "b": "8596ba9f3431876b3c6ef03bcf7b8ea79f8a4b9f887bc412402d330c0e5becfd"
+      }
+    },
+    {
+      "id": "worker-fingerprint-isolation",
+      "category": "isolation",
+      "passed": true,
+      "details": {
+        "a": {
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "platform": "MacIntel",
+          "languages": [
+            "zh-CN",
+            "zh"
+          ],
+          "hardwareConcurrency": 12,
+          "deviceMemory": 4
+        },
+        "b": {
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "platform": "MacIntel",
+          "languages": [
+            "ko-KR",
+            "ko"
+          ],
+          "hardwareConcurrency": 8,
+          "deviceMemory": 16
+        }
+      }
+    },
+    {
+      "id": "20-restart-zero-drift",
+      "category": "stability",
+      "passed": true,
+      "details": {
+        "requestedRestarts": 20,
+        "failures": []
+      }
+    }
+  ]
+}

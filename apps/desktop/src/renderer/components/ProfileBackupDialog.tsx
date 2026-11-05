@@ -21,7 +21,7 @@ export function ProfileBackupDialog({ mode, profileId, onClose, onImported }: Pr
       if (exporting) {
         const result = await window.shadowedge.api['profile:export']({ profileId: profileId!, passphrase });
         useStore.getState().toast('info', result.saved
-          ? `加密备份已保存：${result.cookieCount} 个 Cookie，${result.originCount} 个站点状态，${result.indexedDbCount} 个 IndexedDB 数据库`
+          ? `加密备份已保存：${result.cookieCount} 个 Cookie，${result.originCount} 个站点状态，${result.indexedDbCount} 个 IndexedDB 数据库，${result.opfsFileCount} 个 OPFS 文件`
           : '已取消保存备份');
       } else {
         const result = await window.shadowedge.api['profile:import']({ passphrase, name: name || undefined });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { RpaRun, RpaWorkflow } from '@shadowedge/core';
+import type { RpaRun, RpaSchedule, RpaWorkflow } from '@shadowedge/core';
 import { createWorkflowDraft, WorkflowEditor } from '../components/WorkflowEditor.js';
 import { toastError, useStore } from '../store.js';
 
@@ -16,6 +16,16 @@ export function RpaPage() {
   const [inputsText, setInputsText] = useState('{\n  "name": "Ada"\n}');
   const [progress, setProgress] = useState<Record<string, { step: string; percent: number }>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [recordProfileId, setRecordProfileId] = useState('');
+  const [recordStartUrl, setRecordStartUrl] = useState('https://example.com');
+  const [recording, setRecording] = useState(false);
+  const [recordingBusy, setRecordingBusy] = useState(false);
+  const [schedules, setSchedules] = useState<RpaSchedule[]>([]);
+  const [scheduleProfileIds, setScheduleProfileIds] = useState<string[]>([]);
+  const [scheduleInterval, setScheduleInterval] = useState(5);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
+  const currentSchedule = schedules.find((schedule) => schedule.workflowId === draft.id);
+  const persisted = workflows.some((workflow) => workflow.id === draft.id);
 
   const refreshRuns = useCallback(async () => {
     setRuns(await window.shadowedge.api['rpa:listRuns']({ limit: 100 }));
@@ -23,17 +33,26 @@ export function RpaPage() {
   const refreshWorkflows = useCallback(async () => {
     setWorkflows(await window.shadowedge.api['rpa:list'](undefined));
   }, []);
+  const refreshSchedules = useCallback(async () => {
+    setSchedules(await window.shadowedge.api['rpa:listSchedules'](undefined));
+  }, []);
 
   useEffect(() => {
     void refreshWorkflows().catch(toastError);
     void refreshRuns().catch(toastError);
+    void refreshSchedules().catch(toastError);
     return window.shadowedge.on['rpa:progress']((event) => {
       setProgress((current) => ({
         ...current,
         [event.runId]: { step: event.step, percent: event.percent },
       }));
     });
-  }, [refreshRuns, refreshWorkflows]);
+  }, [refreshRuns, refreshWorkflows, refreshSchedules]);
+
+  useEffect(() => {
+    setScheduleProfileIds(currentSchedule?.profileIds ?? []);
+    setScheduleInterval(currentSchedule?.intervalMinutes ?? 5);
+  }, [draft.id, schedules]);
 
   const hasActive = runs.some((run) => run.status === 'queued' || run.status === 'running');
   useEffect(() => {
@@ -43,6 +62,11 @@ export function RpaPage() {
   }, [hasActive, refreshRuns]);
 
   const runningProfiles = profiles.filter((profile) => profile.status === 'running');
+  useEffect(() => {
+    if (recording && !runningProfiles.some((profile) => profile.id === recordProfileId)) {
+      setRecording(false);
+    }
+  }, [recording, recordProfileId, runningProfiles]);
   const runnableProfileIds = runningProfiles
     .filter((profile) => selectedProfiles.has(profile.id))
     .map((profile) => profile.id);
@@ -74,12 +98,99 @@ export function RpaPage() {
     }
   };
 
+  const startRecording = async () => {
+    if (!recordProfileId || !recordStartUrl.trim()) return;
+    setRecordingBusy(true);
+    try {
+      await window.shadowedge.api['rpa:startRecording']({
+        profileId: recordProfileId,
+        startUrl: recordStartUrl.trim(),
+      });
+      setRecording(true);
+      useStore.getState().toast('info', '录制已开始，请在目标 Chromium 环境中操作，完成后返回这里停止');
+    } catch (error) {
+      toastError(error);
+    } finally {
+      setRecordingBusy(false);
+    }
+  };
+
+  const stopRecording = async () => {
+    setRecordingBusy(true);
+    try {
+      const result = await window.shadowedge.api['rpa:stopRecording'](recordProfileId);
+      const recordedDraft = createWorkflowDraft();
+      setDraft({
+        ...recordedDraft,
+        name: `录制工作流 ${new Date().toLocaleString('zh-CN')}`,
+        graph: result.graph,
+      });
+      setRecording(false);
+      const omitted = result.ignoredPasswordFields + result.droppedActions;
+      useStore.getState().toast(
+        'info',
+        omitted > 0 ? `录制已生成；跳过 ${result.ignoredPasswordFields} 个密码字段、${result.droppedActions} 个超限操作` : '录制已生成，可编辑、保存并回放',
+      );
+    } catch (error) {
+      toastError(error);
+    } finally {
+      setRecordingBusy(false);
+    }
+  };
+
+  const saveSchedule = async (enabled: boolean) => {
+    setScheduleBusy(true);
+    try {
+      let inputs: Record<string, unknown> | undefined;
+      if (enabled && inputsText.trim()) {
+        const parsed: unknown = JSON.parse(inputsText);
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          throw new Error('输入参数必须是 JSON 对象');
+        }
+        inputs = parsed as Record<string, unknown>;
+      }
+      await window.shadowedge.api['rpa:setSchedule']({
+        workflowId: draft.id,
+        profileIds: enabled ? scheduleProfileIds : (currentSchedule?.profileIds ?? scheduleProfileIds),
+        intervalMinutes: scheduleInterval,
+        enabled,
+        inputs,
+      });
+      await refreshSchedules();
+      useStore.getState().toast('info', enabled ? '定时任务已启用' : '定时任务已停用');
+    } catch (error) {
+      toastError(error);
+    } finally {
+      setScheduleBusy(false);
+    }
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0, flex: 1 }}>自动化工作流</h2>
         <button type="button" onClick={() => setDraft(createWorkflowDraft())}>新建工作流</button>
       </div>
+      <section style={{ border: '1px solid #dbeafe', borderRadius: 6, padding: 12, marginBottom: 16, background: '#f8fbff' }}>
+        <strong style={{ fontSize: 13 }}>录制当前标签页</strong>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+          <select aria-label="录制环境" value={recordProfileId} disabled={recording || recordingBusy}
+            onChange={(event) => setRecordProfileId(event.target.value)} style={{ fontSize: 12, padding: 6 }}>
+            <option value="">选择运行中环境</option>
+            {runningProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+          </select>
+          <input aria-label="录制起始 URL" value={recordStartUrl} disabled={recording || recordingBusy}
+            onChange={(event) => setRecordStartUrl(event.target.value)}
+            style={{ flex: 1, minWidth: 260, fontSize: 12, padding: 6 }} />
+          <button type="button" disabled={recordingBusy || !recordProfileId || !recordStartUrl.trim()}
+            onClick={() => void (recording ? stopRecording() : startRecording())}>
+            {recordingBusy ? '处理中…' : recording ? '停止并生成工作流' : '开始录制'}
+          </button>
+        </div>
+        <div style={{ color: '#64748b', fontSize: 11, marginTop: 6 }}>
+          记录导航、点击和文本输入；密码字段不会进入工作流。录制期间禁止在相同环境运行 RPA。
+        </div>
+      </section>
       <div style={{ display: 'grid', gridTemplateColumns: '230px minmax(420px, 1fr)', gap: 16 }}>
         <aside style={{ borderRight: '1px solid #e5e7eb', paddingRight: 12 }}>
           <strong style={{ fontSize: 13 }}>已保存 {workflows.length} 个</strong>
@@ -102,7 +213,7 @@ export function RpaPage() {
         </aside>
         <WorkflowEditor
           workflow={draft}
-          persisted={workflows.some((workflow) => workflow.id === draft.id)}
+          persisted={persisted}
           onSaved={async (saved) => {
             setDraft(saved);
             await refreshWorkflows();
@@ -110,6 +221,7 @@ export function RpaPage() {
           onDeleted={async () => {
             setDraft(createWorkflowDraft());
             await refreshWorkflows();
+            await refreshSchedules();
           }}
         />
       </div>
@@ -149,6 +261,38 @@ export function RpaPage() {
           {submitting ? '提交中…' : '运行工作流'}
         </button>
       </section>
+
+      {persisted && (
+        <section style={{ borderTop: '1px solid #e5e7eb', marginTop: 20, paddingTop: 16 }}>
+          <h3 style={{ marginTop: 0, fontSize: 15 }}>定时运行</h3>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', fontSize: 12 }}>
+            <label>定时环境（可多选）
+              <select multiple aria-label="定时环境" value={scheduleProfileIds} size={Math.min(4, Math.max(2, profiles.length))}
+                onChange={(event) => setScheduleProfileIds(Array.from(event.target.selectedOptions, (option) => option.value))}
+                style={{ display: 'block', minWidth: 220, marginTop: 4 }}>
+                {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+              </select>
+            </label>
+            <label>间隔（分钟）
+              <input aria-label="定时间隔" type="number" min={1} max={10080} value={scheduleInterval}
+                onChange={(event) => setScheduleInterval(event.target.valueAsNumber)}
+                style={{ display: 'block', width: 110, marginTop: 4, padding: 6 }} />
+            </label>
+            <button type="button" disabled={scheduleBusy || scheduleProfileIds.length === 0 || !Number.isInteger(scheduleInterval)}
+              onClick={() => void saveSchedule(true)}>
+              {currentSchedule?.enabled ? '保存定时设置' : '启用定时'}
+            </button>
+            {currentSchedule?.enabled && (
+              <button type="button" disabled={scheduleBusy} onClick={() => void saveSchedule(false)}>停用定时</button>
+            )}
+          </div>
+          <div style={{ color: '#64748b', fontSize: 11, marginTop: 8 }}>
+            使用上方输入参数（加密保存）。到期逐环境执行；未运行的环境会自动启动，任务结束后仅关闭本次自动启动的环境。
+            {currentSchedule?.enabled && ` 下次：${new Date(currentSchedule.nextRunAt).toLocaleString('zh-CN')}`}
+            {currentSchedule?.lastError && <span style={{ color: '#d32f2f' }}> 上次错误：{currentSchedule.lastError}</span>}
+          </div>
+        </section>
+      )}
 
       <section style={{ marginTop: 20 }}>
         <h3 style={{ fontSize: 15 }}>最近运行</h3>

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { chromium, type BrowserContext } from 'patchright';
 import { createConsoleLogger, ShadowEdgeError } from '@shadowedge/core';
+import type { BrowserProfile } from '@shadowedge/core';
 import {
   buildLaunchConfig,
   findFreePort,
@@ -12,7 +13,7 @@ import { createKernelLaunchAuthorization, KERNEL_LAUNCH_KEK_ENV } from '../launc
 
 export interface ChromiumCdpDriverOptions {
   /** 自构建内核可执行文件路径；缺省读环境变量 SHADOWEDGE_KERNEL_EXECUTABLE。 */
-  executablePath?: string | (() => string | undefined);
+  executablePath?: string | ((profile?: BrowserProfile) => string | undefined);
   /** 内核缺失或启动失败时回退 Patchright（默认 true）。函数形式支持运行时修改配置。 */
   fallbackToPatchright?: boolean | (() => boolean);
   /** 回退驱动替换点（测试注入用，生产缺省 PatchrightDriver）。 */
@@ -33,9 +34,10 @@ function redactLaunchError(error: Error): string {
  * 不允许拿着坏路径去启动再失败——回退决策必须发生在启动前。
  */
 export function resolveKernelExecutable(
-  explicit?: string | (() => string | undefined),
+  explicit?: string | ((profile?: BrowserProfile) => string | undefined),
+  profile?: BrowserProfile,
 ): string | undefined {
-  const configured = typeof explicit === 'function' ? explicit() : explicit;
+  const configured = typeof explicit === 'function' ? explicit(profile) : explicit;
   const candidate = configured ?? process.env.SHADOWEDGE_KERNEL_EXECUTABLE;
   if (!candidate) return undefined;
   return existsSync(candidate) ? candidate : undefined;
@@ -67,7 +69,7 @@ export class ChromiumCdpDriver implements KernelDriver {
   constructor(private readonly opts: ChromiumCdpDriverOptions = {}) {}
 
   async launch(spec: KernelLaunchSpec): Promise<RunningInstance> {
-    const executablePath = resolveKernelExecutable(this.opts.executablePath);
+    const executablePath = resolveKernelExecutable(this.opts.executablePath, spec.profile);
     if (!executablePath) {
       return this.launchFallback(spec, 'kernel executable not found');
     }

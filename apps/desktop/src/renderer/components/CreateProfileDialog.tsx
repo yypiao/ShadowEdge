@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { FingerprintProfile } from '@shadowedge/core';
+import type { FingerprintProfile, PlatformPolicy } from '@shadowedge/core';
 import { toastError, useStore } from '../store.js';
 
-const PLATFORM_TAGS = ['通用', 'amazon', 'tiktok', 'shopee', 'facebook', 'google'] as const;
 const FP_PLATFORMS = [
   { value: 'host', label: '跟随宿主机（推荐）' },
   { value: 'windows', label: 'Windows' },
@@ -21,6 +20,8 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
   const [name, setName] = useState('');
   const [count, setCount] = useState(1);
   const [platformTag, setPlatformTag] = useState<string>('通用');
+  const [policies, setPolicies] = useState<PlatformPolicy[]>([]);
+  const [siteId, setSiteId] = useState('');
   const [fpPlatform, setFpPlatform] = useState<FpPlatform>('host');
   const [proxyId, setProxyId] = useState('');
   const [groupId, setGroupId] = useState('');
@@ -29,16 +30,28 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
   const [seed, setSeed] = useState<string>(() => crypto.randomUUID());
   const [preview, setPreview] = useState<FingerprintProfile | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const selectedSite = policies.find((policy) => policy.tag === platformTag)?.sites.find((item) => item.id === siteId);
+
+  useEffect(() => {
+    window.shadowedge.api['platformPolicy:list'](undefined).then(setPolicies).catch(toastError);
+  }, []);
 
   // 种子/代理变化即实时预览画像；选代理时时区/语言/地理自动跟随出口
   useEffect(() => {
     let cancelled = false;
     setPreview(null);
-    window.shadowedge.api['fingerprint:preview']({ seed, proxyId: proxyId || undefined, platform: fpPlatform })
+    window.shadowedge.api['fingerprint:preview']({
+        seed,
+        proxyId: proxyId || undefined,
+        platform: fpPlatform,
+        overrides: selectedSite && !proxyId
+          ? { languages: [...selectedSite.languages], timezone: selectedSite.timezone }
+          : undefined,
+      })
       .then((fp) => { if (!cancelled) setPreview(fp); })
       .catch(toastError);
     return () => { cancelled = true; };
-  }, [seed, proxyId, fpPlatform]);
+  }, [seed, proxyId, fpPlatform, selectedSite?.id]);
 
   const submit = useCallback(async () => {
     if (!name.trim()) {
@@ -53,11 +66,15 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
     try {
       const base = {
         platformTag: platformTag === '通用' ? undefined : platformTag,
+        platformSiteId: selectedSite?.id,
         proxyId: proxyId || undefined,
         groupId: groupId || undefined,
         startupUrls: startupUrls.split('\n').map((url) => url.trim()).filter(Boolean),
         notes: notes.trim() || undefined,
         platform: fpPlatform,
+        overrides: selectedSite && !proxyId
+          ? { languages: [...selectedSite.languages], timezone: selectedSite.timezone }
+          : undefined,
       };
       if (count === 1) {
         await window.shadowedge.api['profile:create']({
@@ -96,7 +113,7 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
       toastError(error);
       setSubmitting(false);
     }
-  }, [name, count, platformTag, fpPlatform, proxyId, groupId, startupUrls, notes, seed, onCreated]);
+  }, [name, count, platformTag, fpPlatform, proxyId, groupId, startupUrls, notes, seed, selectedSite, onCreated]);
 
   const input: React.CSSProperties = {
     width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box',
@@ -135,9 +152,34 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
         )}
 
         <span style={label}>平台</span>
-        <select style={input} value={platformTag} onChange={(e) => setPlatformTag(e.target.value)}>
-          {PLATFORM_TAGS.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+        <select aria-label="业务平台" style={input} value={platformTag} onChange={(event) => {
+          const tag = event.target.value;
+          const first = policies.find((policy) => policy.tag === tag)?.sites[0];
+          setPlatformTag(tag);
+          setSiteId(first?.id ?? '');
+          if (first) setStartupUrls(first.url);
+        }}>
+          <option value="通用">通用</option>
+          {policies.map((policy) => <option key={policy.tag} value={policy.tag}>{policy.label}</option>)}
+          <option value="facebook">facebook</option><option value="google">google</option>
         </select>
+        {selectedSite && (
+          <>
+            <span style={label}>平台站点</span>
+            <select aria-label="平台站点" style={input} value={siteId} onChange={(event) => {
+              setSiteId(event.target.value);
+              const next = policies.flatMap((policy) => policy.sites).find((item) => item.id === event.target.value);
+              if (next) setStartupUrls(next.url);
+            }}>
+              {policies.find((policy) => policy.tag === platformTag)?.sites.map((item) => (
+                <option key={item.id} value={item.id}>{item.label} · {item.countryCodes.join('/')}</option>
+              ))}
+            </select>
+            <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
+              {proxyId ? '代理出口将自动决定指纹地理，并在启动时校验站点区域' : `站点推荐：${selectedSite.timezone} · ${selectedSite.languages.join(', ')}`}
+            </div>
+          </>
+        )}
 
         <span style={label}>分组（可选）</span>
         <select aria-label="环境分组" style={input} value={groupId} onChange={(e) => setGroupId(e.target.value)}>

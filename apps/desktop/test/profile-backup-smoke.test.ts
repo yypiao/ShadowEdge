@@ -37,7 +37,7 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('密文不泄密，错误口令与篡改拒绝，首次启动恢复 Cookie、LocalStorage 和 IndexedDB', async () => {
+  it('密文不泄密，错误口令与篡改拒绝，首次启动恢复 Cookie、LocalStorage、IndexedDB 和 OPFS', async () => {
     server = createServer((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       response.end('<!doctype html><title>backup</title>');
@@ -106,6 +106,17 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
         });
         db.close();
       });
+      await page.evaluate(async () => {
+        const root = await navigator.storage.getDirectory();
+        const directory = await root.getDirectoryHandle('nested', { create: true });
+        const handle = await directory.getFileHandle('session.bin', { create: true });
+        const bytes = new Uint8Array(2 * 1024 * 1024);
+        for (let index = 0; index < bytes.length; index += 1) bytes[index] = index % 251;
+        bytes.set(new TextEncoder().encode('opfs-secret'), 0);
+        const writable = await handle.createWritable();
+        await writable.write(bytes);
+        await writable.close();
+      });
       await sourceContext.addCookies([{
         name: 'session', value: 'cookie-secret', domain: '127.0.0.1', path: '/',
         expires: -1, httpOnly: true, secure: false, sameSite: 'Lax',
@@ -124,9 +135,11 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
       expect(exported.cookieCount).toBe(1);
       expect(exported.originCount).toBe(1);
       expect(exported.indexedDbCount).toBe(1);
+      expect(exported.opfsFileCount).toBe(1);
       expect(contents).not.toContain('cookie-secret');
       expect(contents).not.toContain('local-storage-secret');
       expect(contents).not.toContain('indexed-db-secret');
+      expect(contents).not.toContain('opfs-secret');
       expect(contents).not.toContain('proxy-secret');
       expect(contents).not.toContain('backup-source');
 
@@ -177,6 +190,19 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
         return value?.token;
       });
       expect(indexedToken).toBe('indexed-db-secret');
+      const opfs = await importedPage.evaluate(async () => {
+        const root = await navigator.storage.getDirectory();
+        const directory = await root.getDirectoryHandle('nested');
+        const handle = await directory.getFileHandle('session.bin');
+        const file = await handle.getFile();
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        return {
+          size: file.size,
+          token: new TextDecoder().decode(bytes.slice(0, 11)),
+          binaryTail: bytes.at(-1),
+        };
+      });
+      expect(opfs).toEqual({ size: 2 * 1024 * 1024, token: 'opfs-secret', binaryTail: (2 * 1024 * 1024 - 1) % 251 });
 
       const envelope = JSON.parse(contents) as ProfileBackupEnvelope;
       const ciphertext = Buffer.from(envelope.payload.ciphertext, 'base64');

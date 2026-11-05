@@ -4,6 +4,8 @@ import type {
   AccountCredentialInput,
   BrowserProfile,
   FingerprintProfile,
+  KernelDistributionStatus,
+  KernelPackageInstallResult,
   KernelRuntimeConfig,
   KernelRuntimeStatus,
   LaunchOptions,
@@ -15,9 +17,15 @@ import type {
   ProfileBackupExportResult,
   ProfileBackupImportResult,
   Platform,
+  PlatformPolicy,
+  ProfileSiteSwitchResult,
   ProxyCredential,
   ProxyHealth,
   RpaRun,
+  RpaSchedule,
+  RpaScheduleInput,
+  RpaRecordingResult,
+  RpaRecordingState,
   RpaWorkflow,
   RpaWorkflowInput,
   Uuid,
@@ -41,7 +49,11 @@ export interface IpcApi {
     items: ProfileCreateInput[];
   }) => Array<Result<BrowserProfile, ErrorPayload>>;
   'profile:update': (input: { id: Uuid; patch: ProfileUpdateInput }) => BrowserProfile;
+  'profile:prepareKernelUpgrade': (input: { profileId: Uuid; targetVersion: string }) => BrowserProfile;
+  'profile:commitKernelUpgrade': (input: { profileId: Uuid; upgradeProfileId: Uuid; confirmed: boolean }) => BrowserProfile;
   'profile:delete': (id: Uuid) => void;
+  'platformPolicy:list': () => PlatformPolicy[];
+  'profile:switchSite': (input: { profileId: Uuid; siteId: string }) => ProfileSiteSwitchResult;
   'profile:launch': (options: LaunchOptions) => LaunchResult;
   'profile:launchMany': (input: {
     items: LaunchOptions[];
@@ -72,6 +84,9 @@ export interface IpcApi {
 
   'kernel:getStatus': () => KernelRuntimeStatus;
   'kernel:configure': (input: KernelRuntimeConfig) => KernelRuntimeStatus;
+  'kernelDistribution:status': () => KernelDistributionStatus;
+  'kernelDistribution:install': () => KernelPackageInstallResult;
+  'kernelDistribution:activate': (input: { version: string }) => KernelDistributionStatus;
 
   'proxy:list': () => ProxyCredential[];
   'proxy:upsert': (input: ProxyCredential & { password?: string }) => ProxyCredential;
@@ -88,6 +103,10 @@ export interface IpcApi {
   'rpa:save': (input: RpaWorkflowInput) => RpaWorkflow;
   'rpa:delete': (id: Uuid) => void;
   'rpa:run': (input: { workflow: RpaWorkflow; profileIds: Uuid[]; inputs?: unknown }) => RpaRun[];
+  'rpa:startRecording': (input: { profileId: Uuid; startUrl: string }) => RpaRecordingState;
+  'rpa:stopRecording': (profileId: Uuid) => RpaRecordingResult;
+  'rpa:setSchedule': (input: RpaScheduleInput) => RpaSchedule;
+  'rpa:listSchedules': () => RpaSchedule[];
   'rpa:get': (runId: Uuid) => RpaRun;
   'rpa:listRuns': (input?: { limit?: number }) => RpaRun[];
   'rpa:cancel': (runId: Uuid) => void;
@@ -123,7 +142,11 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'profileGroup:delete',
   'profile:createMany',
   'profile:update',
+  'profile:prepareKernelUpgrade',
+  'profile:commitKernelUpgrade',
   'profile:delete',
+  'platformPolicy:list',
+  'profile:switchSite',
   'profile:launch',
   'profile:launchMany',
   'profile:close',
@@ -134,6 +157,9 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'fingerprint:audit',
   'kernel:getStatus',
   'kernel:configure',
+  'kernelDistribution:status',
+  'kernelDistribution:install',
+  'kernelDistribution:activate',
   'proxy:list',
   'proxy:upsert',
   'proxy:check',
@@ -146,6 +172,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'rpa:save',
   'rpa:delete',
   'rpa:run',
+  'rpa:startRecording',
+  'rpa:stopRecording',
+  'rpa:setSchedule',
+  'rpa:listSchedules',
   'rpa:get',
   'rpa:listRuns',
   'rpa:cancel',

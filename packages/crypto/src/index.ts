@@ -2,7 +2,8 @@ import { createCipheriv, createDecipheriv, pbkdf2Sync, randomBytes } from 'node:
 
 /** 密钥用途标签，防止同一密钥被用于不同目的。 */
 export type KeyPurpose =
-  'profile-cookie' | 'profile-backup' | 'proxy-secret' | 'account-secret' | 'sync-payload' | 'auth-token';
+  'profile-cookie' | 'profile-backup' | 'proxy-secret' | 'account-secret' | 'sync-payload' | 'auth-token' |
+  'rpa-schedule-input';
 
 /** 信封加密：用一个 KEK（密钥加密密钥）加密若干 DEK（数据加密密钥）。 */
 export class EnvelopeCrypto {

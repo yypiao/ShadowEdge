@@ -219,6 +219,45 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_profiles_group_id ON profiles(group_id);
     `,
   },
+  {
+    id: 7,
+    name: 'profile_platform_site',
+    sql: 'ALTER TABLE profiles ADD COLUMN platform_site_id TEXT',
+  },
+  {
+    id: 8,
+    name: 'profile_kernel_version_pinning',
+    sql: `
+      ALTER TABLE profiles ADD COLUMN kernel_version TEXT;
+      ALTER TABLE profiles ADD COLUMN kernel_upgrade_source_id TEXT;
+    `,
+  },
+  {
+    id: 9,
+    name: 'rpa_schedules',
+    sql: `
+      CREATE TABLE rpa_schedules (
+        workflow_id TEXT PRIMARY KEY REFERENCES rpa_workflows(id) ON DELETE CASCADE,
+        profile_ids TEXT NOT NULL,
+        interval_minutes INTEGER NOT NULL,
+        enabled INTEGER NOT NULL,
+        next_run_at TEXT NOT NULL,
+        last_run_at TEXT,
+        last_error TEXT,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_rpa_schedules_due ON rpa_schedules(enabled, next_run_at);
+    `,
+  },
+  {
+    id: 10,
+    name: 'rpa_schedule_encrypted_inputs',
+    sql: `
+      ALTER TABLE rpa_schedules ADD COLUMN inputs_ciphertext TEXT;
+      ALTER TABLE rpa_schedules ADD COLUMN inputs_wrapped_key TEXT;
+      ALTER TABLE rpa_schedules ADD COLUMN inputs_iv TEXT;
+    `,
+  },
 ];
 
 function tx(db: DatabaseSync, fn: () => void): void {

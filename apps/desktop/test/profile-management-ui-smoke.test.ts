@@ -35,11 +35,22 @@ describe.skipIf(!SMOKE)('Electron 环境管理 UI', () => {
 
       await page.getByRole('button', { name: '+ 新建 / 批量创建' }).click();
       await page.getByPlaceholder('例如：美区亚马逊-01').fill('management-ui');
+      await page.getByLabel('业务平台', { exact: true }).selectOption({ label: 'Amazon' });
+      await page.getByLabel('平台站点', { exact: true }).selectOption('amazon-us');
       await page.getByLabel('环境分组', { exact: true }).selectOption({ label: '美区店铺' });
       await page.getByLabel('启动页面', { exact: true }).fill('http://127.0.0.1:8765/start');
       await page.getByLabel('环境备注', { exact: true }).fill('UI 管理测试');
       await page.getByRole('button', { name: '创建环境', exact: true }).click();
       await page.locator('article').filter({ hasText: 'management-ui' }).waitFor();
+      await page.getByLabel('切换站点 management-ui', { exact: true }).selectOption('amazon-de');
+      await expect.poll(() => page.getByLabel('切换站点 management-ui', { exact: true }).inputValue())
+        .toBe('amazon-de');
+      await page.getByText('站点配置已保存，下次启动生效', { exact: true }).waitFor();
+
+      await page.getByText('固定内核：开发路径', { exact: false }).waitFor();
+      await page.getByRole('button', { name: '内核升级', exact: true }).click();
+      await page.getByText('内核升级灰度 · management-ui', { exact: true }).waitFor();
+      await page.getByRole('button', { name: '关闭', exact: true }).click();
 
       await page.getByLabel('搜索环境').fill('no-such-profile');
       await page.getByText('没有符合当前搜索或分组条件的环境。').waitFor();

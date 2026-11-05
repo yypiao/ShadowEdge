@@ -23,6 +23,8 @@ export interface RpaPage {
   ): Promise<unknown>;
   locator(selector: string): RpaLocator;
   screenshot(options: { path: string; fullPage: boolean; type: 'png' }): Promise<Uint8Array>;
+  /** 硬取消时关闭当前 RPA 页面，使未结束的 CDP 调用失败并落定。 */
+  close(): Promise<void>;
 }
 
 export interface RpaBrowserContext {
@@ -36,9 +38,14 @@ export interface RpaNodeExecution {
   page: RpaPage;
   inputs: Record<string, unknown>;
   signal: AbortSignal;
+  /** 整个工作流的绝对截止时间，节点自身 timeout 不得越过它。 */
+  deadlineAt: number;
+  closePage(): Promise<void>;
   percent: number;
   random: () => number;
   outputs: Record<string, string | null>;
+  /** key 为 loop 节点 id，value 从 0 开始。 */
+  loopIndices: Record<string, number>;
   artifactPath(fileName: string): string;
 }
 

@@ -574,14 +574,25 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 
 ---
 
-## T17 — 内核版本化分发与防裸启（T17A 已完成，T17B 待做）
+## T17 — 内核版本化分发与防裸启（T17A / T17B 完成）
 
-> **T17A 本机启动授权（2026-11-02）**：桌面驱动每次启动签发独立随机 KEK 的 30 秒
+> **T17A 本机启动授权（2026-11-02）**：桌面驱动每次启动签发独立随机 KEK 的 60 秒
 > `auth-token` 信封，Chromium 0009 在浏览器进程原生解封并检查时效，随后清除 KEK 环境。
 > 真实内核已验证合法启动，以及无令牌、错 KEK、密文篡改、过期四类拒启。该边界不替代
 > 文件签名，也不宣称抵御本机 root/逆向。当前 156 生产画像本地探针 32/32，
 > t1 代理外站全链路 40/40，Pixelscan `consistent`、无 masking，CreepJS headless/stealth 均为 0%。
-> T17B 的签名分发、下载更新、原子切换与回滚仍待做。
+> **T17B 离线分发（2026-11-04）**：新增 Ed25519 签名 ZIP 打包、主进程原生选包安装、
+> 文件级 SHA-256 校验、多版本共存、原子激活与回滚。启动缓存内核前重新验签并逐文件校验；
+> 可执行路径以签名清单为准。可信公钥只从主进程环境或文件读取，渲染层不能替换。
+> 完整 dev component 包曾成功验签安装（870 文件，约 4.1 秒），但其 518 个 dylib 在内置盘
+> 冷加载约 124 秒，超过 60 秒授权协议上限；因此暂存脚本已拒绝 component 分发包。
+> 2026-11-04 本机 16GB、`-j4` 的 release 非 component 全量构建以 3 小时 28 分成功完成；
+> 352 文件的 `156.0.8078.73` 签名包真实安装约 3.7 秒，验签后启动、CDP 检查和关闭合计约 9.6 秒，
+> `kernelUsed=chromium-cdp`、`navigator.webdriver=false`，全过程无其他内核回退。一次性私钥及临时
+> 签名目录已清理，日志保存于 `experiments/probes/results/t17b-release-smoke.log`。
+> 0008 Release Worker 修复后重新产出 352 文件签名包，并再次通过真实验签安装、启动与关闭；
+> 复验日志：`experiments/probes/results/t17b-release-worker-fix-smoke.log`。
+> 在线下载更新仍未做，不将离线链路冒充完整商业更新系统；按环境固定版本和灰度升级见 T36。
 
 **背景**：紫鸟内核按 `chrome_64_<ver>_<os>_ziniaobrowser.zip` 运行时下发，外壳不动换内核；
 且内核校验 launcher 令牌拒绝裸启（防提取/防二次分发）。我们目前内核跟随 patchright
@@ -764,7 +775,7 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 > 并确认备份密文不包含环境名、Cookie、LocalStorage 或代理密码。完整 TypeScript 回归
 > 135 passed / 17 skipped，typecheck、lint 与 Electron 生产构建通过。
 >
-> 当前边界：T30 起包含 IndexedDB；不迁移 SessionStorage、OPFS、账号凭据库、RPA 工作流/
+> 当前边界：T30 起包含 IndexedDB，T33 起包含 OPFS；不迁移 SessionStorage、账号凭据库、RPA 工作流/
 > 运行历史，不提供自动云同步；这些项目不得被描述为已经包含在环境备份内。
 
 ---
@@ -826,3 +837,127 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 > 最终回归：完整单元/集成测试 148 passed / 19 skipped，typecheck、lint 和桌面生产构建通过；
 > 最新构建的七个真实 Chromium/Electron 联合场景全部通过，覆盖加密备份迁移、加密快照与崩溃恢复、
 > 环境管理 UI、应用退出回收、批量生命周期、批量管理 UI 和 RPA UI。
+
+---
+
+## T32 — 双环境隔离与重启零漂移探针（2026-11-04）
+
+> `scripts/probe/` 新增可提交的真实内核探针，覆盖主世界、Dedicated Worker、ServiceWorker、
+> WebRTC 私网地址、Cookie、LocalStorage、IndexedDB 和双 seed 画像隔离；稳定性场景串行重启
+> 20 次，避免 16GB 开发机并行耗尽内存。报告原子写入 `experiments/probes/results/`。
+> 测试已迁入 desktop Vitest 工作区，默认仅注册不启动；设置 `SHADOWEDGE_PROBE_SMOKE=1`
+> 和 `SHADOWEDGE_KERNEL_EXECUTABLE` 后执行真实浏览器。原 `pnpm probe` 外站基线保持不变，
+> 新矩阵使用 `pnpm probe:matrix`；T36 起增加本地请求 UA/语言、首请求高熵头最小化及
+> 协商后 UA-CH 检查，跨版本报告用 `pnpm probe:compare` 逐字段比较。
+> 自研 Chromium 实测 13 项中 12 通过、0 失败、1 项代理出口检查因未配置预期 IP 而跳过；
+> 20 次重启画像哈希零漂移。开发版报告：`experiments/probes/results/t32-final-1793756042.json`。
+> Release `156.0.8078.73` 复跑同为 12 通过、0 失败、1 跳过及 20 次重启零漂移，报告：
+> `experiments/probes/results/t32-release-156.0.8078.73.json`。该轮先发现直接 V8 执行导致
+> Release-only Dedicated Worker 卡死；0008 已改用 Blink `ClassicScript` 标准入口，最小及完整注入均回归通过。
+
+---
+
+## T33 — OPFS 加密快照与备份迁移（2026-11-04）
+
+> Cookie、LocalStorage、IndexedDB 之外，快照和 `.sebackup` 现包含 OPFS 目录及二进制文件；
+> 备份计数、导入结构、规范 Base64 与路径穿越校验同步覆盖。全部 origin 合计最多 2000 个文件、
+> 4000 个目录/文件条目和 128MB 解码内容，不能通过拆站点绕过预算；备份选择器上限相应调整为
+> 320MB（覆盖 OPFS 与加密信封两次 Base64 膨胀），导出超限时不写出无法再次导入的文件。
+> SessionStorage 仍不承诺跨会话恢复。
+> 真实 Chromium 的加密备份跨环境恢复及 SIGKILL 崩溃快照两项 smoke 均通过，包含 2MB 二进制 OPFS 文件。
+
+---
+
+## T34 — RPA 条件分支、有限循环与运行预算（2026-11-04）
+
+> 图契约新增条件真假分支、计数循环、最大执行步数和总超时；编辑器支持连线与
+> `inputs` / `outputs` / `loop.<节点ID>.index` 插值。运行器逐环境互斥，循环限定 0..1000 次，
+> 默认最多 10000 步、总超时 5 分钟；缺失输出的 `exists` / `notExists` 判断不会误报节点失败。
+> 普通节点重试、失败后继续、取消和截图/JSON 产物保持兼容。
+
+---
+
+## T35 — Amazon / Shopee / TikTok 平台站点策略（2026-11-04）
+
+> 内置常见区域站点及推荐语言、IANA 时区和出口国家/地区。创建环境时可应用站点推荐画像；
+> 绑定代理时仍优先跟随真实出口。已有环境切换站点只更新平台标签、站点 ID 与启动页，seed 画像逐字段不变；
+> 站点 ID 独立落库，编辑启动页不能造成区域策略误判；普通编辑会明确脱离一键站点策略。
+> 运行中支持在当前上下文打开新站点。切换和启动均校验代理 `countryCode`，不匹配或缺失时拒绝，
+> 防止“美区站点配德国出口”。目前是小规模内置策略，不宣称已覆盖紫鸟的全量站点库。
+
+---
+
+# 2026-11-04 复审：下一轮优先级
+
+## T36 — 按环境固定内核版本与升级灰度（2026-11-05 完成）
+
+> `BrowserProfile.kernelVersion` 与 SQLite migration 8 已落地。使用签名安装目录时，新环境固定创建时
+> 版本，历史环境只回填一次；全局安装、激活或回滚不再改变旧环境。显式开发路径模式不自动固定版本。
+> 启动按环境直接解析 `versions/<version>/payload`，每次仍重新验签和逐文件校验；缺版本或历史环境未固定
+> 且遇到安装目录时分别报 `E_KERNEL_VERSION_NOT_FOUND` / `E_KERNEL_VERSION_NOT_PINNED`，不静默换内核。
+>
+> 桌面“内核升级”入口实现“创建验证克隆 → 人工探针对照 → 明确确认 → 原环境迁移”。克隆保持 seed 画像
+> 不变，复制加密站点状态、使用独立目录和 local-only 同步；未确认、关系不匹配、环境忙碌或目标未安装均拒绝。
+> 备份导入保留原固定版本，旧备份按导入时默认版本固定，并清除原设备的灰度关系。准备和提交均写审计。
+>
+> 两个真实 Release 已完成验收：`156.0.8078.73`（`2f9a1109`）与 `156.0.8078.91`
+> （`e7e3e86b`），不是同一二进制修改版本号。`.91` 在 16GB、`-j4` 下构建 2 小时 32 分成功，
+> 9 个补丁均干净应用。两版分别通过 16 项矩阵中的 15 项、0 失败、1 项代理出口跳过及 20 次重启零漂移；
+> 新增本地网络探针覆盖首请求高熵头最小化、协商后 UA-CH、请求 UA/语言、WebRTC、主世界与两类 Worker。
+> 基线：`experiments/probes/results/t36-baseline-156.0.8078.73.json`；候选：
+> `experiments/probes/results/t36-candidate-156.0.8078.91.json`。
+>
+> `pnpm probe:compare` 对检查状态与详情逐字段比较，结果为 16 项不变、0 项差异；临时端口和 Referer
+> 在采集时不计入画像，其他差异不会自动豁免。对照报告：
+> `experiments/probes/results/t36-comparison-156.0.8078.73-to-156.0.8078.91.json`。
+> 两个 352 文件签名包使用同一测试公钥；真实安装后的“旧版原环境 → 新版验证克隆 → 明确确认 →
+> 原目录新版重启”三阶段画像一致，日志：`experiments/probes/results/t36-real-upgrade-smoke.log`。
+> 在线更新服务仍不在本卡范围内。
+
+## T37 — RPA 硬超时与取消语义（2026-11-04）
+
+> 所有节点执行统一经过硬取消收口：总 deadline 会限制 navigate 和元素等待的节点超时；取消或总超时时关闭
+> 当前 RPA 页面，迫使挂起的 CDP 调用失败，并等待原调用实际落定后才释放环境互斥锁，避免后台节点继续修改
+> 页面或写入截图。总超时仍记录为 `failed`，手动取消记录为 `cancelled`；后续节点不执行，下一工作流可在同
+> 环境创建新页面继续运行。同步抛错也会清理 abort listener。
+>
+> RPA 单元测试 24 项通过；`rpa-cancellation-smoke.test.ts` 使用本地挂起 HTTP 导航和真实开发版 Chromium，
+> 已分别验证总超时、手动取消、页面关闭、无后续截图产物和环境锁释放。其他 CDP 节点共用同一收口路径，
+> 本卡不把挂起 navigate 的实测扩大描述为所有 CDP 调用均已逐项实测。后续再做录制回放和定时调度。
+
+## T38 — RPA 单标签页录制与回放（2026-11-04）
+
+> 新增主进程录制器及 `rpa:startRecording / stopRecording` 白名单契约。桌面可选择运行中环境和起始 URL，
+> 在真实 Chromium 标签页操作后生成可编辑工作流。记录主框架导航、可信点击和普通输入 change；选择器优先
+> 唯一 ID、`data-testid` / `data-test` / `name` / `aria-label`，回退到带 `nth-of-type` 的 DOM 路径。
+> 初始化脚本可释放，停止后不会在新文档继续累积监听器；单次最多 500 个操作，文本最多 10000 字符。
+>
+> 密码及 `current-password` / `new-password` 字段只统计数量，不读取或发送密码值；普通文本属于工作流内容，
+> 保存前仍需用户审阅。录制期间同环境 RPA 独立失败，不影响其他批量项；RPA 运行中也禁止开始录制。
+>
+> 真实 Chromium 已验证“导航 → 输入 Ada → 输入密码 → 点击 → 生成图”，密码哨兵未出现在录制结果或持久化
+> 工作流中，随后立即回放得到相同页面结果。Electron UI 已验证开始/停止后生成一个可编辑导航节点。
+> RPA 单元测试 27 项通过。当前边界是单标签页、导航/点击/文本输入；不宣称支持多标签页、下拉框、
+> contenteditable、文件上传、自动提取或 script/http 节点录制。定时调度留到下一卡。
+
+## T39 — RPA 持久化定时调度（2026-11-04）
+
+> SQLite migration 9/10 新增每工作流一份定时配置及加密输入。支持 1..10080 分钟固定间隔、环境多选、
+> 启停和下次/上次错误展示；输入 JSON 使用独立 `rpa-schedule-input` 信封加密，列表 IPC 不回传参数值。
+> 到期任务逐环境串行执行，空闲环境自动启动，结束后只关闭本次自动启动的环境；用户预先打开的环境保持运行。
+>
+> 应用重启后的过期任务只补跑一次，从当前时间计算下一周期，不追赶停机期间的历史次数。失败写入 `lastError`
+> 且不会阻断后续周期；配置在执行期间被修改或停用时不会被旧快照覆盖。退出先停止调度并等待当前调度收口，
+> 再关闭浏览器和数据库。定时器只在桌面进程存活时有效，不是系统级唤醒或云端调度服务。
+>
+> 单元测试覆盖到期、环境去重、停机补跑、失败恢复、停用和加密输入；IPC 测试覆盖持久化与删除级联。
+> Electron UI 已实测启用/停用；真实 Chromium 已分别验证“空闲环境自动启动→成功提取→自动关闭”和
+> “预启动环境成功执行→保持运行”。当前为固定间隔，不包含 cron、时区日历或并发调度策略。
+
+## 后续 P1/P2
+
+- Windows DPAPI、Linux Secret Service 本地 KEK，及对应真实系统测试（当前仅 macOS Keychain 完整落地）。
+- 团队 RBAC、环境共享、加密云同步与审计协作；在单机核心链路稳定后推进。
+- 平台策略包版本化和更多站点；T36 的内核升级证据已补齐，下一步可扩到更多站点运营场景。
+- 在线内核更新、catalog CI 自动 PR、夜间 runner 属于发布/运维链路，按当前“开发优先”决定继续后置；
+  本卡未修改 CI，也不把本地脚本描述成已启用的自动化服务。

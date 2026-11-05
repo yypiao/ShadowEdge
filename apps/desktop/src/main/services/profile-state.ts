@@ -3,12 +3,46 @@ import type { BrowserStorageState } from '@shadowedge/core';
 import { ShadowEdgeError } from '@shadowedge/core';
 import type { BrowserKernel } from '@shadowedge/kernel';
 
+const MAX_OPFS_FILES = 2000;
+const MAX_OPFS_TOTAL_BYTES = 128 * 1024 * 1024;
+const MAX_OPFS_ENTRIES = 4000;
+
 export async function captureStorageState(context: BrowserContext): Promise<BrowserStorageState> {
-  return context.storageState({ indexedDB: true });
+  const state = await context.storageState({ indexedDB: true, opfs: true });
+  if (!withinOpfsBudget(state)) {
+    throw new ShadowEdgeError(
+      'E_STORAGE_STATE_FAILED',
+      `OPFS 超过安全上限（${MAX_OPFS_FILES} 个文件 / ${MAX_OPFS_TOTAL_BYTES / 1024 / 1024}MB）`,
+    );
+  }
+  return state;
+}
+
+/** 限制必须跨 origin 汇总，否则拆到多个站点即可绕过备份内存与磁盘预算。 */
+export function withinOpfsBudget(state: Pick<BrowserStorageState, 'origins'>): boolean {
+  let entries = 0;
+  let files = 0;
+  let totalBytes = 0;
+  for (const origin of state.origins) {
+    entries += origin.opfs?.length ?? 0;
+    if (entries > MAX_OPFS_ENTRIES) return false;
+    for (const entry of origin.opfs ?? []) {
+      if (entry.type !== 'file') continue;
+      files += 1;
+      totalBytes += Buffer.from(entry.base64, 'base64').length;
+      if (files > MAX_OPFS_FILES || totalBytes > MAX_OPFS_TOTAL_BYTES) return false;
+    }
+  }
+  return true;
 }
 
 export function countIndexedDatabases(state: BrowserStorageState): number {
   return state.origins.reduce((count, origin) => count + (origin.indexedDB?.length ?? 0), 0);
+}
+
+export function countOpfsFiles(state: BrowserStorageState): number {
+  return state.origins.reduce((count, origin) => count +
+    (origin.opfs?.filter((entry) => entry.type === 'file').length ?? 0), 0);
 }
 
 /** 有遗留目录时优先恢复崩溃前较新的 Chromium 状态，不能用旧快照覆盖它。 */

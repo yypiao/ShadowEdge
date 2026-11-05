@@ -1,0 +1,212 @@
+{
+  "format": "shadowedge-probe-report",
+  "version": 1,
+  "startedAt": "2026-11-04T10:00:28.857Z",
+  "finishedAt": "2026-11-04T10:00:52.887Z",
+  "config": {
+    "executablePath": "/Volumes/ChromiumBuild/chromium/src/out/ShadowEdge/Chromium.app/Contents/MacOS/Chromium",
+    "restarts": 20,
+    "isolation": true,
+    "headless": false
+  },
+  "summary": {
+    "ok": true,
+    "total": 13,
+    "passed": 12,
+    "failed": 0,
+    "skipped": 1,
+    "passRate": 100
+  },
+  "checks": [
+    {
+      "id": "main-image",
+      "category": "fingerprint",
+      "passed": true,
+      "details": {
+        "expected": {
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "platform": "MacIntel",
+          "languages": [
+            "zh-CN",
+            "zh"
+          ],
+          "hardwareConcurrency": 12,
+          "deviceMemory": 4
+        },
+        "actual": {
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "platform": "MacIntel",
+          "languages": [
+            "zh-CN",
+            "zh"
+          ],
+          "hardwareConcurrency": 12,
+          "deviceMemory": 4
+        }
+      }
+    },
+    {
+      "id": "navigator.webdriver",
+      "category": "automation",
+      "passed": true,
+      "details": false
+    },
+    {
+      "id": "worker-image",
+      "category": "worker",
+      "passed": true,
+      "details": {
+        "expected": {
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "platform": "MacIntel",
+          "languages": [
+            "zh-CN",
+            "zh"
+          ],
+          "hardwareConcurrency": 12,
+          "deviceMemory": 4
+        },
+        "actual": {
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "platform": "MacIntel",
+          "languages": [
+            "zh-CN",
+            "zh"
+          ],
+          "hardwareConcurrency": 12,
+          "deviceMemory": 4
+        }
+      }
+    },
+    {
+      "id": "service-worker-image",
+      "category": "worker",
+      "passed": true,
+      "details": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "platform": "MacIntel",
+        "languages": [
+          "zh-CN",
+          "zh"
+        ],
+        "hardwareConcurrency": 12,
+        "deviceMemory": 4
+      }
+    },
+    {
+      "id": "worker-automation",
+      "category": "automation",
+      "passed": true,
+      "details": {
+        "worker": null,
+        "serviceWorker": null
+      }
+    },
+    {
+      "id": "webrtc-private-ip",
+      "category": "network",
+      "passed": true,
+      "details": []
+    },
+    {
+      "id": "proxy-exit-ip",
+      "category": "network",
+      "skipped": true,
+      "reason": "未提供 --expected-exit-ip；本地探针不伪造代理出口结论"
+    },
+    {
+      "id": "cookie-isolation",
+      "category": "isolation",
+      "passed": true,
+      "details": {
+        "a": [
+          {
+            "name": "probe-isolation",
+            "value": "profile-a-token",
+            "domain": "127.0.0.1",
+            "path": "/",
+            "expires": -1,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "Lax"
+          }
+        ],
+        "b": [
+          {
+            "name": "probe-isolation",
+            "value": "profile-b-token",
+            "domain": "127.0.0.1",
+            "path": "/",
+            "expires": -1,
+            "httpOnly": false,
+            "secure": false,
+            "sameSite": "Lax"
+          }
+        ]
+      }
+    },
+    {
+      "id": "local-storage-isolation",
+      "category": "isolation",
+      "passed": true,
+      "details": {
+        "localStorage": "profile-b-token",
+        "indexedDB": "profile-b-token"
+      }
+    },
+    {
+      "id": "indexed-db-isolation",
+      "category": "isolation",
+      "passed": true,
+      "details": {
+        "localStorage": "profile-b-token",
+        "indexedDB": "profile-b-token"
+      }
+    },
+    {
+      "id": "fingerprint-isolation",
+      "category": "isolation",
+      "passed": true,
+      "details": {
+        "a": "d570376a045a213b09b95e542e34227e5b85a0e163959bcc22764d91dfe20f4f",
+        "b": "bb612af5a8d7ea5f41595222033ca230a688a2f5a91f5ee5ec3d535ba3ef193b"
+      }
+    },
+    {
+      "id": "worker-fingerprint-isolation",
+      "category": "isolation",
+      "passed": true,
+      "details": {
+        "a": {
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+          "platform": "MacIntel",
+          "languages": [
+            "zh-CN",
+            "zh"
+          ],
+          "hardwareConcurrency": 12,
+          "deviceMemory": 4
+        },
+        "b": {
+          "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "platform": "MacIntel",
+          "languages": [
+            "ko-KR",
+            "ko"
+          ],
+          "hardwareConcurrency": 8,
+          "deviceMemory": 16
+        }
+      }
+    },
+    {
+      "id": "20-restart-zero-drift",
+      "category": "stability",
+      "passed": true,
+      "details": {
+        "requestedRestarts": 20,
+        "failures": []
+      }
+    }
+  ]
+}

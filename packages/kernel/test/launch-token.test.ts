@@ -24,7 +24,7 @@ describe('内核一次性启动令牌', () => {
       v: 1,
       profileId: 'profile-secret',
       iat: 1_800_000_000,
-      exp: 1_800_000_030,
+      exp: 1_800_000_060,
     });
     expect(payload.nonce).toMatch(/^[0-9a-f-]{36}$/);
   });

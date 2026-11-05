@@ -165,8 +165,14 @@ export interface BrowserProfile {
   name: string;
   /** 业务平台标识，如 amazon / shopee / tiktok，用于加载平台专用策略。 */
   platformTag?: string;
+  /** 已选择的内置站点；独立持久化，不能靠可能被编辑的启动 URL 猜测。 */
+  platformSiteId?: string;
   groupId?: Uuid;
   kernel: KernelType;
+  /** 签名分发内核的固定版本；不随全局激活版本自动漂移。开发路径模式可为空。 */
+  kernelVersion?: string;
+  /** 内核灰度克隆来源；只有该克隆通过探针并人工确认后才能升级原环境。 */
+  kernelUpgradeSourceId?: Uuid;
   fingerprint: FingerprintProfile;
   proxyId?: Uuid;
   /** 环境归属人；转让需走审计流程。 */
@@ -212,6 +218,10 @@ export interface IndexedDbDatabaseSnapshot {
   }>;
 }
 
+export type BrowserOpfsEntrySnapshot =
+  | { path: string; type: 'directory' }
+  | { path: string; type: 'file'; base64: string };
+
 export interface BrowserStorageState {
   cookies: Array<{
     name: string;
@@ -227,6 +237,7 @@ export interface BrowserStorageState {
     origin: string;
     localStorage: Array<{ name: string; value: string }>;
     indexedDB?: IndexedDbDatabaseSnapshot[];
+    opfs?: BrowserOpfsEntrySnapshot[];
   }>;
 }
 
@@ -243,6 +254,7 @@ export interface ProfileBackupExportResult {
   cookieCount: number;
   originCount: number;
   indexedDbCount: number;
+  opfsFileCount: number;
 }
 
 export interface ProfileBackupImportResult {
@@ -251,11 +263,13 @@ export interface ProfileBackupImportResult {
   cookieCount: number;
   originCount: number;
   indexedDbCount: number;
+  opfsFileCount: number;
 }
 
 export interface ProfileCreateInput {
   name: string;
   platformTag?: string;
+  platformSiteId?: string;
   groupId?: Uuid;
   proxyId?: Uuid;
   startupUrls?: string[];
@@ -291,6 +305,28 @@ export interface ProfileUpdateInput {
   notes?: string;
 }
 
+export interface PlatformSitePolicy {
+  id: string;
+  platformTag: string;
+  label: string;
+  url: string;
+  countryCodes: string[];
+  languages: string[];
+  timezone: string;
+}
+
+export interface PlatformPolicy {
+  tag: string;
+  label: string;
+  sites: PlatformSitePolicy[];
+}
+
+export interface ProfileSiteSwitchResult {
+  profile: BrowserProfile;
+  opened: boolean;
+  failures: Array<{ url: string; error: string }>;
+}
+
 export interface LaunchOptions {
   profileId: Uuid;
   headless?: boolean;
@@ -307,6 +343,47 @@ export interface KernelRuntimeConfig {
   /** 用户显式配置的自研内核可执行文件；缺省时使用环境变量或标准安装目录。 */
   executablePath?: string;
   fallbackPolicy: KernelFallbackPolicy;
+}
+
+export type KernelPackageFileType = 'file' | 'symlink';
+
+export interface KernelPackageFile {
+  path: string;
+  type: KernelPackageFileType;
+  sha256: string;
+  size: number;
+}
+
+export interface KernelPackageManifest {
+  format: 'shadowedge-kernel-package';
+  version: 1;
+  kernelVersion: string;
+  platform: Platform;
+  arch: string;
+  executable: string;
+  createdAt: IsoDateTime;
+  files: KernelPackageFile[];
+}
+
+export interface KernelInstallation {
+  version: string;
+  platform: Platform;
+  arch: string;
+  installedAt: IsoDateTime;
+  active: boolean;
+}
+
+export interface KernelDistributionStatus {
+  available: boolean;
+  trustedKeyConfigured: boolean;
+  activeVersion?: string;
+  executablePath?: string;
+  installations: KernelInstallation[];
+}
+
+export interface KernelPackageInstallResult {
+  installed: boolean;
+  status: KernelDistributionStatus;
 }
 
 export interface KernelRuntimeStatus extends KernelRuntimeConfig {
@@ -351,6 +428,8 @@ export interface RpaNode {
   kind: RpaNodeKind;
   params: Record<string, unknown>;
   next?: string;
+  /** condition 的假分支；真分支沿用 next。 */
+  elseNext?: string;
   onError?: 'stop' | 'continue' | 'retry';
   retries?: number;
 }
@@ -358,6 +437,10 @@ export interface RpaNode {
 export interface RpaGraph {
   entry: string;
   nodes: Record<string, RpaNode>;
+  /** 默认 10000，防止错误回边耗尽资源。 */
+  maxSteps?: number;
+  /** 整个环境本次运行的总超时，默认 300000ms。 */
+  timeoutMs?: number;
 }
 
 export interface RpaWorkflow {
@@ -376,6 +459,45 @@ export interface RpaWorkflowInput {
   name: string;
   graph: RpaGraph;
   inputsSchema?: unknown;
+}
+
+export interface RpaRecordingState {
+  profileId: Uuid;
+  startUrl: string;
+  startedAt: IsoDateTime;
+}
+
+export type RpaRecordedAction =
+  | { kind: 'navigate'; url: string }
+  | { kind: 'click'; selector: string }
+  | { kind: 'type'; selector: string; text: string };
+
+export interface RpaRecordingResult {
+  graph: RpaGraph;
+  /** 只报告数量，密码值不会离开页面脚本。 */
+  ignoredPasswordFields: number;
+  droppedActions: number;
+}
+
+export interface RpaSchedule {
+  workflowId: Uuid;
+  profileIds: Uuid[];
+  /** 1..10080 分钟；到期串行执行，关机期间不追赶历史次数。 */
+  intervalMinutes: number;
+  enabled: boolean;
+  nextRunAt: IsoDateTime;
+  lastRunAt?: IsoDateTime;
+  lastError?: string;
+  updatedAt: IsoDateTime;
+}
+
+export interface RpaScheduleInput {
+  workflowId: Uuid;
+  profileIds: Uuid[];
+  intervalMinutes: number;
+  enabled: boolean;
+  /** 仅在主进程解密使用；SQLite 中通过信封加密保存，列表接口不回传。 */
+  inputs?: Record<string, unknown>;
 }
 
 export type RpaRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { BrowserProfile } from '@shadowedge/core';
+import type { BrowserProfile, PlatformPolicy } from '@shadowedge/core';
 import { CreateProfileDialog } from '../components/CreateProfileDialog.js';
+import { KernelUpgradeDialog } from '../components/KernelUpgradeDialog.js';
 import { EditProfileDialog } from '../components/EditProfileDialog.js';
 import { ProfileBackupDialog } from '../components/ProfileBackupDialog.js';
 import { toastError, useStore } from '../store.js';
@@ -19,9 +20,11 @@ export function ProfilesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState<'launch' | 'close' | null>(null);
   const [editing, setEditing] = useState<BrowserProfile | null>(null);
+  const [upgrading, setUpgrading] = useState<BrowserProfile | null>(null);
   const [keyword, setKeyword] = useState('');
   const [groupFilter, setGroupFilter] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
+  const [policies, setPolicies] = useState<PlatformPolicy[]>([]);
   const [backup, setBackup] = useState<{ mode: 'export' | 'import'; profileId?: string } | null>(null);
 
   useEffect(() => {
@@ -32,6 +35,10 @@ export function ProfilesPage() {
       return next.size === current.size ? current : next;
     });
   }, [profiles]);
+
+  useEffect(() => {
+    window.shadowedge.api['platformPolicy:list'](undefined).then(setPolicies).catch(toastError);
+  }, []);
 
   const refresh = async () => {
     setProfiles(await window.shadowedge.api['profile:list'](undefined));
@@ -95,6 +102,18 @@ export function ProfilesPage() {
     } catch (error) {
       toastError(error);
     }
+  };
+
+  const switchSite = async (profileId: string, siteId: string) => {
+    if (!siteId) return;
+    try {
+      const result = await window.shadowedge.api['profile:switchSite']({ profileId, siteId });
+      setProfiles(profiles.map((profile) => profile.id === profileId ? result.profile : profile));
+      useStore.getState().toast(
+        result.failures.length > 0 ? 'warn' : 'info',
+        result.opened ? '站点配置已保存，并已在当前环境打开' : '站点配置已保存，下次启动生效',
+      );
+    } catch (error) { toastError(error); }
   };
 
   const visibleProfiles = profiles.filter((profile) =>
@@ -255,11 +274,27 @@ export function ProfilesPage() {
                   </div>
                   <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
                     {profile.platformTag ?? '通用'} · {groups.find((group) => group.id === profile.groupId)?.name ?? '未分组'} · {proxyLabel(profile.proxyId) ?? '直连'}
-                    {kernels[profile.id] && <span> · 内核：{kernels[profile.id]}</span>}
+                    <span> · 固定内核：{profile.kernelVersion ?? '开发路径'}</span>
+                    {profile.kernelUpgradeSourceId && <span> · 灰度克隆</span>}
+                    {kernels[profile.id] && <span> · 实际驱动：{kernels[profile.id]}</span>}
                   </div>
                   <div style={{ fontSize: 11, color: '#999', marginTop: 6, wordBreak: 'break-all' }}>
                     {profile.fingerprint.userAgent}
                   </div>
+                  {profile.platformTag && policies.some((policy) => policy.tag === profile.platformTag) && (
+                    <select
+                      aria-label={`切换站点 ${profile.name}`}
+                      value={profile.platformSiteId ?? policies.find((policy) => policy.tag === profile.platformTag)?.sites.find((item) => profile.startupUrls.includes(item.url))?.id ?? ''}
+                      disabled={batchBusy !== null || profile.status === 'launching'}
+                      onChange={(event) => void switchSite(profile.id, event.target.value)}
+                      style={{ width: '100%', marginTop: 10, padding: 6, border: '1px solid #d1d5db', borderRadius: 5, background: '#fff', fontSize: 12 }}
+                    >
+                      <option value="">一键切换站点…</option>
+                      {policies.find((policy) => policy.tag === profile.platformTag)?.sites.map((item) => (
+                        <option key={item.id} value={item.id}>{item.label}</option>
+                      ))}
+                    </select>
+                  )}
                   <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                     {profile.status === 'running' || profile.status === 'launching' ? (
                       <button
@@ -279,6 +314,9 @@ export function ProfilesPage() {
                       >
                         启动
                       </button>
+                    )}
+                    {!profile.kernelUpgradeSourceId && profile.status === 'idle' && (
+                      <button type="button" disabled={batchBusy !== null} onClick={() => setUpgrading(profile)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d1d5db', color: '#444', background: '#fff', cursor: 'pointer', fontSize: 12 }}>内核升级</button>
                     )}
                     <button type="button" disabled={batchBusy !== null} onClick={() => setEditing(profile)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #d1d5db', color: '#444', background: '#fff', cursor: 'pointer', fontSize: 12 }}>编辑</button>
                     {profile.status === 'running' && (
@@ -308,6 +346,10 @@ export function ProfilesPage() {
 
       {editing && (
         <EditProfileDialog profile={editing} onClose={() => setEditing(null)} onSaved={() => void refresh()} />
+      )}
+
+      {upgrading && (
+        <KernelUpgradeDialog source={upgrading} onClose={() => setUpgrading(null)} onChanged={() => void refresh()} />
       )}
 
       {backup && (

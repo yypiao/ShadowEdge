@@ -1,6 +1,7 @@
 import type { BrowserProfile, ProxyHealth } from '@shadowedge/core';
 import { ShadowEdgeError } from '@shadowedge/core';
 import { auditFingerprint } from '@shadowedge/fingerprint';
+import { checkPlatformRegion } from './platform-policies.js';
 
 /**
  * 启动前闸门（T4）：指纹一致 → 代理可达 → 地理对齐，任一不过拒绝启动。
@@ -62,6 +63,7 @@ export async function runLaunchGate(ctx: GateContext, deps: GateDeps): Promise<v
     });
   }
 
-  // 第三检：地理对齐。
+  // 第三检：地理对齐，并校验平台站点要求的出口国家/地区。
   checkGeoAlignment(ctx.profile, health);
+  checkPlatformRegion(ctx.profile, health);
 }

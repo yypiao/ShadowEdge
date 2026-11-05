@@ -60,6 +60,7 @@ describe('环境备份加密与导入', () => {
               records: [{ key: 'current', value: { token: 'indexed-secret' } }], indexes: [],
             }],
           }],
+          opfs: [{ path: 'nested', type: 'directory' }, { path: 'nested/state.bin', type: 'file', base64: Buffer.from([0, 255, 1, 2]).toString('base64') }],
         }],
       },
     };
@@ -93,16 +94,39 @@ describe('环境备份加密与导入', () => {
     expect(contents).not.toContain('cookie-secret');
     expect(contents).not.toContain('local-secret');
     expect(contents).not.toContain('indexed-secret');
-    const result = importProfileBackup(deps(), { contents, passphrase: PASSPHRASE, name: 'imported' });
+    const result = importProfileBackup(
+      { ...deps(), defaultKernelVersion: '156.0.0.0' },
+      { contents, passphrase: PASSPHRASE, name: 'imported' },
+    );
 
     expect(result.indexedDbCount).toBe(1);
+    expect(result.opfsFileCount).toBe(1);
     expect(result.profile.id).not.toBe('source-profile');
     expect(result.profile.status).toBe('idle');
+    expect(result.profile.kernelVersion).toBe('156.0.0.0');
+    expect(result.profile.kernelUpgradeSourceId).toBeUndefined();
     expect(result.profile.storage.userDataDir).toBe(join(dir, 'profiles', result.profile.id));
     expect(result.profile.storage.remoteRevision).toBe(0);
     expect(result.profile.proxyId).not.toBe('source-proxy');
     expect(proxies.reveal(result.profile.proxyId!)).toBe('proxy-secret');
     expect(states.reveal(result.profile.id)?.origins[0]?.localStorage[0]?.value).toBe('local-secret');
+  });
+
+  it('拒绝路径穿越和非规范 base64 的 OPFS 载荷', () => {
+    const envelope = JSON.parse(contents) as ProfileBackupEnvelope;
+    const { kek } = deriveKek(PASSPHRASE, envelope.kdf.salt, envelope.kdf.iterations);
+    const crypto = new EnvelopeCrypto(kek);
+    const payload = JSON.parse(crypto.unseal(
+      envelope.payload.ciphertext, envelope.payload.wrappedKey, envelope.payload.iv, 'profile-backup',
+    )) as { storageState: { origins: Array<{ opfs?: unknown }> } };
+    payload.storageState.origins[0]!.opfs = [{ path: '../escape', type: 'file', base64: 'AA==' }];
+    const invalid = {
+      ...envelope,
+      payload: crypto.seal(JSON.stringify(payload), 'profile-backup'),
+    };
+    expect(() => importProfileBackup(deps(), { contents: JSON.stringify(invalid), passphrase: PASSPHRASE }))
+      .toThrowError(expect.objectContaining({ code: 'E_BACKUP_INVALID' }));
+    expect(profiles.list()).toEqual([]);
   });
 
   it('状态写入中途失败时环境、代理和快照全部回滚', () => {

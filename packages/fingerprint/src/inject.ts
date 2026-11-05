@@ -55,7 +55,8 @@ export function buildInjectionScript(fp: FingerprintProfile, opts: InjectionOpti
     'const _w = typeof window !== "undefined" ? window : self;',
     // 真浏览器的 navigator 属性都在 Navigator.prototype 上；挂到实例上会被
     // Pixelscan 的 Object.getOwnPropertyNames(navigator) 直接判定为伪造对象。
-    'const _navProto = (typeof Navigator !== "undefined" && Navigator.prototype) ||',
+    'const _navProto = (typeof navigator !== "undefined" && navigator && Object.getPrototypeOf(navigator)) ||',
+    '  (typeof Navigator !== "undefined" && Navigator.prototype) ||',
     '  (typeof WorkerNavigator !== "undefined" && WorkerNavigator.prototype) || navigator;',
   ];
 

@@ -1,7 +1,7 @@
 # ShadowEdge 内核锁定文件（T11）
 # 规则：不允许 main 漂移后直接出包；升级版本必须连同补丁目录一起评审。
-tag=156.0.8078.73
+tag=156.0.8078.91
 # commit 在首次 sync 完成后由 build-chromium.sh 校验并回填
-commit=2f9a11097447f226133bc1a31c787291a5eeab98
+commit=e7e3e86be6ccc48fe29e05cd5e682e41d41efc5a
 # depot_tools 太老会拉不动新 tag，构建脚本做下限检查
 depot_tools_min_date=2026-01-01

@@ -53,6 +53,10 @@ scripts/verify-kernel.sh --mode dev           # 冒烟
 | dev 增量编译（单补丁迭代） | 5–30 分钟 |
 | release 全量编译 | 8–15 小时（过夜） |
 
+本机实测补充：2026-11-04 在 16GB 内存、外置 APFS sparsebundle、`-j4` 下，release 全量构建
+实际用时 **3 小时 28 分**并成功。该数据证明当前机器可完成本次构建，不代表所有补丁版本或机器
+都具有相同峰值和耗时；后续仍应保留 swap 空间并串行执行重型测试。
+
 ## 6. 故障排查
 
 | 症状 | 处理 |
@@ -65,3 +69,58 @@ scripts/verify-kernel.sh --mode dev           # 冒烟
 | 链接阶段 OOM / 换页爆炸 | 降 `-j`；dev 模式确认 `is_component_build=true` 生效 |
 | sparsebundle 挂载失败 | 确认外置盘已挂载；`hdiutil attach` 报错时先 `hdiutil detach` 残留 |
 | 补丁 apply 失败 | 不允许强行打入；按 `patches/chromium/<ver>/README.md` 的 rebase 流程修 |
+
+# 离线签名内核包（T17B）
+
+发布机构妥善保管 Ed25519 私钥；私钥不得放入仓库或随安装包分发。开发机可这样生成测试密钥：
+
+```bash
+mkdir -p "$HOME/.shadowedge/release-keys"
+chmod 700 "$HOME/.shadowedge/release-keys"
+KEY_DIR="$HOME/.shadowedge/release-keys" node -e '
+  const fs = require("node:fs");
+  const { generateKeyPairSync } = require("node:crypto");
+  const pair = generateKeyPairSync("ed25519");
+  fs.writeFileSync(`${process.env.KEY_DIR}/kernel-private.pem`,
+    pair.privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+  fs.writeFileSync(`${process.env.KEY_DIR}/kernel-public.pem`,
+    pair.publicKey.export({ type: "spki", format: "pem" }), { mode: 0o600 });
+'
+```
+
+macOS 先用暂存脚本生成独立运行目录。分发只接受 `is_component_build=false` 的 release
+产物并复制自包含的 `Chromium.app`。dev component build 的数百个应用外 dylib 即使全部打包，
+实测内置盘冷加载仍需约 124 秒，会超过启动授权有效期，因此暂存脚本会在出包前明确拒绝：
+
+```bash
+scripts/build-chromium.sh --mode release --skip-fetch --jobs 4
+node scripts/stage-kernel.mjs \
+  --build-dir /Volumes/ChromiumBuild/chromium/src/out/ShadowEdge \
+  --output /path/to/package-root
+```
+
+再执行签名打包。打包器会用 `otool` 检查所有 Mach-O 的 `@rpath` 依赖，缺文件时拒绝出包：
+
+```bash
+node scripts/package-kernel.mjs \
+  --root /path/to/package-root \
+  --kernel-version 156.0.8078.73 \
+  --private-key "$HOME/.shadowedge/release-keys/kernel-private.pem" \
+  --output /path/to/shadowedge-kernel_156.0.8078.73_macos_arm64.zip
+```
+
+桌面的“设置 → 浏览器内核 → 离线签名内核包”负责选择 ZIP、安装和回滚。开发启动时必须配置
+受信公钥，否则安装和缓存启动会明确拒绝：
+
+```bash
+SHADOWEDGE_KERNEL_PUBLIC_KEY_PATH="$HOME/.shadowedge/release-keys/kernel-public.pem" \
+  pnpm dev:desktop
+```
+
+也可直接用 `SHADOWEDGE_KERNEL_PUBLIC_KEY` 传 PEM 内容。安装和每次激活/启动都会验签并逐文件
+计算 SHA-256；当前仅实现本地离线包，不包含在线更新服务。
+
+签名安装目录中的每个环境固定自己的 `kernelVersion`，直接加载 `versions/<version>/payload`，不经过
+全局 `current` 软链。全局激活只决定新建环境的默认版本；已有环境必须从环境卡片进入“内核升级”，
+先创建验证克隆并完成探针对照，再人工确认迁移。显式配置 `SHADOWEDGE_KERNEL_EXECUTABLE` 或开发
+可执行路径时继续使用开发模式，不自动固定安装版本。

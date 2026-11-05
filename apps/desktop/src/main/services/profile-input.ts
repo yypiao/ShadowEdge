@@ -39,12 +39,12 @@ export function normalizeCreateInput(input: ProfileCreateInput): ProfileCreateIn
 
 export function normalizeUpdateInput(patch: ProfileUpdateInput): ProfileUpdateInput {
   return {
-    name: patch.name === undefined ? undefined : normalizeProfileName(patch.name),
-    platformTag: patch.platformTag === undefined ? undefined : normalizePlatformTag(patch.platformTag),
-    groupId: patch.groupId,
-    proxyId: patch.proxyId,
-    startupUrls: patch.startupUrls === undefined ? undefined : normalizeStartupUrls(patch.startupUrls),
-    notes: patch.notes === undefined ? undefined : normalizeNotes(patch.notes),
+    ...(patch.name === undefined ? {} : { name: normalizeProfileName(patch.name) }),
+    ...(patch.platformTag === undefined ? {} : { platformTag: normalizePlatformTag(patch.platformTag) }),
+    ...(patch.groupId === undefined ? {} : { groupId: patch.groupId }),
+    ...(patch.proxyId === undefined ? {} : { proxyId: patch.proxyId }),
+    ...(patch.startupUrls === undefined ? {} : { startupUrls: normalizeStartupUrls(patch.startupUrls) }),
+    ...(patch.notes === undefined ? {} : { notes: normalizeNotes(patch.notes) }),
   };
 }
 

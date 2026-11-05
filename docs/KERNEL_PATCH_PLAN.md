@@ -31,7 +31,8 @@
 
 - `third_party/blink/renderer/core/workers/worker_navigator.cc`：UA、platform、语言、硬件。
 - `third_party/blink/renderer/core/workers/worker_global_scope.cc`：0003 + 0008 在 classic/module
-  Worker 自身代码前原生求值同一注入脚本，覆盖 Dedicated / Shared / Service / Nested Worker。
+  Worker 自身代码前原生求值同一注入脚本，覆盖 Dedicated / Shared / Service / Nested Worker；
+  使用 Blink `ClassicScript` 标准执行入口，避免直接 V8 `Script::Run()` 的 Release 卡死。
 - `third_party/blink/renderer/core/workers/worker_navigator_ua_data.cc`：Worker UA-CH。
 
 验收：classic/module Dedicated Worker、SharedWorker、ServiceWorker 与 Blob 嵌套 Worker
@@ -69,7 +70,7 @@ kernel 模式不再生成 JS Worker/Blob/URL 包装。
 ### P6 一次性启动令牌（0009）
 
 - 主进程在每次启动时生成随机 256 位 KEK、随机 DEK/IV 与 nonce，复用
-  `EnvelopeCrypto` 的 `auth-token` 用途生成 30 秒短期信封令牌。
+  `EnvelopeCrypto` 的 `auth-token` 用途生成 60 秒短期信封令牌（0009 协议上限）。
 - 密文令牌经 `--shadowedge-launch-token` 传入；KEK 只经本次子进程环境
   `SHADOWEDGE_LAUNCH_KEK` 传递，不写磁盘、不编入应用或内核。
 - 浏览器进程在 `BrowserMainLoop::Init()` 用 BoringSSL AES-256-GCM 解封并校验版本、
