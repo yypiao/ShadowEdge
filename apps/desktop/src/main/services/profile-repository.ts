@@ -7,6 +7,7 @@ interface ProfileRow {
   name: string;
   platform_tag: string | null;
   platform_site_id: string | null;
+  platform_policy_version: string | null;
   kernel_version: string | null;
   kernel_upgrade_source_id: string | null;
   group_id: string | null;
@@ -32,6 +33,7 @@ function rowToProfile(row: ProfileRow): BrowserProfile {
     name: row.name,
     platformTag: row.platform_tag ?? undefined,
     platformSiteId: row.platform_site_id ?? undefined,
+    platformPolicyVersion: row.platform_policy_version ?? undefined,
     kernelVersion: row.kernel_version ?? undefined,
     kernelUpgradeSourceId: row.kernel_upgrade_source_id ?? undefined,
     groupId: row.group_id ?? undefined,
@@ -84,12 +86,13 @@ export class ProfileRepository {
   save(profile: BrowserProfile): void {
     this.handle.db
       .prepare(
-        `INSERT INTO profiles (id, org_id, name, platform_tag, platform_site_id, kernel_version, kernel_upgrade_source_id, group_id, kernel, fingerprint, catalog_version, proxy_id,
+        `INSERT INTO profiles (id, org_id, name, platform_tag, platform_site_id, platform_policy_version, kernel_version, kernel_upgrade_source_id, group_id, kernel, fingerprint, catalog_version, proxy_id,
            owner_id, shared_with, storage, startup_urls, notes, status, last_used_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            org_id=excluded.org_id, name=excluded.name, platform_tag=excluded.platform_tag,
-           platform_site_id=excluded.platform_site_id, kernel_version=excluded.kernel_version,
+           platform_site_id=excluded.platform_site_id, platform_policy_version=excluded.platform_policy_version,
+           kernel_version=excluded.kernel_version,
            kernel_upgrade_source_id=excluded.kernel_upgrade_source_id,
            group_id=excluded.group_id, kernel=excluded.kernel, fingerprint=excluded.fingerprint,
            catalog_version=excluded.catalog_version, proxy_id=excluded.proxy_id, owner_id=excluded.owner_id, shared_with=excluded.shared_with,
@@ -102,6 +105,7 @@ export class ProfileRepository {
         profile.name,
         profile.platformTag ?? null,
         profile.platformSiteId ?? null,
+        profile.platformPolicyVersion ?? null,
         profile.kernelVersion ?? null,
         profile.kernelUpgradeSourceId ?? null,
         profile.groupId ?? null,

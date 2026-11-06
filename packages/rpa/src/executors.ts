@@ -83,8 +83,31 @@ function nodeTimeout(execution: RpaNodeExecution, requested: number): number {
   return Math.max(1, Math.min(requested, remaining));
 }
 
-const navigate: RpaNodeExecutor = async (execution) => {
-  const url = requiredString(execution, 'url');
+function targetLocator(execution: RpaNodeExecution) {
+  const selector = requiredString(execution, 'selector');
+  const frameSelector = execution.node.params.frameSelector;
+  const frameSelectors = execution.node.params.frameSelectors;
+  if (frameSelector !== undefined && frameSelectors !== undefined) {
+    throw nodeError(execution.node, 'frameSelector 与 frameSelectors 不能同时配置');
+  }
+  if (frameSelectors !== undefined) {
+    if (!Array.isArray(frameSelectors) || frameSelectors.length < 1 || frameSelectors.length > 8 ||
+      !frameSelectors.every((value) => typeof value === 'string' && value.length > 0)) {
+      throw nodeError(execution.node, 'frameSelectors 必须是 1..8 个非空字符串');
+    }
+    let frame = execution.page.frameLocator(frameSelectors[0]!);
+    for (const nested of frameSelectors.slice(1)) frame = frame.frameLocator(nested);
+    return frame.locator(selector);
+  }
+  if (frameSelector === undefined) return execution.page.locator(selector);
+  if (typeof frameSelector !== 'string' || frameSelector.length === 0) {
+    throw nodeError(execution.node, 'frameSelector 必须是非空字符串');
+  }
+  // Patchright CSS locator 默认穿透开放 Shadow DOM；Iframe 则必须显式限定 frame。
+  return execution.page.frameLocator(frameSelector).locator(selector);
+}
+
+async function navigateCurrentPage(execution: RpaNodeExecution, url: string): Promise<void> {
   const parsed = new URL(url);
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw nodeError(execution.node, 'url 仅允许 http/https');
@@ -97,10 +120,13 @@ const navigate: RpaNodeExecutor = async (execution) => {
     waitUntil,
     timeout: nodeTimeout(execution, optionalNumber(execution, 'timeout', 15000)),
   });
+}
+
+const navigate: RpaNodeExecutor = async (execution) => {
+  await navigateCurrentPage(execution, requiredString(execution, 'url'));
 };
 
-const click: RpaNodeExecutor = async (execution) => {
-  const locator = execution.page.locator(requiredString(execution, 'selector'));
+async function clickTarget(execution: RpaNodeExecution, locator: ReturnType<typeof targetLocator>): Promise<void> {
   await locator.waitFor({
     state: 'visible',
     timeout: nodeTimeout(execution, optionalNumber(execution, 'timeout', 10000)),
@@ -125,10 +151,14 @@ const click: RpaNodeExecutor = async (execution) => {
   }
   await execution.page.mouse.click(target.x, target.y);
   mousePositions.set(execution.page, target);
+}
+
+const click: RpaNodeExecutor = async (execution) => {
+  await clickTarget(execution, targetLocator(execution));
 };
 
 const type: RpaNodeExecutor = async (execution) => {
-  const locator = execution.page.locator(requiredString(execution, 'selector'));
+  const locator = targetLocator(execution);
   const text = requiredString(execution, 'text');
   if (optionalBoolean(execution, 'clear', true)) await locator.fill('');
   for (const character of text) {
@@ -145,7 +175,7 @@ const wait: RpaNodeExecutor = async (execution) => {
 };
 
 const extract: RpaNodeExecutor = async (execution) => {
-  const locator = execution.page.locator(requiredString(execution, 'selector'));
+  const locator = targetLocator(execution);
   const attribute = execution.node.params.attribute;
   if (attribute !== undefined && typeof attribute !== 'string') {
     throw nodeError(execution.node, 'attribute 必须是字符串');
@@ -155,9 +185,7 @@ const extract: RpaNodeExecutor = async (execution) => {
 };
 
 const screenshot: RpaNodeExecutor = async (execution) => {
-  const key = requiredString(execution, 'key');
-  if (!/^[\w-]+$/.test(key))
-    throw nodeError(execution.node, 'key 只能包含字母、数字、下划线和连字符');
+  const key = artifactKey(execution);
   const path = execution.artifactPath(`${key}.png`);
   await execution.page.screenshot({
     path,
@@ -168,6 +196,110 @@ const screenshot: RpaNodeExecutor = async (execution) => {
   execution.run.artifacts.push({ kind: 'screenshot', uri: path });
 };
 
+const select: RpaNodeExecutor = async (execution) => {
+  const locator = targetLocator(execution);
+  const timeout = nodeTimeout(execution, optionalNumber(execution, 'timeout', 10000));
+  await locator.waitFor({ state: 'visible', timeout });
+  const values = execution.node.params.values;
+  if (values !== undefined) {
+    if (execution.node.params.value !== undefined || !Array.isArray(values) || values.length > 100 ||
+      !values.every((value) => typeof value === 'string' && value.length <= 10000)) {
+      throw nodeError(execution.node, 'values 必须是最多 100 个字符串，且不能与 value 同时配置');
+    }
+    await locator.selectOption(values, { timeout });
+    return;
+  }
+  await locator.selectOption(requiredString(execution, 'value'), { timeout });
+};
+
+const check: RpaNodeExecutor = async (execution) => {
+  const locator = targetLocator(execution);
+  const timeout = nodeTimeout(execution, optionalNumber(execution, 'timeout', 10000));
+  await locator.waitFor({ state: 'visible', timeout });
+  await locator.setChecked(optionalBoolean(execution, 'checked', true), { timeout });
+};
+
+const upload: RpaNodeExecutor = async (execution) => {
+  await targetLocator(execution).setInputFiles(requiredString(execution, 'path'), {
+    timeout: nodeTimeout(execution, optionalNumber(execution, 'timeout', 10000)),
+  });
+};
+
+function artifactKey(execution: RpaNodeExecution): string {
+  const key = requiredString(execution, 'key');
+  if (!/^[\w-]+$/.test(key)) throw nodeError(execution.node, 'key 只能包含字母、数字、下划线和连字符');
+  return key;
+}
+
+const download: RpaNodeExecutor = async (execution) => {
+  const timeout = nodeTimeout(execution, optionalNumber(execution, 'timeout', 30000));
+  const [file] = await Promise.all([
+    execution.page.waitForEvent('download', { timeout }),
+    clickTarget(execution, targetLocator(execution)),
+  ]);
+  const key = artifactKey(execution);
+  const suggested = file.suggestedFilename();
+  const safeName = suggested.replace(/[^\w.-]/g, '_').replace(/^\.+/, '').slice(-120) || 'download.bin';
+  const path = execution.artifactPath(`${key}-${safeName}`);
+  await file.saveAs(path);
+  chmodSync(path, 0o600);
+  execution.outputs[key] = suggested;
+  execution.run.artifacts.push({ kind: 'download', uri: path });
+};
+
+const newTab: RpaNodeExecutor = async (execution) => {
+  execution.page = await execution.createPage();
+  const rawUrl = execution.node.params.url;
+  if (rawUrl === undefined) return;
+  if (typeof rawUrl !== 'string' || rawUrl.length === 0) throw nodeError(execution.node, 'url 必须是非空字符串');
+  await navigateCurrentPage(execution, interpolate(rawUrl, execution));
+};
+
+const switchTab: RpaNodeExecutor = async (execution) => {
+  const index = execution.node.params.index;
+  if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) {
+    throw nodeError(execution.node, 'index 必须是非负整数');
+  }
+  const timeout = optionalNumber(execution, 'timeout', 0);
+  if (timeout > 30000) throw nodeError(execution.node, 'timeout 不能超过 30000');
+  const waitMs = nodeTimeout(execution, timeout);
+  const deadline = Date.now() + waitMs;
+  while (true) {
+    throwIfCancelled(execution.signal);
+    const pages = execution.listPages();
+    const selected = pages[index];
+    if (selected) {
+      await selected.bringToFront();
+      execution.page = selected;
+      return;
+    }
+    if (Date.now() >= deadline || timeout === 0) {
+      throw nodeError(execution.node, `标签页索引 ${index} 不存在，当前共 ${pages.length} 页`);
+    }
+    await abortableDelay(Math.min(50, deadline - Date.now()), execution.signal);
+  }
+};
+
+const closeTab: RpaNodeExecutor = async (execution) => {
+  const index = execution.node.params.index;
+  if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) {
+    throw nodeError(execution.node, 'index 必须是非负整数');
+  }
+  const pages = execution.listPages();
+  const selected = pages[index];
+  if (!selected) throw nodeError(execution.node, `标签页索引 ${index} 不存在，当前共 ${pages.length} 页`);
+  const closingCurrent = selected === execution.page;
+  await selected.close();
+  if (closingCurrent) {
+    const remaining = execution.listPages();
+    const fallback = remaining[Math.min(index, remaining.length - 1)];
+    if (fallback) {
+      await fallback.bringToFront();
+      execution.page = fallback;
+    }
+  }
+};
+
 export const nodeExecutors: ReadonlyMap<RpaNodeKind, RpaNodeExecutor> = new Map([
   ['navigate', navigate],
   ['click', click],
@@ -175,4 +307,11 @@ export const nodeExecutors: ReadonlyMap<RpaNodeKind, RpaNodeExecutor> = new Map(
   ['wait', wait],
   ['extract', extract],
   ['screenshot', screenshot],
+  ['select', select],
+  ['check', check],
+  ['upload', upload],
+  ['download', download],
+  ['newTab', newTab],
+  ['switchTab', switchTab],
+  ['closeTab', closeTab],
 ]);

@@ -2,34 +2,51 @@ import { randomUUID } from 'node:crypto';
 import type {
   BrowserProfile,
   BrowserStorageState,
+  AccountCredential,
   ProfileBackupEnvelope,
   ProxyCredential,
+  RpaSchedule,
+  RpaWorkflow,
   Uuid,
 } from '@shadowedge/core';
-import { ShadowEdgeError } from '@shadowedge/core';
+import { CURRENT_PLATFORM_POLICY_CATALOG_VERSION, ShadowEdgeError } from '@shadowedge/core';
 import { deriveKek, EnvelopeCrypto } from '@shadowedge/crypto';
 import { auditFingerprint } from '@shadowedge/fingerprint';
 import type { BrowserKernel } from '@shadowedge/kernel';
+import { validateGraph } from '@shadowedge/rpa';
+import type { AccountRepository } from './account-repository.js';
+import type { RpaRepository } from './rpa-repository.js';
 import type { ProfileRepository } from './profile-repository.js';
 import type { ProxyRepository } from './proxy-repository.js';
 import type { StorageStateRepository } from './storage-state-repository.js';
 import { managedProfilePath } from './profile-directory.js';
 import { captureStorageState, countIndexedDatabases, countOpfsFiles, withinOpfsBudget } from './profile-state.js';
 import { normalizeProfileName } from './profile-input.js';
+import { getPlatformPolicyCatalog, siteForProfile } from './platform-policies.js';
 
 const KDF_ITERATIONS = 210000;
 
 type BackupProxy = ProxyCredential & { password?: string };
+type BackupAccount = AccountCredential & { password: string };
+interface BackupSchedule {
+  schedule: RpaSchedule;
+  inputs?: Record<string, unknown>;
+}
 interface BackupPayload {
   profile: BrowserProfile;
   proxies: BackupProxy[];
   storageState: BrowserStorageState;
+  accounts?: BackupAccount[];
+  workflows?: RpaWorkflow[];
+  schedules?: BackupSchedule[];
 }
 
 interface BackupDeps {
   profileRepo: ProfileRepository;
   proxyRepo: ProxyRepository;
   storageStateRepo: StorageStateRepository;
+  accountRepo?: AccountRepository;
+  rpaRepo?: RpaRepository;
   kernel: BrowserKernel;
   profilesDir: string;
   /** 旧备份没有固定版本时，按导入这一刻的默认签名版本固定。 */
@@ -85,10 +102,24 @@ export async function exportProfileBackup(
   if (!profile) throw new ShadowEdgeError('E_PROFILE_NOT_FOUND', `环境 ${profileId} 不存在`);
   const context = deps.kernel.getAutomationContext(profileId);
   const storageState = await captureStorageState(context);
+  const accounts = deps.accountRepo?.list(profileId).map((credential) => ({
+    ...credential,
+    password: deps.accountRepo!.reveal(credential.id).password,
+  })) ?? [];
+  const workflows = deps.rpaRepo?.listWorkflows() ?? [];
+  const schedules = deps.rpaRepo?.listSchedules()
+    .filter((schedule) => schedule.profileIds.includes(profileId))
+    .map((schedule) => ({
+      schedule: { ...schedule, profileIds: [profileId] },
+      inputs: deps.rpaRepo!.getScheduleInputs(schedule.workflowId),
+    })) ?? [];
   const payload: BackupPayload = {
     profile,
     proxies: proxyChain(deps.proxyRepo, profile.proxyId),
     storageState,
+    accounts,
+    workflows,
+    schedules,
   };
   const { kek, salt } = deriveKek(passphrase, undefined, KDF_ITERATIONS);
   const sealed = new EnvelopeCrypto(kek).seal(JSON.stringify(payload), 'profile-backup');
@@ -128,8 +159,15 @@ export function importProfileBackup(
   }
 
   validateProxyGraph(payload);
+  validateBackupRelations(payload);
+  if (((payload.accounts?.length ?? 0) > 0 && !deps.accountRepo) ||
+    (((payload.workflows?.length ?? 0) > 0 || (payload.schedules?.length ?? 0) > 0) && !deps.rpaRepo)) {
+    throw new ShadowEdgeError('E_BACKUP_INVALID', '当前导入器未配置账号或 RPA 仓储');
+  }
   const proxyIds = new Map<Uuid, Uuid>();
   for (const proxy of payload.proxies) proxyIds.set(proxy.id, randomUUID() as Uuid);
+  const workflowIds = new Map<Uuid, Uuid>();
+  for (const workflow of payload.workflows ?? []) workflowIds.set(workflow.id, randomUUID() as Uuid);
   const id = randomUUID() as Uuid;
   const now = new Date().toISOString();
   const profile: BrowserProfile = {
@@ -139,6 +177,10 @@ export function importProfileBackup(
     name: normalizeProfileName(input.name ?? `${payload.profile.name}（导入）`),
     proxyId: payload.profile.proxyId ? proxyIds.get(payload.profile.proxyId) : undefined,
     kernelVersion: payload.profile.kernelVersion ?? deps.defaultKernelVersion,
+    platformPolicyVersion: payload.profile.platformPolicyVersion ??
+      (payload.profile.platformTag || payload.profile.platformSiteId
+        ? CURRENT_PLATFORM_POLICY_CATALOG_VERSION
+        : undefined),
     // 导入的是独立环境，不能保留指向原设备环境的灰度关系。
     kernelUpgradeSourceId: undefined,
     ownerId: 'local-user',
@@ -152,6 +194,8 @@ export function importProfileBackup(
     createdAt: now,
     updatedAt: now,
   };
+  if (profile.platformPolicyVersion) getPlatformPolicyCatalog(profile.platformPolicyVersion);
+  if (profile.platformSiteId) siteForProfile(profile);
   try {
     deps.profileRepo.transaction(() => {
       for (const proxy of payload.proxies) {
@@ -166,6 +210,36 @@ export function importProfileBackup(
       }
       deps.profileRepo.save(profile);
       deps.storageStateRepo.save(id, payload.storageState);
+      for (const account of payload.accounts ?? []) {
+        const { password, ...credential } = account;
+        deps.accountRepo!.upsert({
+          ...credential,
+          id: randomUUID() as Uuid,
+          profileId: id,
+          password,
+        });
+      }
+      for (const workflow of payload.workflows ?? []) {
+        deps.rpaRepo!.saveWorkflow({
+          ...workflow,
+          id: workflowIds.get(workflow.id)!,
+          orgId: 'local',
+          createdBy: 'local-user',
+        });
+      }
+      for (const item of payload.schedules ?? []) {
+        deps.rpaRepo!.saveSchedule({
+          ...item.schedule,
+          workflowId: workflowIds.get(item.schedule.workflowId)!,
+          profileIds: [id],
+          // 导入不能触发过期任务；由用户审阅后显式启用并计算下一周期。
+          enabled: false,
+          nextRunAt: now,
+          lastRunAt: undefined,
+          lastError: undefined,
+          updatedAt: now,
+        }, item.inputs);
+      }
     });
   } catch (error) {
     throw new ShadowEdgeError('E_STORAGE_STATE_FAILED', '备份导入未完整保存，所有写入已回滚', {
@@ -215,7 +289,22 @@ function parsePayload(value: unknown): BackupPayload {
     !value.proxies.every(isBackupProxy)) {
     throw new ShadowEdgeError('E_BACKUP_INVALID', '备份载荷结构无效');
   }
-  return { profile: value.profile, storageState: value.storageState, proxies: value.proxies };
+  const accounts = value.accounts ?? [];
+  const workflows = value.workflows ?? [];
+  const schedules = value.schedules ?? [];
+  if (!Array.isArray(accounts) || !accounts.every(isBackupAccount) ||
+    !Array.isArray(workflows) || !workflows.every(isBackupWorkflow) ||
+    !Array.isArray(schedules) || !schedules.every(isBackupSchedule)) {
+    throw new ShadowEdgeError('E_BACKUP_INVALID', '备份账号或 RPA 载荷结构无效');
+  }
+  return {
+    profile: value.profile,
+    storageState: value.storageState,
+    proxies: value.proxies,
+    accounts,
+    workflows,
+    schedules,
+  };
 }
 
 function isBrowserProfile(value: unknown): value is BrowserProfile {
@@ -223,6 +312,8 @@ function isBrowserProfile(value: unknown): value is BrowserProfile {
     typeof value.name !== 'string' || value.name.length > 120 ||
     (value.platformTag !== undefined && typeof value.platformTag !== 'string') ||
     (value.platformSiteId !== undefined && typeof value.platformSiteId !== 'string') ||
+    (value.platformPolicyVersion !== undefined &&
+      (typeof value.platformPolicyVersion !== 'string' || !/^[\w.-]{1,80}$/.test(value.platformPolicyVersion))) ||
     (value.kernelVersion !== undefined && (typeof value.kernelVersion !== 'string' || !/^[\w.-]{1,80}$/.test(value.kernelVersion))) ||
     (value.kernelUpgradeSourceId !== undefined && typeof value.kernelUpgradeSourceId !== 'string') ||
     !isRecord(value.storage) || typeof value.storage.userDataDir !== 'string' ||
@@ -254,7 +345,14 @@ function isStorageState(value: unknown): value is BrowserStorageState {
         isRecord(item) && typeof item.name === 'string' && typeof item.value === 'string') &&
       (origin.indexedDB === undefined || isIndexedDb(origin.indexedDB)) &&
       (origin.opfs === undefined || isOpfs(origin.opfs)));
-  if (!validCookies || !validOrigins) return false;
+  const validSession = value.sessionStorage === undefined ||
+    (Array.isArray(value.sessionStorage) && value.sessionStorage.length <= 1000 &&
+      value.sessionStorage.every((snapshot) => isRecord(snapshot) &&
+        typeof snapshot.url === 'string' && typeof snapshot.origin === 'string' &&
+        Array.isArray(snapshot.items) && snapshot.items.length <= 10000 &&
+        snapshot.items.every((item) => isRecord(item) &&
+          typeof item.name === 'string' && typeof item.value === 'string')));
+  if (!validCookies || !validOrigins || !validSession) return false;
   return withinOpfsBudget({ origins: value.origins });
 }
 
@@ -337,6 +435,55 @@ function isBackupProxy(value: unknown): value is BackupProxy {
     (value.password === undefined || typeof value.password === 'string') &&
     (value.upstreamId === undefined || typeof value.upstreamId === 'string') &&
     Array.isArray(value.tags) && value.tags.every((tag) => typeof tag === 'string');
+}
+
+function isBackupAccount(value: unknown): value is BackupAccount {
+  return isRecord(value) && typeof value.id === 'string' && typeof value.profileId === 'string' &&
+    typeof value.label === 'string' && typeof value.origin === 'string' &&
+    typeof value.username === 'string' && typeof value.usernameSelector === 'string' &&
+    typeof value.passwordSelector === 'string' && typeof value.password === 'string' && value.password.length > 0 &&
+    (value.submitSelector === undefined || typeof value.submitSelector === 'string');
+}
+
+function isRpaGraph(value: unknown): value is RpaWorkflow['graph'] {
+  return isRecord(value) && typeof value.entry === 'string' && isRecord(value.nodes) &&
+    (value.maxSteps === undefined || typeof value.maxSteps === 'number') &&
+    (value.timeoutMs === undefined || typeof value.timeoutMs === 'number');
+}
+
+function isBackupWorkflow(value: unknown): value is RpaWorkflow {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.name !== 'string' ||
+    !Number.isInteger(value.version) || !isRpaGraph(value.graph) ||
+    typeof value.createdBy !== 'string' || typeof value.updatedAt !== 'string') return false;
+  try {
+    return validateGraph(value.graph).valid;
+  } catch {
+    return false;
+  }
+}
+
+function isBackupSchedule(value: unknown): value is BackupSchedule {
+  if (!isRecord(value) || !isRecord(value.schedule) ||
+    (value.inputs !== undefined && !isRecord(value.inputs))) return false;
+  const schedule = value.schedule;
+  return typeof schedule.workflowId === 'string' && Array.isArray(schedule.profileIds) &&
+    schedule.profileIds.every((id) => typeof id === 'string') &&
+    Number.isInteger(schedule.intervalMinutes) && Number(schedule.intervalMinutes) >= 1 &&
+    Number(schedule.intervalMinutes) <= 10080 && typeof schedule.enabled === 'boolean' &&
+    typeof schedule.nextRunAt === 'string' && typeof schedule.updatedAt === 'string';
+}
+
+function validateBackupRelations(payload: BackupPayload): void {
+  const workflowIds = new Set<Uuid>();
+  for (const workflow of payload.workflows ?? []) {
+    if (workflowIds.has(workflow.id)) throw new ShadowEdgeError('E_BACKUP_INVALID', '备份工作流 ID 重复');
+    workflowIds.add(workflow.id);
+  }
+  for (const item of payload.schedules ?? []) {
+    if (!workflowIds.has(item.schedule.workflowId)) {
+      throw new ShadowEdgeError('E_BACKUP_INVALID', '调度配置引用了备份中不存在的工作流');
+    }
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

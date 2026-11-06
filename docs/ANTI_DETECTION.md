@@ -65,7 +65,7 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 
 实现位于 `packages/fingerprint/src/consistency.ts`，同时校验 UA/UA-CH 版本同源、
 屏幕可用区差值、macOS 触摸点、内存 2 的幂、Apple/D3D11/SwiftShader GPU 矛盾与平台字体子集。
-使用版本化 UA catalog 的环境，审计时必须传入与生成时相同的 `db` / `overrides`。
+使用版本化 UA catalog 的环境，审计时必须传入与生成时相同的 `db` / `overrides`。当前新建环境绑定 `156.0.8078.91`；131 与 156.0.8078.73 历史快照只读，并用固定 seed 的完整画像 SHA-256 回归防止升级漂移。
 
 ## 3. 代理与网络层
 
@@ -93,6 +93,8 @@ ShadowEdge 分两阶段推进：当前阶段以 **Patchright + 主世界 init sc
 3. **一致性** —— 交叉约束全部满足。
 4. **隐蔽性** —— 第三方检测站（CreepJS / BrowserLeaks / Pixelscan 等）无自动化告警。
 5. **隔离性** —— 环境间 Cookie / Storage / IP 互不可见。
+
+2026-11-05 真实 Release `156.0.8078.91` 复测：外站 40/40，真实代理本地矩阵 16/16、20 次重启零漂移；证据见 `docs/NEXT_TASKS.md` T40/T41 及对应 JSON 报告。
 
 ## 6. 探针回归实测记录（2026-10-21，os1 德国双跳链路）
 

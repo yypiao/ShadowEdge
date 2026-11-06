@@ -4,7 +4,8 @@ import { toastError, useStore } from '../store.js';
 
 type SupportedKind = Extract<
   RpaNodeKind,
-  'navigate' | 'click' | 'type' | 'wait' | 'extract' | 'screenshot' | 'condition' | 'loop'
+  | 'navigate' | 'click' | 'type' | 'wait' | 'extract' | 'screenshot'
+  | 'select' | 'check' | 'upload' | 'download' | 'newTab' | 'switchTab' | 'closeTab' | 'condition' | 'loop'
 >;
 
 const KIND_LABEL: Record<SupportedKind, string> = {
@@ -14,6 +15,13 @@ const KIND_LABEL: Record<SupportedKind, string> = {
   wait: '等待',
   extract: '提取文本',
   screenshot: '截图',
+  select: '选择下拉项',
+  check: '设置复选框',
+  upload: '上传文件',
+  download: '点击并下载',
+  newTab: '新建标签页',
+  switchTab: '切换标签页',
+  closeTab: '关闭标签页',
   condition: '条件分支',
   loop: '计数循环',
 };
@@ -36,6 +44,13 @@ function defaults(kind: SupportedKind): Record<string, unknown> {
     case 'wait': return { ms: 500 };
     case 'extract': return { selector: '#result', key: 'result' };
     case 'screenshot': return { key: 'result', fullPage: true };
+    case 'select': return { selector: '#country', value: 'DE' };
+    case 'check': return { selector: '#enabled', checked: true };
+    case 'upload': return { selector: '#file', path: '/absolute/path/file.txt' };
+    case 'download': return { selector: '#download', key: 'download' };
+    case 'newTab': return { url: 'https://example.com', waitUntil: 'domcontentloaded' };
+    case 'switchTab':
+    case 'closeTab': return { index: 0 };
     case 'condition': return { left: '{{outputs.result}}', operator: 'exists', right: '' };
     case 'loop': return { count: 3, body: '' };
   }
@@ -240,7 +255,7 @@ export function WorkflowEditor({ workflow, persisted, onSaved, onDeleted }: Prop
               <button type="button" aria-label={`删除节点 ${index + 1}`} disabled={hasControl && nodes.length > 1} onClick={() => replace(nodes.filter((item) => item.id !== node.id))}>×</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {node.kind === 'navigate' && (
+              {(node.kind === 'navigate' || node.kind === 'newTab') && (
                 <>
                   <label style={{ gridColumn: '1 / -1', fontSize: 11 }}>页面 URL
                     <input value={String(node.params.url ?? '')} onChange={(e) => updateParams(node.id, { url: e.target.value })} style={{ ...inputStyle, marginTop: 4 }} />
@@ -254,9 +269,26 @@ export function WorkflowEditor({ workflow, persisted, onSaved, onDeleted }: Prop
                   </label>
                 </>
               )}
-              {(node.kind === 'click' || node.kind === 'type' || node.kind === 'extract') && (
+              {(['click', 'type', 'extract', 'select', 'check', 'upload', 'download'] as RpaNodeKind[]).includes(node.kind) && (
                 <label style={{ fontSize: 11 }}>CSS 选择器
                   <input value={String(node.params.selector ?? '')} onChange={(e) => updateParams(node.id, { selector: e.target.value })} style={{ ...inputStyle, marginTop: 4 }} />
+                </label>
+              )}
+              {(['click', 'type', 'extract', 'select', 'check', 'upload', 'download'] as RpaNodeKind[]).includes(node.kind) && (
+                <label style={{ fontSize: 11 }}>Iframe 选择器（单层，可选）
+                  <input value={String(node.params.frameSelector ?? '')} onChange={(e) => updateParams(node.id, { frameSelector: e.target.value || undefined })} placeholder="留空则主框架；Shadow DOM 无需填写" style={{ ...inputStyle, marginTop: 4 }} />
+                </label>
+              )}
+              {(['click', 'type', 'extract', 'select', 'check', 'upload', 'download'] as RpaNodeKind[]).includes(node.kind) &&
+                Array.isArray(node.params.frameSelectors) && (
+                <label style={{ gridColumn: '1 / -1', fontSize: 11 }}>嵌套 Iframe 路径（每行一层）
+                  <textarea
+                    value={(node.params.frameSelectors as string[]).join('\n')}
+                    onChange={(event) => updateParams(node.id, {
+                      frameSelectors: event.target.value.split('\n').filter(Boolean),
+                    })}
+                    style={{ ...inputStyle, marginTop: 4, minHeight: 48, resize: 'vertical' }}
+                  />
                 </label>
               )}
               {node.kind === 'type' && (
@@ -269,9 +301,53 @@ export function WorkflowEditor({ workflow, persisted, onSaved, onDeleted }: Prop
                   <input type="number" min={0} value={Number(node.params.ms ?? 0)} onChange={(e) => updateParams(node.id, { ms: e.target.valueAsNumber })} style={{ ...inputStyle, marginTop: 4 }} />
                 </label>
               )}
-              {(node.kind === 'extract' || node.kind === 'screenshot') && (
+              {(node.kind === 'extract' || node.kind === 'screenshot' || node.kind === 'download') && (
                 <label style={{ fontSize: 11 }}>结果名称
                   <input value={String(node.params.key ?? '')} onChange={(e) => updateParams(node.id, { key: e.target.value })} style={{ ...inputStyle, marginTop: 4 }} />
+                </label>
+              )}
+              {node.kind === 'select' && (
+                <>
+                  <label style={{ fontSize: 11 }}>多选
+                    <input
+                      type="checkbox"
+                      checked={Array.isArray(node.params.values)}
+                      onChange={(event) => updateParams(node.id, event.target.checked
+                        ? { value: undefined, values: [String(node.params.value ?? '')] }
+                        : { value: Array.isArray(node.params.values) ? String(node.params.values[0] ?? '') : '', values: undefined })}
+                      style={{ marginLeft: 6 }}
+                    />
+                  </label>
+                  {Array.isArray(node.params.values) ? (
+                    <label style={{ fontSize: 11 }}>选项 values（每行一个）
+                      <textarea
+                        value={(node.params.values as string[]).join('\n')}
+                        onChange={(event) => updateParams(node.id, { values: event.target.value.split('\n') })}
+                        style={{ ...inputStyle, marginTop: 4, minHeight: 48, resize: 'vertical' }}
+                      />
+                    </label>
+                  ) : (
+                    <label style={{ fontSize: 11 }}>选项 value
+                      <input value={String(node.params.value ?? '')} onChange={(e) => updateParams(node.id, { value: e.target.value })} style={{ ...inputStyle, marginTop: 4 }} />
+                    </label>
+                  )}
+                </>
+              )}
+              {node.kind === 'check' && (
+                <label style={{ fontSize: 11 }}>勾选状态
+                  <select value={String(node.params.checked ?? true)} onChange={(e) => updateParams(node.id, { checked: e.target.value === 'true' })} style={{ ...inputStyle, marginTop: 4 }}>
+                    <option value="true">勾选</option><option value="false">取消勾选</option>
+                  </select>
+                </label>
+              )}
+              {node.kind === 'upload' && (
+                <label style={{ fontSize: 11 }}>本地文件绝对路径
+                  <input value={String(node.params.path ?? '')} onChange={(e) => updateParams(node.id, { path: e.target.value })} style={{ ...inputStyle, marginTop: 4 }} />
+                </label>
+              )}
+              {(node.kind === 'switchTab' || node.kind === 'closeTab') && (
+                <label style={{ fontSize: 11 }}>标签页索引（从 0 开始）
+                  <input type="number" min={0} value={Number(node.params.index ?? 0)} onChange={(e) => updateParams(node.id, { index: e.target.valueAsNumber })} style={{ ...inputStyle, marginTop: 4 }} />
                 </label>
               )}
               {node.kind === 'condition' && (

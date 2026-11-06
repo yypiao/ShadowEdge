@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   buildChromeCatalog,
@@ -87,11 +88,31 @@ describe('画像绑定不可变 catalog 快照', () => {
     const current = generateFingerprint({ seed: 'catalog-seed', platform: 'host', catalogVersion: CURRENT_CATALOG_VERSION });
     const historical = generateFingerprint({ seed: 'catalog-seed', platform: 'host' });
     expect(current.userAgent).toContain('Chrome/156.0.0.0');
-    expect(current.userAgentData.fullVersion).toBe('156.0.8078.73');
+    expect(current.userAgentData.fullVersion).toBe('156.0.8078.91');
     expect(current.catalogVersion).toBe(CURRENT_CATALOG_VERSION);
     expect(auditFingerprint(current).consistent).toBe(true);
     expect(historical.userAgent).not.toBe(current.userAgent);
     expect(auditFingerprint(historical).consistent).toBe(true);
+  });
+
+  it('升级新增 91 快照后，131 与 73 历史 seed 逐字节不漂移', () => {
+    const expected = {
+      '131.0.6778.86': {
+        'legacy-a': 'd6ae08a87c0d5579b04900df9960a4c62a5c1895e1f83529aa6777bb3c2208d3',
+        'catalog-seed': 'd93d6692c2c507fdafc28dc637e649f02e2a3fcc2ce8e9177b29ecb1b9967f36',
+      },
+      '156.0.8078.73': {
+        'legacy-a': 'e54e51549b56f50c75136013ce4d88e647e800d2bb761a9b3fb599f86a6f76d8',
+        'catalog-seed': 'c171de1f029b016c6972144faa9acde11f35985bf11a8ebc87dbf9f8a4082ede',
+      },
+    };
+    for (const [catalogVersion, seeds] of Object.entries(expected)) {
+      for (const [seed, sha256] of Object.entries(seeds)) {
+        const portrait = generateFingerprint({ seed, platform: 'macos', catalogVersion });
+        const actual = createHash('sha256').update(JSON.stringify(portrait)).digest('hex');
+        expect(actual).toBe(sha256);
+      }
+    }
   });
 
   it('缺失快照明确报错，生成与审计均不静默回退', () => {

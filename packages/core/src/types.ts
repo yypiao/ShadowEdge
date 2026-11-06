@@ -167,6 +167,8 @@ export interface BrowserProfile {
   platformTag?: string;
   /** 已选择的内置站点；独立持久化，不能靠可能被编辑的启动 URL 猜测。 */
   platformSiteId?: string;
+  /** 创建或显式切换站点时固定的策略目录快照，不随默认目录升级。 */
+  platformPolicyVersion?: string;
   groupId?: Uuid;
   kernel: KernelType;
   /** 签名分发内核的固定版本；不随全局激活版本自动漂移。开发路径模式可为空。 */
@@ -222,6 +224,13 @@ export type BrowserOpfsEntrySnapshot =
   | { path: string; type: 'directory' }
   | { path: string; type: 'file'; base64: string };
 
+export interface BrowserSessionStorageSnapshot {
+  /** 捕获时标签页的最终 URL；同一 origin 的多个标签页分别保存。 */
+  url: string;
+  origin: string;
+  items: Array<{ name: string; value: string }>;
+}
+
 export interface BrowserStorageState {
   cookies: Array<{
     name: string;
@@ -239,6 +248,8 @@ export interface BrowserStorageState {
     indexedDB?: IndexedDbDatabaseSnapshot[];
     opfs?: BrowserOpfsEntrySnapshot[];
   }>;
+  /** v1 旧备份可缺省；按标签页保存，避免同 origin 页面互相覆盖。 */
+  sessionStorage?: BrowserSessionStorageSnapshot[];
 }
 
 export interface ProfileBackupEnvelope {
@@ -313,6 +324,11 @@ export interface PlatformSitePolicy {
   countryCodes: string[];
   languages: string[];
   timezone: string;
+}
+
+export interface PlatformPolicyCatalog {
+  version: string;
+  policies: PlatformPolicy[];
 }
 
 export interface PlatformPolicy {
@@ -418,6 +434,13 @@ export type RpaNodeKind =
   | 'wait'
   | 'extract'
   | 'screenshot'
+  | 'select'
+  | 'check'
+  | 'upload'
+  | 'download'
+  | 'newTab'
+  | 'switchTab'
+  | 'closeTab'
   | 'condition'
   | 'loop'
   | 'script'
@@ -467,10 +490,24 @@ export interface RpaRecordingState {
   startedAt: IsoDateTime;
 }
 
+export interface RpaRecordedTarget {
+  selector: string;
+  /** 旧版单层 Iframe 定位；主框架事件省略。 */
+  frameSelector?: string;
+  /** 从主文档到目标框架的完整路径；与 frameSelector 互斥。 */
+  frameSelectors?: string[];
+}
+
 export type RpaRecordedAction =
   | { kind: 'navigate'; url: string }
-  | { kind: 'click'; selector: string }
-  | { kind: 'type'; selector: string; text: string };
+  | ({ kind: 'click' } & RpaRecordedTarget)
+  | ({ kind: 'type'; text: string } & RpaRecordedTarget)
+  | ({ kind: 'select'; value: string } & RpaRecordedTarget)
+  | ({ kind: 'select'; values: string[] } & RpaRecordedTarget)
+  | ({ kind: 'check'; checked: boolean } & RpaRecordedTarget)
+  | { kind: 'newTab' }
+  | { kind: 'switchTab'; index: number }
+  | { kind: 'closeTab'; index: number };
 
 export interface RpaRecordingResult {
   graph: RpaGraph;
@@ -512,7 +549,7 @@ export interface RpaRun {
   error?: string;
   /** extract 节点按 key 产生的文本结果。 */
   outputs?: Record<string, string | null>;
-  artifacts: Array<{ kind: 'screenshot' | 'log' | 'json' | 'video'; uri: string }>;
+  artifacts: Array<{ kind: 'screenshot' | 'log' | 'json' | 'video' | 'download'; uri: string }>;
 }
 
 // ---------------------------------------------------------------------------

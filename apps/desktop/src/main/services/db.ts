@@ -258,6 +258,26 @@ const MIGRATIONS: Migration[] = [
       ALTER TABLE rpa_schedules ADD COLUMN inputs_iv TEXT;
     `,
   },
+  {
+    id: 11,
+    name: 'profile_platform_policy_version',
+    sql: 'ALTER TABLE profiles ADD COLUMN platform_policy_version TEXT',
+    after: (db) => {
+      const rows = allRows<{ id: string }>(
+        db,
+        'SELECT id FROM profiles WHERE (platform_tag IS NOT NULL OR platform_site_id IS NOT NULL) AND platform_policy_version IS NULL',
+      );
+      const update = db.prepare('UPDATE profiles SET platform_policy_version = ? WHERE id = ?');
+      const audit = db.prepare(
+        "INSERT INTO audit_local (at, actor, action, target_type, target_id, detail) VALUES (?, 'system', 'migration:platform-policy-version', 'profile', ?, ?)",
+      );
+      for (const row of rows) {
+        const catalogVersion = '2026-11-04.1';
+        update.run(catalogVersion, row.id);
+        audit.run(new Date().toISOString(), row.id, JSON.stringify({ catalogVersion }));
+      }
+    },
+  },
 ];
 
 function tx(db: DatabaseSync, fn: () => void): void {

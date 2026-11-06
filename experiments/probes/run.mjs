@@ -5,7 +5,7 @@
  * 用法：
  *   node experiments/probes/run.mjs --seed demo-1 --proxy os1 --label baseline
  *   node experiments/probes/run.mjs --seed demo-1            # 直连（仅本地采集，跳过 CreepJS）
- *   node experiments/probes/run.mjs --seed demo-1 --catalog-version 156.0.8078.73
+ *   node experiments/probes/run.mjs --seed demo-1 --catalog-version 156.0.8078.91
  *
  * 产出：experiments/probes/results/<label>-<ts>.json + 控制台摘要
  */
@@ -179,6 +179,10 @@ await context.addInitScript({
   ),
 });
 const page = context.pages()[0] ?? (await context.newPage());
+context.on('close', () => log('生命周期: context closed'));
+context.browser()?.on('disconnected', () => log('生命周期: browser disconnected'));
+page.on('close', () => log('生命周期: page closed'));
+page.on('crash', () => log('生命周期: page crashed'));
 
 // ---- 3. 本地采集（主世界，裸 CDP）----
 const cdp = await context.newCDPSession(page);

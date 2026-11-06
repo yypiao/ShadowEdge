@@ -1,3 +1,5 @@
+import type { ResolvedUpstreamProxy } from '../../packages/kernel/dist/index.js';
+
 export interface ProbeCheck {
   id: string;
   category: string;
@@ -29,6 +31,8 @@ export function runProbeSuite(options: {
   restarts?: number;
   outputPath?: string;
   expectedExitIp?: string;
+  proxy?: ResolvedUpstreamProxy;
+  catalogVersion?: string;
   isolation?: boolean;
   stability?: boolean;
 }): Promise<ProbeReport>;

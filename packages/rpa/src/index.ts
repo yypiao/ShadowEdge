@@ -7,6 +7,8 @@ export { abortableDelay, nodeExecutors, throwIfCancelled } from './executors.js'
 export { withHardCancellation } from './cancellation.js';
 export type {
   RpaBrowserContext,
+  RpaDownload,
+  RpaFrameLocator,
   RpaLocator,
   RpaMouse,
   RpaNodeExecution,

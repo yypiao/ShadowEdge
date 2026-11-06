@@ -128,7 +128,7 @@ export class RpaEngine {
       mkdirSync(runDir, { recursive: true, mode: 0o700 });
       const context = await this.deps.resolveContext(run.profileId);
       throwIfCancelled(controller.signal);
-      const page = context.pages()[0] ?? (await context.newPage());
+      let page = context.pages()[0] ?? (await context.newPage());
       const loopStates = new Map<string, { count: number; index: number }>();
       const loopIndices: Record<string, number> = {};
       const visited = new Set<string>();
@@ -152,7 +152,9 @@ export class RpaEngine {
           inputs,
           signal: controller.signal,
           deadlineAt,
-          closePage: () => page.close(),
+          closePage: () => execution.page.close(),
+          createPage: () => context.newPage(),
+          listPages: () => context.pages(),
           percent,
           random: this.random,
           outputs: run.outputs!,
@@ -160,6 +162,7 @@ export class RpaEngine {
           artifactPath: (fileName) => join(runDir, fileName),
         };
         if (node.kind !== 'condition' && node.kind !== 'loop') await this.executeNode(node, execution);
+        page = execution.page;
         if (node.kind === 'condition') {
           id = nextForCondition(node, execution);
         } else if (node.kind === 'loop') {

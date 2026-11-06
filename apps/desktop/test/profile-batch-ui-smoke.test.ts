@@ -49,7 +49,7 @@ describe.skipIf(!SMOKE)('Electron 批量环境 UI', () => {
       await expect
         .poll(() => page!.getByText('● 运行中', { exact: true }).count(), { timeout: 45000 })
         .toBe(2);
-      expect(await page.getByText('内核：chromium-cdp', { exact: false }).count()).toBe(2);
+      expect(await page.getByText('实际驱动：chromium-cdp', { exact: false }).count()).toBe(2);
 
       await page.getByRole('button', { name: '批量停止 (2)', exact: true }).click();
       await expect

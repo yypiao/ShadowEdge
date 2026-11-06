@@ -4,10 +4,13 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { IpcEvents, RpaGraph, RpaRun, RpaWorkflow } from '@shadowedge/core';
 import { RpaEngine } from '../src/index.js';
-import type { RpaLocator, RpaMouse, RpaPage } from '../src/index.js';
+import type { RpaFrameLocator, RpaLocator, RpaMouse, RpaPage } from '../src/index.js';
 
 class FakeLocator implements RpaLocator {
   value = '';
+  selected: string | string[] = '';
+  checked = false;
+  files = '';
   constructor(private readonly text: string | null = 'extracted') {}
 
   async waitFor(_options: { state: 'visible'; timeout: number }): Promise<void> {}
@@ -25,6 +28,26 @@ class FakeLocator implements RpaLocator {
   }
   async getAttribute(_name: string): Promise<string | null> {
     return this.text;
+  }
+  async selectOption(value: string | string[]): Promise<string[]> {
+    this.selected = value;
+    return Array.isArray(value) ? value : [value];
+  }
+  async setChecked(checked: boolean): Promise<void> {
+    this.checked = checked;
+  }
+  async setInputFiles(files: string): Promise<void> {
+    this.files = files;
+  }
+}
+
+class FakeFrameLocator implements RpaFrameLocator {
+  constructor(private readonly page: FakePage) {}
+  locator(selector: string): RpaLocator {
+    return this.page.locator(selector);
+  }
+  frameLocator(_selector: string): RpaFrameLocator {
+    return this;
   }
 }
 
@@ -61,6 +84,13 @@ class FakePage implements RpaPage {
   }
   locator(selector: string): RpaLocator {
     return selector === '#input' ? this.input : new FakeLocator();
+  }
+  frameLocator(_selector: string): RpaFrameLocator {
+    return new FakeFrameLocator(this);
+  }
+  async bringToFront(): Promise<void> {}
+  async waitForEvent(): Promise<never> {
+    throw new Error('fake download not configured');
   }
   async close(): Promise<void> {
     this.closed = true;
@@ -152,6 +182,23 @@ describe('RpaEngine 真实节点执行语义', () => {
     const jsonArtifact = result.artifacts.find((artifact) => artifact.kind === 'json')!;
     expect(JSON.parse(readFileSync(jsonArtifact.uri, 'utf8'))).toEqual({ result: 'extracted' });
     expect(progress.at(-1)).toEqual({ runId: result.id, step: 'succeeded', percent: 100 });
+  });
+
+  it('下拉框、复选框和上传节点调用真实控件语义', async () => {
+    const page = new FakePage();
+    const { engine } = setup(page);
+    const result = await finish(engine, await engine.run(workflow({
+      entry: 'select',
+      nodes: {
+        select: { id: 'select', kind: 'select', params: { selector: '#input', value: 'GB' }, next: 'check' },
+        check: { id: 'check', kind: 'check', params: { selector: '#input', checked: true }, next: 'upload' },
+        upload: { id: 'upload', kind: 'upload', params: { selector: '#input', path: '/tmp/upload.txt' } },
+      },
+    }), ['profile-a']));
+    expect(result.status).toBe('succeeded');
+    expect(page.input.selected).toBe('GB');
+    expect(page.input.checked).toBe(true);
+    expect(page.input.files).toBe('/tmp/upload.txt');
   });
 
   it('retry 按次数重试并成功', async () => {

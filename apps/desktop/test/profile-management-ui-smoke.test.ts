@@ -36,6 +36,8 @@ describe.skipIf(!SMOKE)('Electron 环境管理 UI', () => {
       await page.getByRole('button', { name: '+ 新建 / 批量创建' }).click();
       await page.getByPlaceholder('例如：美区亚马逊-01').fill('management-ui');
       await page.getByLabel('业务平台', { exact: true }).selectOption({ label: 'Amazon' });
+      await page.getByText('策略目录：2026-11-06.1', { exact: true }).waitFor();
+      await page.getByLabel('平台站点', { exact: true }).locator('option[value="amazon-ca"]').waitFor({ state: 'attached' });
       await page.getByLabel('平台站点', { exact: true }).selectOption('amazon-us');
       await page.getByLabel('环境分组', { exact: true }).selectOption({ label: '美区店铺' });
       await page.getByLabel('启动页面', { exact: true }).fill('http://127.0.0.1:8765/start');

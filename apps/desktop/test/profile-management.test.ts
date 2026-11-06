@@ -2,7 +2,13 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createConsoleLogger, type BrowserProfile, type ProfileUpdateInput } from '@shadowedge/core';
+import {
+  createConsoleLogger,
+  CURRENT_PLATFORM_POLICY_CATALOG_VERSION,
+  LEGACY_PLATFORM_POLICY_CATALOG_VERSION,
+  type BrowserProfile,
+  type ProfileUpdateInput,
+} from '@shadowedge/core';
 import { EnvelopeCrypto } from '@shadowedge/crypto';
 import { BrowserKernel, type KernelDriver } from '@shadowedge/kernel';
 import { createHandlers, type Handlers } from '../src/main/handlers.js';
@@ -114,14 +120,24 @@ describe('环境分组、编辑与删除', () => {
       platformSiteId: 'amazon-us', startupUrls: ['https://example.com/custom'],
     });
     expect(profile.startupUrls).toEqual(['https://www.amazon.com/', 'https://example.com/custom']);
+    expect(profile.platformPolicyVersion).toBe(CURRENT_PLATFORM_POLICY_CATALOG_VERSION);
     const before = structuredClone(profile.fingerprint);
+    profiles.save({ ...profile, platformPolicyVersion: LEGACY_PLATFORM_POLICY_CATALOG_VERSION });
     const switched = await handlers['profile:switchSite']({ profileId: profile.id, siteId: 'amazon-de' });
     expect(switched.opened).toBe(false);
     expect(switched.profile.platformTag).toBe('amazon');
     expect(switched.profile.platformSiteId).toBe('amazon-de');
+    expect(switched.profile.platformPolicyVersion).toBe(CURRENT_PLATFORM_POLICY_CATALOG_VERSION);
     expect(switched.profile.startupUrls).toEqual(['https://www.amazon.de/']);
     expect(switched.profile.fingerprint).toEqual(before);
     expect(switched.profile.fingerprint.seed).toBe('stable-site-seed');
+    const audit = handle.db.prepare(
+      "SELECT detail FROM audit_local WHERE action = 'profile:switch-site' AND target_id = ?",
+    ).get(profile.id) as { detail: string };
+    expect(JSON.parse(audit.detail)).toMatchObject({
+      fromCatalogVersion: LEGACY_PLATFORM_POLICY_CATALOG_VERSION,
+      catalogVersion: CURRENT_PLATFORM_POLICY_CATALOG_VERSION,
+    });
 
     await expect(handlers['profile:switchSite']({ profileId: profile.id, siteId: 'missing-site' }))
       .rejects.toMatchObject({ code: 'E_PROFILE_INVALID' });
@@ -131,6 +147,7 @@ describe('环境分组、编辑与删除', () => {
       id: profile.id, patch: { startupUrls: ['https://example.com/custom'] },
     });
     expect(edited.platformSiteId).toBeUndefined();
+    expect(edited.platformPolicyVersion).toBeUndefined();
     expect(edited.name).toBe('site-switch');
     expect(edited.platformTag).toBe('amazon');
     expect(edited.fingerprint).toEqual(before);

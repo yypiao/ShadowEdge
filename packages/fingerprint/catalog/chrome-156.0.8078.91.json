@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "channel": "stable",
+  "chromeVersion": "156.0.8078.91",
+  "generatedAt": "2026-11-05T15:27:55.351Z",
+  "source": "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json",
+  "platforms": {
+    "windows": [
+      {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "userAgentData": {
+          "brands": [
+            {
+              "brand": "Chromium",
+              "version": "156"
+            },
+            {
+              "brand": "Google Chrome",
+              "version": "156"
+            },
+            {
+              "brand": "Not?A_Brand",
+              "version": "99"
+            }
+          ],
+          "platform": "Windows",
+          "platformVersion": "15.0.0",
+          "architecture": "x86",
+          "bitness": "64",
+          "model": "",
+          "fullVersion": "156.0.8078.91",
+          "mobile": false
+        }
+      }
+    ],
+    "macos": [
+      {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "userAgentData": {
+          "brands": [
+            {
+              "brand": "Chromium",
+              "version": "156"
+            },
+            {
+              "brand": "Google Chrome",
+              "version": "156"
+            },
+            {
+              "brand": "Not?A_Brand",
+              "version": "99"
+            }
+          ],
+          "platform": "macOS",
+          "platformVersion": "14_6",
+          "architecture": "x86",
+          "bitness": "64",
+          "model": "",
+          "fullVersion": "156.0.8078.91",
+          "mobile": false
+        }
+      }
+    ],
+    "linux": [
+      {
+        "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+        "userAgentData": {
+          "brands": [
+            {
+              "brand": "Chromium",
+              "version": "156"
+            },
+            {
+              "brand": "Google Chrome",
+              "version": "156"
+            },
+            {
+              "brand": "Not?A_Brand",
+              "version": "99"
+            }
+          ],
+          "platform": "Linux",
+          "platformVersion": "",
+          "architecture": "x86",
+          "bitness": "64",
+          "model": "",
+          "fullVersion": "156.0.8078.91",
+          "mobile": false
+        }
+      }
+    ]
+  }
+}

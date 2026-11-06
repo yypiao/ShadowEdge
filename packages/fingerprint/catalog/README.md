@@ -15,8 +15,8 @@ pnpm update-ua-catalog
 ```bash
 pnpm --filter @shadowedge/fingerprint build
 node packages/fingerprint/dist/catalog-cli.js \
-  --version 156.0.8078.73 \
-  --out packages/fingerprint/catalog/chrome-156.0.8078.73.json
+  --version 156.0.8078.91 \
+  --out packages/fingerprint/catalog/chrome-156.0.8078.91.json
 ```
 
 生成物默认写入 `catalog/chrome-stable.json`，也可以按版本号保存为不可变快照。
@@ -46,7 +46,7 @@ auditFingerprint(fingerprint, { db });
 
 ## 运行时版本绑定
 
-- 历史环境绑定 `131.0.6778.86`，当前新建环境绑定 `156.0.8078.73`，与 Chromium 内核版本一致。
+- 历史环境绑定 `131.0.6778.86` 或 `156.0.8078.73`，当前新建环境绑定 `156.0.8078.91`，与 Chromium 内核版本一致。
 - `generateFingerprint({ catalogVersion })` 与 `auditFingerprint()` 按完整版本号加载 `chrome-<version>.json`；缺失或损坏会抛出 `E_CATALOG_SNAPSHOT_MISSING`，不会回退到其他素材。
 - 旧快照只读。升级内核时新增快照，只让新环境使用；升级后必须对 131 历史画像与当前版本新画像分别跑真实探针。
 
@@ -55,6 +55,6 @@ SHADOWEDGE_KERNEL_EXECUTABLE=/path/to/Chromium \
   pnpm probe -- --seed legacy-regression --catalog-version 131.0.6778.86 \
   --label kernel-131 --fail-under 32
 SHADOWEDGE_KERNEL_EXECUTABLE=/path/to/Chromium \
-  pnpm probe -- --seed current-regression --catalog-version 156.0.8078.73 \
+  pnpm probe -- --seed current-regression --catalog-version 156.0.8078.91 \
   --label kernel-156 --fail-under 32
 ```

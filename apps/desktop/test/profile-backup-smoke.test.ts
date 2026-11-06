@@ -52,6 +52,8 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
     const profiles = new ProfileRepository(handle);
     const proxies = new ProxyRepository(handle, crypto);
     const storageStates = new StorageStateRepository(handle, crypto);
+    const accounts = new AccountRepository(handle, crypto);
+    const rpa = new RpaRepository(handle, crypto);
     const runtime = new KernelRuntimeService(join(dir, 'config'), {});
     const kernel = new BrowserKernel({
       drivers: [new ChromiumCdpDriver({ executablePath, fallbackToPatchright: false })],
@@ -63,8 +65,8 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
       profileRepo: profiles,
       groupRepo: new GroupRepository(handle),
       proxyRepo: proxies,
-      accountRepo: new AccountRepository(handle, crypto),
-      rpaRepo: new RpaRepository(handle),
+      accountRepo: accounts,
+      rpaRepo: rpa,
       storageStateRepo: storageStates,
       audit: new AuditLog(handle),
       sessions: new SessionRepository(handle),
@@ -88,6 +90,10 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
       const page = sourceContext.pages()[0] ?? await sourceContext.newPage();
       await page.goto(origin);
       await page.evaluate(() => localStorage.setItem('login-state', 'local-storage-secret'));
+      await page.evaluate(() => sessionStorage.setItem('checkout-draft', 'session-storage-secret'));
+      const secondPage = await sourceContext.newPage();
+      await secondPage.goto(origin);
+      await secondPage.evaluate(() => sessionStorage.setItem('checkout-draft', 'second-tab-secret'));
       await page.evaluate(async () => {
         const db = await new Promise<IDBDatabase>((resolve, reject) => {
           const request = indexedDB.open('auth-db', 1);
@@ -125,7 +131,22 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
         id: 'backup-proxy', orgId: 'local', label: 'backup-proxy', protocol: 'http',
         host: '127.0.0.1', port: 8899, username: 'proxy-user', password: 'proxy-secret', tags: [],
       });
-      profiles.save({ ...source, proxyId: proxy.id });
+      profiles.save({ ...source, proxyId: proxy.id, startupUrls: [origin, origin] });
+      await handlers['account:upsert']({
+        profileId: source.id, label: 'shop', origin, username: 'Ada',
+        usernameSelector: '#email', passwordSelector: '#password', password: 'account-secret',
+      });
+      const workflow = await handlers['rpa:save']({
+        name: 'backup-workflow',
+        graph: {
+          entry: 'open',
+          nodes: { open: { id: 'open', kind: 'navigate', params: { url: origin } } },
+        },
+      });
+      await handlers['rpa:setSchedule']({
+        workflowId: workflow.id, profileIds: [source.id], intervalMinutes: 60,
+        enabled: true, inputs: { token: 'schedule-secret' },
+      });
 
       const exported = await handlers['profile:export']({
         profileId: source.id,
@@ -141,6 +162,10 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
       expect(contents).not.toContain('indexed-db-secret');
       expect(contents).not.toContain('opfs-secret');
       expect(contents).not.toContain('proxy-secret');
+      expect(contents).not.toContain('session-storage-secret');
+      expect(contents).not.toContain('second-tab-secret');
+      expect(contents).not.toContain('account-secret');
+      expect(contents).not.toContain('schedule-secret');
       expect(contents).not.toContain('backup-source');
 
       await expect(handlers['profile:import']({
@@ -162,6 +187,14 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
       expect(importedProfile.proxyId).not.toBe(proxy.id);
       expect(proxies.reveal(importedProfile.proxyId!)).toBe('proxy-secret');
       expect(storageStates.reveal(importedProfile.id)?.cookies[0]?.value).toBe('cookie-secret');
+      const importedAccounts = accounts.list(importedProfile.id);
+      expect(importedAccounts).toHaveLength(1);
+      expect(accounts.reveal(importedAccounts[0]!.id).password).toBe('account-secret');
+      const importedSchedule = rpa.listSchedules().find((schedule) => schedule.profileIds.includes(importedProfile.id));
+      expect(importedSchedule).toBeDefined();
+      expect(importedSchedule!.enabled).toBe(false);
+      expect(importedSchedule!.workflowId).not.toBe(workflow.id);
+      expect(rpa.getScheduleInputs(importedSchedule!.workflowId)).toEqual({ token: 'schedule-secret' });
 
       // 本测试不经过代理联网，单独验证代理凭据迁移后改回直连以验证站点状态。
       profiles.save({ ...importedProfile, proxyId: undefined });
@@ -172,6 +205,14 @@ describe.skipIf(!SMOKE)('真实 Chromium 环境加密迁移', () => {
       await importedPage.goto(origin);
       expect(await importedPage.evaluate(() => localStorage.getItem('login-state'))).toBe(
         'local-storage-secret',
+      );
+      expect(await importedPage.evaluate(() => sessionStorage.getItem('checkout-draft'))).toBe(
+        'session-storage-secret',
+      );
+      const restoredTabs = importedContext.pages().filter((item) => item.url().startsWith(origin));
+      expect(restoredTabs).toHaveLength(2);
+      expect(await restoredTabs[1]!.evaluate(() => sessionStorage.getItem('checkout-draft'))).toBe(
+        'second-tab-secret',
       );
       const cookies = await importedContext.cookies([origin]);
       expect(cookies.find((cookie) => cookie.name === 'session')?.value).toBe('cookie-secret');

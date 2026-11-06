@@ -9,13 +9,25 @@ const MAX_OPFS_ENTRIES = 4000;
 
 export async function captureStorageState(context: BrowserContext): Promise<BrowserStorageState> {
   const state = await context.storageState({ indexedDB: true, opfs: true });
+  const sessionSnapshots: NonNullable<BrowserStorageState['sessionStorage']> = [];
+  for (const page of context.pages()) {
+    if (!/^https?:$/.test(new URL(page.url(), 'about:blank').protocol)) continue;
+    sessionSnapshots.push(await page.evaluate(() => ({
+      url: location.href,
+      origin: location.origin,
+      items: Array.from({ length: sessionStorage.length }, (_, index) => {
+        const name = sessionStorage.key(index)!;
+        return { name, value: sessionStorage.getItem(name)! };
+      }),
+    })));
+  }
   if (!withinOpfsBudget(state)) {
     throw new ShadowEdgeError(
       'E_STORAGE_STATE_FAILED',
       `OPFS 超过安全上限（${MAX_OPFS_FILES} 个文件 / ${MAX_OPFS_TOTAL_BYTES / 1024 / 1024}MB）`,
     );
   }
-  return state;
+  return { ...state, sessionStorage: sessionSnapshots };
 }
 
 /** 限制必须跨 origin 汇总，否则拆到多个站点即可绕过备份内存与磁盘预算。 */
@@ -34,6 +46,30 @@ export function withinOpfsBudget(state: Pick<BrowserStorageState, 'origins'>): b
     }
   }
   return true;
+}
+
+export async function restoreSessionStorage(
+  context: BrowserContext,
+  state: BrowserStorageState,
+): Promise<void> {
+  const snapshots = [...(state.sessionStorage ?? [])];
+  const used = new Set<number>();
+  for (const page of context.pages()) {
+    const url = page.url();
+    if (!/^https?:/.test(url)) continue;
+    const origin = new URL(url).origin;
+    let index = snapshots.findIndex((snapshot, candidate) =>
+      !used.has(candidate) && snapshot.url === url);
+    if (index < 0) index = snapshots.findIndex((snapshot, candidate) =>
+      !used.has(candidate) && snapshot.origin === origin);
+    if (index < 0) continue;
+    used.add(index);
+    const snapshot = snapshots[index]!;
+    await page.evaluate((items) => {
+      sessionStorage.clear();
+      for (const item of items) sessionStorage.setItem(item.name, item.value);
+    }, snapshot.items);
+  }
 }
 
 export function countIndexedDatabases(state: BrowserStorageState): number {
@@ -55,7 +91,9 @@ export async function restoreOrCheckpointState(
 ): Promise<void> {
   const context = kernel.getAutomationContext(profileId);
   if (pending && !hadExistingDirectory) {
-    await context.setStorageState(pending);
+    const persistent = { ...pending };
+    delete persistent.sessionStorage;
+    await context.setStorageState(persistent);
   } else if (pending) {
     // 会话 Cookie 及尚未刷盘的持久 Cookie 可能不在目录；同名同域路径以目录为准。
     const current = await context.cookies();

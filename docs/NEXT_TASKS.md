@@ -954,10 +954,150 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 > Electron UI 已实测启用/停用；真实 Chromium 已分别验证“空闲环境自动启动→成功提取→自动关闭”和
 > “预启动环境成功执行→保持运行”。当前为固定间隔，不包含 cron、时区日历或并发调度策略。
 
+## T40 — 真实代理、外站探针与目标站点验收（2026-11-05）
+
+> Release `156.0.8078.91` 经 `t1` 真实双跳代理完成外站复测，40/40 通过；CreepJS
+> headless/stealth 均为 0%，BrowserLeaks 无真实 IP 泄漏，Pixelscan 为 `consistent`，Browser、
+> Fingerprint、Location、Bot check 均通过。首次 Pixelscan 前页面/浏览器退出造成 36/40，增加生命周期
+> 日志后完整复测未复现，不将首次失败描述成内核指纹缺陷。成功报告：
+> `experiments/probes/results/t40-release-156-91-rerun-1793892464646.json`。
+>
+> 本地矩阵补齐 `--proxy/--proxy-file/--upstream`，通过产品现有 `BrowserKernel → 本地中继 → 真实代理`
+> 链路验证出口，不再用直连 IP 冒充代理结果。真实出口、双环境隔离、Worker/ServiceWorker、WebRTC、
+> 网络画像及 20 次重启共 16/16、0 跳过，报告：`experiments/probes/results/t40-matrix-156.0.8078.91.json`。
+>
+> Amazon DE 使用德国 `os1` 通过地区闸门，但两次公开首页验收分别为连接错误和空页面；绕过 Chromium
+> 的原始代理隧道同样得到 HTTP 202、0 字节正文，已归类为 Amazon/出口链路外部阻塞，未记为站点通过。
+> 当前中国出口不满足 Amazon/Shopee/TikTok 已配置站点地区，德国出口只匹配 Amazon DE；Shopee 与
+> TikTok 仍需对应地区代理后再验收，未绕过地区闸门，也未尝试账号登录或验证码。
+
+---
+
+## T41 — Chromium 156.0.8078.91 UA Catalog（2026-11-05）
+
+> 新增不可变 `chrome-156.0.8078.91.json`，新建环境默认 Catalog 与当前内核一致；131 和
+> 156.0.8078.73 快照保持只读。测试对两个历史 Catalog、两个固定 seed 的完整画像 JSON 固定
+> SHA-256，防止仅比较“同代码重算”而漏掉跨版本漂移。91 画像经真实代理矩阵 16/16、20 次重启
+> 零漂移，报告：`experiments/probes/results/t41-matrix-156.0.8078.91.json`。
+> 2026-11-06 深回归中，91 Catalog 外站同样 40/40，Pixelscan `consistent` 且未提示 masking，报告：
+> `experiments/probes/results/t41-release-156-91-full-1793924994388.json`；历史 73 Catalog 也在当前
+> 内核通过真实代理 16/16 与 20 次重启零漂移，报告：
+> `experiments/probes/results/t41-legacy-matrix-156.0.8078.73.json`。
+> 在线 Catalog 更新与 CI 自动 PR 仍后置，本次是离线固定版本快照。
+
+---
+
+## T42 — RPA 复杂控件与多标签页（2026-11-05）
+
+> 新增 `select/check/upload/download/newTab/switchTab` 节点及桌面编辑器配置；`click/type/extract`
+> 和新增控件节点支持 `frameSelector`，开放 Shadow DOM 由 Patchright 原生 CSS 穿透。下载等待与点击
+> 并发执行，文件名清理后保存为 0600 产物；切换标签后后续节点和硬取消都作用于当前页。
+>
+> 真实 Chromium 验收通过：Iframe 输入/下拉/勾选、Shadow DOM 输入/提取、弹窗、新建与切换标签、
+> 文件上传、真实下载及内容逐字校验。日志：`experiments/probes/results/t42-rpa-controls.log`。
+> 高级节点的自动录制由 T44 补齐；文件上传本机路径仍不自动记录。
+
+---
+
+## T43 — 全量加密环境备份（2026-11-05）
+
+> 在 Cookie、LocalStorage、IndexedDB、OPFS 之上补齐按标签页保存的 SessionStorage、账号凭据、
+> RPA 工作流、调度配置及加密输入。备份仍使用口令 PBKDF2 + 信封加密，导入后用本机 KEK 再加密；
+> 代理、环境、状态、账号、工作流与调度在同一 SQLite 事务中写入。旧 v1 备份缺少扩展字段时继续兼容。
+>
+> 导入调度默认停用并清除过期执行状态，避免旧备份立即触发自动化，用户审阅后再启用。真实 Chromium
+> 已验证两个同 origin 标签页的 SessionStorage 分别恢复，账号密码、工作流和调度输入完整迁移；
+> 密文不包含 session/account/schedule 敏感哨兵。日志：`experiments/probes/results/t43-profile-backup.log`。
+> 2026-11-06 扩展审查修正了工作流导入校验：`validateGraph()` 返回 `valid/errors` 而非抛错，导入器现在
+> 强制检查 `valid`；新增无效入口拒绝和最后一次调度写入故障的全事务回滚测试。18 个真实
+> Chromium/Electron 测试文件串行回归全部通过，覆盖账号填充、网络 Client Hints、启动令牌、环境隔离、
+> 快照/备份/批量生命周期、RPA 运行/取消/复杂控件/录制/调度、Worker、三组 Electron UI 和退出回收。
+> 最终门禁：189 passed / 28 skipped，typecheck、lint、Electron 生产构建及 `git diff --check` 全绿。
+
+---
+
+## T44 — RPA 高级录制与多标签页闭环（2026-11-06）
+
+> 在 T38 的导航/点击/普通文本基础上，新增单选下拉框、checkbox/radio、`contenteditable`、开放
+> Shadow DOM、单层 Iframe、新建标签页、链接弹窗和切回主页的录制。普通文本改为在 `input` 时增量记录并
+> 合并同目标事件，停止录制时不会丢失尚未失焦的最后一段文本；密码仍只统计数量，不读取值。
+>
+> Shadow DOM 在每个 root 内生成唯一选择器，以 `host >> css=target` 回放；动态 root 通过 MutationObserver
+> 和短周期扫描发现，不改写 `attachShadow` 原生函数。Iframe 使用短期随机 DOM 标记识别文档，再于父框架生成
+> `frameSelector`，停止后清理。T46 已在此基础上补齐嵌套 Iframe 和 multiple select；文件上传仍不生成
+> 错误节点，计入 `droppedActions`，文件本机路径及内容不进入工作流。
+>
+> 无 opener 的页面记录为 `newTab`；链接弹窗记录为原点击加 `switchTab`，避免回放时重复创建标签页。
+> `switchTab` 新增最多 30 秒的可选有界等待，录制图默认 10 秒，以覆盖点击后弹窗尚未出现的竞态。
+> T44 的关闭页面边界已由 T46 解除：现在生成真实 `closeTab` 节点，并按压缩后的标签页索引继续录制。
+>
+> 真实 Chromium 已验证“高级控件/Shadow DOM/Iframe → 手工新标签 → 链接弹窗 → 返回主页”录制、保存和
+> 回放后的逐字段状态，并验证文件名和文件内容不落图；原密码录制回放同步回归通过。证据：
+> `experiments/probes/results/t44-rpa-recording-regression.log`。
+> 最终门禁：190 passed / 29 skipped，typecheck、lint 全绿；19 个真实 Chromium/Electron
+> 测试文件串行回归全部通过，汇总：`experiments/probes/results/full-smoke/summary.json`。
+
+---
+
+## T45 — 平台策略目录版本化与历史环境固定（2026-11-06）
+
+> 平台站点策略从主进程硬编码上提到 `packages/core` 的不可变目录快照。`2026-11-04.1`
+> 完整保留原 9 个站点；`2026-11-06.1` 原字段不变，追加 Amazon CA、Shopee TW、TikTok JP。
+> 两个快照的完整 JSON 均有固定 SHA-256，历史站点前缀一致性与防御性副本由测试保证。
+>
+> `BrowserProfile.platformPolicyVersion`、SQLite migration 11 和仓储映射已落地。历史平台环境只回填
+> `2026-11-04.1` 一次并写迁移审计；新环境固定当前目录，启动区域闸门按环境版本解析，未知版本不
+> 回退。显式切换站点才升级目录并记录前后版本，seed 画像逐字段不变；普通编辑继续脱离一键站点策略。
+>
+> IPC 返回带版本的完整目录，桌面创建页显示目录版本。加密备份自动携带版本：旧备份按导入时目录
+> 固定，已有版本原样恢复，未知版本或不匹配站点在事务前拒绝。规则与后续更新流程见
+> `docs/PLATFORM_POLICIES.md`。真实 Electron 已验证版本展示、新站点选项及原管理闭环，日志：
+> `experiments/probes/results/t45-platform-policy-ui.log`。新增站点仅完成配置和 UI 验收，没有
+> 匹配地区代理时不宣称真实站点通过。最终门禁：197 passed / 29 skipped，typecheck、lint、
+> Electron 生产构建及 `git diff --check` 全绿；19 个真实 Chromium/Electron 套件串行回归全部通过。
+
+---
+
+## T46 — RPA 录制边界：嵌套框架、多选与关闭标签页（2026-11-06）
+
+> Core 契约新增 `closeTab`、完整 `frameSelectors` 路径和多选 `values`，保留旧 `frameSelector` 与单值
+> `select.value` 兼容。执行器支持 1–8 层 Iframe、最多 100 个选中值；关闭后台页不改变当前页，关闭当前页后
+> 优先回退到同索引页面，越界时回退到最后一个剩余页面。录制器使用相同的索引压缩和回退规则，图生成及桌面
+> 编辑器同步支持新节点和参数。
+>
+> 录制注入改为 BrowserContext 级 `exposeBinding` 与 init script，利用 `source.page` 路由事件，新页面首个文档
+> 自动继承录制能力；binding 事件先于 page 事件到达时会先纳管页面。就绪标记等待监听器和 binding 均可用，
+> 不靠固定延时规避竞态。真实 Chromium 连续验证多选 US/CA、两层 Iframe 输入、三个新标签页输入、关闭后台页、
+> 关闭当前页及保存后完整回放，所有字段和最终单标签页状态一致。
+>
+> 四个真实 RPA 录制/控件套件回归通过，日志：`experiments/probes/results/t46-rpa-recording-regression.log`。
+> 最终门禁：198 passed / 30 skipped，typecheck、lint、Electron 生产构建和 `git diff --check` 全绿；20 个真实
+> Chromium/Electron 套件串行通过，汇总：`experiments/probes/results/full-smoke/summary.json`。
+
+---
+
+## T47 — 多 Chromium 实例并行隔离与录制关闭竞态（2026-11-06）
+
+> 新增三个真实 Chromium 实例同时运行的隔离验收：三个环境使用相同页面结构和选择器，并行写入不同的
+> Cookie、LocalStorage、SessionStorage、主框架/嵌套 Iframe 文本及新标签页文本，随后同时停止录制、保存并
+> 并发回放。逐环境断言图中没有任何其他环境标记，标签页关闭和嵌套路径完整，回放后存储、字段、UA 画像和
+> 用户目录仍各自匹配。修复后连续 5 轮全部通过，证据：
+> `experiments/probes/results/t47-multi-instance-stress.log`。
+>
+> 压测第二轮发现标签页输入偶发丢失，但没有串入其他环境。原因是页面实际关闭后，已送达的关闭前 binding
+> 事件被 `page.isClosed()` 提前丢弃；现在允许已纳管页面的关闭前事件进入原环境队列。修复后 5/5 轮通过，
+> 原 RPA 录制边界和完整真实套件均回归通过。双实例 `os1/t1` 真实代理出口隔离也通过，日志：
+> `experiments/probes/results/t47-parallel-proxy-isolation.log`。
+>
+> 最终门禁：198 passed / 31 skipped，typecheck、lint、Electron 生产构建和 `git diff --check` 全绿；21 个真实
+> Chromium/Electron 套件串行通过，汇总：`experiments/probes/results/full-smoke/summary.json`。
+
+---
+
 ## 后续 P1/P2
 
 - Windows DPAPI、Linux Secret Service 本地 KEK，及对应真实系统测试（当前仅 macOS Keychain 完整落地）。
 - 团队 RBAC、环境共享、加密云同步与审计协作；在单机核心链路稳定后推进。
-- 平台策略包版本化和更多站点；T36 的内核升级证据已补齐，下一步可扩到更多站点运营场景。
+- 平台策略目录已由 T45 版本化；补充 Shopee SG/MY/PH、TikTok US/UK 及 Amazon 其他地区的匹配代理后，继续 T40 真实站点验收。
 - 在线内核更新、catalog CI 自动 PR、夜间 runner 属于发布/运维链路，按当前“开发优先”决定继续后置；
   本卡未修改 CI，也不把本地脚本描述成已启用的自动化服务。

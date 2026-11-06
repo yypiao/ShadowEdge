@@ -1,4 +1,13 @@
-import type { RpaGraph, RpaNode, RpaRecordedAction } from '@shadowedge/core';
+import type { RpaGraph, RpaNode, RpaRecordedAction, RpaRecordedTarget } from '@shadowedge/core';
+
+function targetParams(target: RpaRecordedTarget): Record<string, unknown> {
+  return {
+    selector: target.selector,
+    frameSelector: target.frameSelector,
+    frameSelectors: target.frameSelectors ? [...target.frameSelectors] : undefined,
+    timeout: 10000,
+  };
+}
 
 /** 将录制事件固化为线性图；节点 ID 不依赖时间或随机数，便于测试与审阅差异。 */
 export function buildRecordedGraph(actions: RpaRecordedAction[]): RpaGraph {
@@ -9,13 +18,30 @@ export function buildRecordedGraph(actions: RpaRecordedAction[]): RpaGraph {
       case 'navigate':
         return { ...base, kind: 'navigate', params: { url: action.url, waitUntil: 'domcontentloaded' } };
       case 'click':
-        return { ...base, kind: 'click', params: { selector: action.selector, timeout: 10000 } };
+        return { ...base, kind: 'click', params: targetParams(action) };
       case 'type':
         return {
           ...base,
           kind: 'type',
-          params: { selector: action.selector, text: action.text, clear: true, timeout: 10000 },
+          params: { ...targetParams(action), text: action.text, clear: true },
         };
+      case 'select':
+        return {
+          ...base,
+          kind: 'select',
+          params: 'values' in action
+            ? { ...targetParams(action), values: [...action.values] }
+            : { ...targetParams(action), value: action.value },
+        };
+      case 'check':
+        return { ...base, kind: 'check', params: { ...targetParams(action), checked: action.checked } };
+      case 'newTab':
+        return { ...base, kind: 'newTab', params: {} };
+      case 'switchTab':
+        // 用户点击弹窗链接后，新页面的创建可能晚于本节点，允许有界等待。
+        return { ...base, kind: 'switchTab', params: { index: action.index, timeout: 10000 } };
+      case 'closeTab':
+        return { ...base, kind: 'closeTab', params: { index: action.index } };
     }
   });
   return {

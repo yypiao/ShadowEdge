@@ -4,3 +4,4 @@ export * from './result.js';
 export * from './random.js';
 export * from './logger.js';
 export * from './ipc.js';
+export * from './platform-policy-catalog.js';

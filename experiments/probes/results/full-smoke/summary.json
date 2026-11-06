@@ -1,0 +1,144 @@
+{
+  "date": "2026-11-06",
+  "kernel": "156.0.8078.91",
+  "unit": {
+    "filesPassed": 39,
+    "filesSkipped": 27,
+    "testsPassed": 198,
+    "testsSkipped": 31
+  },
+  "realSuites": [
+    {
+      "suite": "account-autofill-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/account-autofill-smoke.log"
+    },
+    {
+      "suite": "client-hints-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/client-hints-smoke.log"
+    },
+    {
+      "suite": "kernel-runtime-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/kernel-runtime-smoke.log"
+    },
+    {
+      "suite": "launch-token-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/launch-token-smoke.log"
+    },
+    {
+      "suite": "profile-isolation-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/profile-isolation-smoke.log"
+    },
+    {
+      "suite": "profile-state-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/profile-state-smoke.log"
+    },
+    {
+      "suite": "profile-backup-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/profile-backup-smoke.log"
+    },
+    {
+      "suite": "profile-batch-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/profile-batch-smoke.log"
+    },
+    {
+      "suite": "rpa-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/rpa-smoke.log"
+    },
+    {
+      "suite": "rpa-cancellation-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/rpa-cancellation-smoke.log"
+    },
+    {
+      "suite": "rpa-controls-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/rpa-controls-smoke.log"
+    },
+    {
+      "suite": "rpa-recording-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/rpa-recording-smoke.log"
+    },
+    {
+      "suite": "rpa-advanced-recording-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/rpa-advanced-recording-smoke.log"
+    },
+    {
+      "suite": "rpa-recording-boundaries-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/rpa-recording-boundaries-smoke.log"
+    },
+    {
+      "suite": "multi-instance-rpa-isolation-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/multi-instance-rpa-isolation-smoke.log"
+    },
+    {
+      "suite": "rpa-scheduler-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/rpa-scheduler-smoke.log"
+    },
+    {
+      "suite": "worker-scope-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/worker-scope-smoke.log"
+    },
+    {
+      "suite": "profile-management-ui-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/profile-management-ui-smoke.log"
+    },
+    {
+      "suite": "profile-batch-ui-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/profile-batch-ui-smoke.log"
+    },
+    {
+      "suite": "rpa-ui-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/rpa-ui-smoke.log"
+    },
+    {
+      "suite": "app-lifecycle-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/app-lifecycle-smoke.log"
+    }
+  ],
+  "external": {
+    "catalog": "156.0.8078.91",
+    "score": "40/40",
+    "report": "experiments/probes/results/t41-release-156-91-full-1793924994388.json"
+  },
+  "historicalMatrix": {
+    "catalog": "156.0.8078.73",
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0,
+    "restarts": 20,
+    "report": "experiments/probes/results/t41-legacy-matrix-156.0.8078.73.json"
+  },
+  "gates": [
+    "typecheck",
+    "lint",
+    "desktop-production-build",
+    "git-diff-check"
+  ],
+  "parallelIsolation": {
+    "chromiumInstances": 3,
+    "consecutiveRoundsPassed": 5,
+    "recordingAndReplay": "passed",
+    "proxyExitIsolation": "passed",
+    "rpaLog": "experiments/probes/results/t47-multi-instance-stress.log",
+    "proxyLog": "experiments/probes/results/t47-parallel-proxy-isolation.log"
+  }
+}

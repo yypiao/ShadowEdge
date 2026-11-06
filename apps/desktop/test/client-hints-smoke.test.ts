@@ -135,7 +135,7 @@ describe.skipIf(!SMOKE)('Chromium 网络层 Client Hints', () => {
       expect(second['sec-ch-ua-model']).toBe(`"${ua.model}"`);
       expect(second['sec-ch-ua-wow64']).toBe('?0');
       expect(second['sec-ch-ua-form-factors']).toBe('"Desktop"');
-      expect(second['sec-ch-ua-full-version-list']).not.toContain('156.0.8078.73');
+      expect(second['sec-ch-ua-full-version-list']).not.toContain('156.0.8078.91');
       for (const path of ['/redirect-target', '/api']) {
         expect(requests[path]?.['sec-ch-ua'], path).toBe(low['sec-ch-ua']);
         expect(requests[path]?.['sec-ch-ua-full-version-list'], path).toBe(
@@ -147,7 +147,7 @@ describe.skipIf(!SMOKE)('Chromium 网络层 Client Hints', () => {
       const workerHeaders = requests['/worker.js']!;
       expect(workerHeaders['sec-ch-ua']).toBe(low['sec-ch-ua']);
       expect(workerHeaders['sec-ch-ua-full-version-list'] ?? '').not.toContain(
-        '156.0.8078.73',
+        '156.0.8078.91',
       );
     } finally {
       await kernel.close(profile.id);

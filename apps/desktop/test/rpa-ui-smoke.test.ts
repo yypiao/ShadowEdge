@@ -61,12 +61,24 @@ describe.skipIf(!SMOKE)('Electron RPA 工作流闭环', () => {
       await page.getByText('录制已生成，可编辑、保存并回放', { exact: true }).waitFor();
       expect(await page.locator('[data-node-kind]').count()).toBe(1);
       await page.getByRole('button', { name: '新建工作流', exact: true }).click();
-      await page.getByLabel('工作流名称').fill('UI RPA');
-      await page.getByLabel('页面 URL').fill(origin);
       const addNode = async (label: string) => {
         await page.getByLabel('待添加节点类型').selectOption({ label });
         await page.getByRole('button', { name: '添加节点', exact: true }).click();
       };
+      for (const label of ['选择下拉项', '设置复选框', '上传文件', '点击并下载', '新建标签页', '切换标签页']) {
+        await addNode(label);
+      }
+      expect(await page.locator('[data-node-kind]').count()).toBe(7);
+      await page.locator('[data-node-kind="select"] input').first().waitFor();
+      await page.locator('[data-node-kind="upload"] input').first().waitFor();
+      await page.locator('[data-node-kind="newTab"] input').first().waitFor();
+      expect(await page.locator('[data-node-kind="switchTab"] input[type="number"]').inputValue()).toBe('0');
+
+      // 高级节点只验证编辑器；随后另建可实际运行的导航/输入/点击工作流。
+      await page.getByRole('button', { name: '新建工作流', exact: true }).click();
+      await expect.poll(() => page.locator('[data-node-kind]').count()).toBe(1);
+      await page.getByLabel('工作流名称').fill('UI RPA');
+      await page.getByLabel('页面 URL').fill(origin);
       await addNode('输入文本');
       await addNode('点击元素');
       await addNode('提取文本');

@@ -17,7 +17,7 @@ import type {
   ProfileBackupExportResult,
   ProfileBackupImportResult,
   Platform,
-  PlatformPolicy,
+  PlatformPolicyCatalog,
   ProfileSiteSwitchResult,
   ProxyCredential,
   ProxyHealth,
@@ -52,7 +52,7 @@ export interface IpcApi {
   'profile:prepareKernelUpgrade': (input: { profileId: Uuid; targetVersion: string }) => BrowserProfile;
   'profile:commitKernelUpgrade': (input: { profileId: Uuid; upgradeProfileId: Uuid; confirmed: boolean }) => BrowserProfile;
   'profile:delete': (id: Uuid) => void;
-  'platformPolicy:list': () => PlatformPolicy[];
+  'platformPolicy:list': () => PlatformPolicyCatalog;
   'profile:switchSite': (input: { profileId: Uuid; siteId: string }) => ProfileSiteSwitchResult;
   'profile:launch': (options: LaunchOptions) => LaunchResult;
   'profile:launchMany': (input: {

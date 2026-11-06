@@ -8,11 +8,24 @@ export interface RpaLocator {
   pressSequentially(value: string, options: { delay: number }): Promise<void>;
   textContent(): Promise<string | null>;
   getAttribute(name: string): Promise<string | null>;
+  selectOption(value: string | string[], options: { timeout: number }): Promise<string[]>;
+  setChecked(checked: boolean, options: { timeout: number }): Promise<void>;
+  setInputFiles(files: string, options: { timeout: number }): Promise<void>;
+}
+
+export interface RpaFrameLocator {
+  locator(selector: string): RpaLocator;
+  frameLocator(selector: string): RpaFrameLocator;
 }
 
 export interface RpaMouse {
   move(x: number, y: number): Promise<void>;
   click(x: number, y: number): Promise<void>;
+}
+
+export interface RpaDownload {
+  suggestedFilename(): string;
+  saveAs(path: string): Promise<void>;
 }
 
 export interface RpaPage {
@@ -22,7 +35,10 @@ export interface RpaPage {
     options: { waitUntil: 'load' | 'domcontentloaded' | 'networkidle'; timeout: number },
   ): Promise<unknown>;
   locator(selector: string): RpaLocator;
+  frameLocator(selector: string): RpaFrameLocator;
   screenshot(options: { path: string; fullPage: boolean; type: 'png' }): Promise<Uint8Array>;
+  bringToFront(): Promise<void>;
+  waitForEvent(event: 'download', options: { timeout: number }): Promise<RpaDownload>;
   /** 硬取消时关闭当前 RPA 页面，使未结束的 CDP 调用失败并落定。 */
   close(): Promise<void>;
 }
@@ -41,6 +57,8 @@ export interface RpaNodeExecution {
   /** 整个工作流的绝对截止时间，节点自身 timeout 不得越过它。 */
   deadlineAt: number;
   closePage(): Promise<void>;
+  createPage(): Promise<RpaPage>;
+  listPages(): RpaPage[];
   percent: number;
   random: () => number;
   outputs: Record<string, string | null>;

@@ -21,6 +21,7 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
   const [count, setCount] = useState(1);
   const [platformTag, setPlatformTag] = useState<string>('通用');
   const [policies, setPolicies] = useState<PlatformPolicy[]>([]);
+  const [catalogVersion, setCatalogVersion] = useState('');
   const [siteId, setSiteId] = useState('');
   const [fpPlatform, setFpPlatform] = useState<FpPlatform>('host');
   const [proxyId, setProxyId] = useState('');
@@ -33,7 +34,10 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
   const selectedSite = policies.find((policy) => policy.tag === platformTag)?.sites.find((item) => item.id === siteId);
 
   useEffect(() => {
-    window.shadowedge.api['platformPolicy:list'](undefined).then(setPolicies).catch(toastError);
+    window.shadowedge.api['platformPolicy:list'](undefined).then((catalog) => {
+      setPolicies(catalog.policies);
+      setCatalogVersion(catalog.version);
+    }).catch(toastError);
   }, []);
 
   // 种子/代理变化即实时预览画像；选代理时时区/语言/地理自动跟随出口
@@ -163,6 +167,7 @@ export function CreateProfileDialog({ onClose, onCreated }: Props) {
           {policies.map((policy) => <option key={policy.tag} value={policy.tag}>{policy.label}</option>)}
           <option value="facebook">facebook</option><option value="google">google</option>
         </select>
+        {catalogVersion && <div style={{ fontSize: 11, color: '#666', marginTop: 6 }}>策略目录：{catalogVersion}</div>}
         {selectedSite && (
           <>
             <span style={label}>平台站点</span>

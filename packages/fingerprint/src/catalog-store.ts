@@ -7,7 +7,7 @@ import type { CatalogGeneratorDb, FingerprintCatalog } from './catalog.js';
 /** 内嵌 DEFAULT_DB 的历史快照；老环境永远绑定此版本。 */
 export const LEGACY_CATALOG_VERSION = '131.0.6778.86';
 /** 新环境使用的版本，与当前自研 Chromium 内核保持一致。 */
-export const CURRENT_CATALOG_VERSION = '156.0.8078.73';
+export const CURRENT_CATALOG_VERSION = '156.0.8078.91';
 
 export interface LoadedFingerprintCatalog {
   catalog: FingerprintCatalog;

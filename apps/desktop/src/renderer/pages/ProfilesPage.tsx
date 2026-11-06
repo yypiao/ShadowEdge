@@ -37,7 +37,8 @@ export function ProfilesPage() {
   }, [profiles]);
 
   useEffect(() => {
-    window.shadowedge.api['platformPolicy:list'](undefined).then(setPolicies).catch(toastError);
+    window.shadowedge.api['platformPolicy:list'](undefined)
+      .then((catalog) => setPolicies(catalog.policies)).catch(toastError);
   }, []);
 
   const refresh = async () => {

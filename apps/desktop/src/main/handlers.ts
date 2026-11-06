@@ -13,7 +13,13 @@ import type {
   Result,
   Uuid,
 } from '@shadowedge/core';
-import { err, ok, ShadowEdgeError, toErrorPayload } from '@shadowedge/core';
+import {
+  CURRENT_PLATFORM_POLICY_CATALOG_VERSION,
+  err,
+  ok,
+  ShadowEdgeError,
+  toErrorPayload,
+} from '@shadowedge/core';
 import {
   auditFingerprint,
   CURRENT_CATALOG_VERSION,
@@ -37,8 +43,8 @@ import { runLaunchGate } from './services/launch-gate.js';
 import type { GroupRepository } from './services/group-repository.js';
 import { deleteProfileWithDirectory, managedProfilePath, removeProfileDirectory } from './services/profile-directory.js';
 import { normalizeCreateInput, normalizeUpdateInput } from './services/profile-input.js';
-import { checkPlatformRegion, findPlatformSite, listPlatformPolicies } from './services/platform-policies.js';
-import { captureStorageState, openStartupPages, restoreOrCheckpointState, storageStateFailure } from './services/profile-state.js';
+import { checkPlatformRegion, findPlatformSite, listPlatformPolicyCatalog } from './services/platform-policies.js';
+import { captureStorageState, openStartupPages, restoreOrCheckpointState, restoreSessionStorage, storageStateFailure } from './services/profile-state.js';
 import { commitKernelUpgrade, prepareKernelUpgrade } from './services/kernel-upgrade.js';
 import { RpaRecorder } from './services/rpa-recorder.js';
 import { RpaScheduler } from './services/rpa-scheduler.js';
@@ -268,6 +274,8 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     profileRepo: deps.profileRepo,
     proxyRepo: deps.proxyRepo,
     storageStateRepo: deps.storageStateRepo,
+    accountRepo: deps.accountRepo,
+    rpaRepo: deps.rpaRepo,
     kernel,
     profilesDir,
     defaultKernelVersion: defaultKernelVersion(),
@@ -321,6 +329,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         name: input.name,
         platformTag: input.platformTag,
         platformSiteId: selectedSite?.id,
+        platformPolicyVersion: input.platformTag ? CURRENT_PLATFORM_POLICY_CATALOG_VERSION : undefined,
         groupId: input.groupId,
         kernel: 'chromium-patched',
         kernelVersion,
@@ -364,6 +373,9 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         platformSiteId: normalized.platformTag !== undefined || normalized.startupUrls !== undefined
           ? undefined
           : profile.platformSiteId,
+        platformPolicyVersion: normalized.platformTag !== undefined || normalized.startupUrls !== undefined
+          ? undefined
+          : profile.platformPolicyVersion,
         id,
         updatedAt: new Date().toISOString(),
       };
@@ -402,7 +414,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       return updated;
     },
 
-    'platformPolicy:list': async () => listPlatformPolicies(),
+    'platformPolicy:list': async () => listPlatformPolicyCatalog(),
     'profile:switchSite': async ({ profileId, siteId }) => {
       const current = requireProfile(profileId);
       if (current.status === 'launching') {
@@ -410,13 +422,15 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       }
       const selected = findPlatformSite(siteId);
       if (current.proxyId) checkPlatformRegion(
-        { ...current, platformTag: selected.platformTag, platformSiteId: selected.id, startupUrls: [selected.url] },
+        { ...current, platformTag: selected.platformTag, platformSiteId: selected.id,
+          platformPolicyVersion: CURRENT_PLATFORM_POLICY_CATALOG_VERSION, startupUrls: [selected.url] },
         await getProxyHealth(current.proxyId),
       );
       const profile: BrowserProfile = {
         ...current,
         platformTag: selected.platformTag,
         platformSiteId: selected.id,
+        platformPolicyVersion: CURRENT_PLATFORM_POLICY_CATALOG_VERSION,
         startupUrls: [selected.url],
         updatedAt: new Date().toISOString(),
       };
@@ -425,7 +439,11 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       const failures = opened
         ? await openStartupPages(kernel.getAutomationContext(profileId), [selected.url])
         : [];
-      deps.audit.record('profile:switch-site', 'profile', profileId, { siteId });
+      deps.audit.record('profile:switch-site', 'profile', profileId, {
+        siteId,
+        fromCatalogVersion: current.platformPolicyVersion,
+        catalogVersion: profile.platformPolicyVersion,
+      });
       if (failures.length > 0) {
         deps.emit('app:toast', { level: 'warn', message: '目标站点未能加载，但站点配置已保存，环境仍保持运行' });
       }
@@ -478,6 +496,9 @@ export function createHandlers(deps: HandlerDeps): Handlers {
               kernel.getAutomationContext(profile.id),
               profile.startupUrls,
             );
+            if (pendingState && !hadExistingDirectory) {
+              await restoreSessionStorage(kernel.getAutomationContext(profile.id), pendingState);
+            }
             for (const failure of startupFailures) {
               deps.audit.record('profile:startup-url-failed', 'profile', profile.id, {
                 url: failure.url,

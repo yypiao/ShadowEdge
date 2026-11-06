@@ -12,17 +12,18 @@ const PAGE = readFileSync(join(HERE, 'probe-page.html'), 'utf8');
 const WORKER = readFileSync(join(HERE, 'probe-worker.js'), 'utf8');
 const SERVICE_WORKER = readFileSync(join(HERE, 'probe-sw.js'), 'utf8');
 
-function profile(id, seed, userDataDir) {
+function profile(id, seed, userDataDir, proxyId, catalogVersion) {
   return {
     id,
     orgId: 'local-probe',
     name: id,
     kernel: 'chromium-cdp',
-    fingerprint: generateFingerprint({ seed, platform: 'host', catalogVersion: '131.0.6778.86' }),
+    fingerprint: generateFingerprint({ seed, platform: 'host', catalogVersion: catalogVersion ?? '131.0.6778.86' }),
     ownerId: 'local-probe',
     sharedWith: [],
     storage: { userDataDir, remoteRevision: 0, syncMode: 'local-only' },
     startupUrls: [],
+    ...(proxyId ? { proxyId } : {}),
     status: 'idle',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -321,16 +322,20 @@ export async function runProbeSuite(options) {
   const stabilityEnabled = options.stability !== false && restarts > 0;
   const root = mkdtempSync(join(tmpdir(), 'shadowedge-probe-'));
   const server = await serveProbe();
+  const proxyId = options.proxy ? 'local-probe-proxy' : undefined;
   const kernel = new BrowserKernel({
     drivers: [new ChromiumCdpDriver({ executablePath: options.executablePath, fallbackToPatchright: false })],
+    ...(options.proxy ? { resolveProxy: async (id) => id === proxyId ? options.proxy : undefined } : {}),
   });
-  const a = profile('probe-a', 'shadowedge-probe-a', join(root, 'a'));
-  const b = profile('probe-b', 'shadowedge-probe-b', join(root, 'b'));
+  const a = profile('probe-a', 'shadowedge-probe-a', join(root, 'a'), proxyId, options.catalogVersion);
+  const b = profile('probe-b', 'shadowedge-probe-b', join(root, 'b'), proxyId, options.catalogVersion);
   const report = reportBuilder(startedAt, {
     executablePath: options.executablePath,
     restarts: stabilityEnabled ? restarts : 0,
     isolation: isolationEnabled,
     headless: false,
+    proxy: Boolean(options.proxy),
+    catalogVersion: options.catalogVersion ?? '131.0.6778.86',
   });
   let baseline;
   let reportValue;
@@ -375,8 +380,19 @@ export async function runProbeSuite(options) {
       Object.fromEntries(Object.entries(initialHeaders).filter(([name]) => name.startsWith('sec-ch-') || name === 'user-agent')));
     report.check('webrtc-private-ip', 'network', !baseline.webrtcCandidates.some(privateIpv4), baseline.webrtcCandidates);
     if (options.expectedExitIp) {
-      const response = await evaluateMain(pageA, async () => (await fetch('https://api.ipify.org')).text());
-      report.check('proxy-exit-ip', 'network', response === options.expectedExitIp, { actual: response, expected: options.expectedExitIp });
+      const exitPage = await contextA.newPage();
+      try {
+        await exitPage.goto('https://api.ip.sb/ip', { timeout: 45000, waitUntil: 'domcontentloaded' });
+        const response = (await exitPage.locator('body').innerText()).trim();
+        report.check('proxy-exit-ip', 'network', response === options.expectedExitIp, { actual: response, expected: options.expectedExitIp });
+      } catch (error) {
+        report.check('proxy-exit-ip', 'network', false, {
+          expected: options.expectedExitIp,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        await exitPage.close().catch(() => undefined);
+      }
     } else {
       report.skip('proxy-exit-ip', 'network', '未提供 --expected-exit-ip；本地探针不伪造代理出口结论');
     }

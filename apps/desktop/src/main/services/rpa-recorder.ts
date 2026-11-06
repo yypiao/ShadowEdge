@@ -8,23 +8,37 @@ import type {
 } from '@shadowedge/core';
 import type { BrowserKernel } from '@shadowedge/kernel';
 import { buildRecordedGraph } from '@shadowedge/rpa';
-import type { Disposable, Page } from 'patchright';
+import type { BrowserContext, Disposable, Frame, Page } from 'patchright';
+import { recordingScript, stableElementSelector } from './rpa-recording-script.js';
 
 const MAX_ACTIONS = 500;
 const MAX_SELECTOR_LENGTH = 2048;
 const MAX_TEXT_LENGTH = 10000;
+const MAX_SELECT_VALUES = 100;
+
+interface RecordingPage {
+  page: Page;
+  onFrameNavigated: (frame: Frame) => void;
+  onClose: () => void;
+}
 
 interface RecordingSession {
-  page: Page;
-  state: RpaRecordingState;
+  context: BrowserContext;
+  bindingName: string;
+  cleanupKey: string;
+  frameTokenKey: string;
+  binding?: Disposable;
+  initScript?: Disposable;
+  currentPage: Page;
+  pages: Map<Page, RecordingPage>;
+  /** 与 closeTab 执行器一致，页面关闭后立即压缩索引。 */
+  pageOrder: Page[];
   actions: RpaRecordedAction[];
   ignoredPasswordSelectors: Set<string>;
   droppedActions: number;
   active: boolean;
-  cleanupKey: string;
-  initScript?: Disposable;
-  onFrameNavigated: (frame: ReturnType<Page['mainFrame']>) => void;
-  onPageClose: () => void;
+  queue: Promise<void>;
+  onContextPage: (page: Page) => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -48,82 +62,21 @@ function validSelector(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= MAX_SELECTOR_LENGTH;
 }
 
-/**
- * 在页面主世界监听可信操作。绑定回调只接收选择器和普通输入值；密码分支不读取 value。
- * 停止后由主进程调用清理函数，之后即使 init script 在新文档执行也不会记录任何数据。
- */
-function recordingScript(options: { bindingName: string; cleanupKey: string }): void {
-  const emit = (payload: Record<string, unknown>): void => {
-    // exposeFunction 与业务 init script 的执行顺序不应影响录制，事件发生时再解析绑定。
-    const binding: unknown = Reflect.get(window, options.bindingName);
-    if (typeof binding === 'function') void binding(payload);
-  };
-  const unique = (selector: string): boolean => {
-    try {
-      return document.querySelectorAll(selector).length === 1;
-    } catch {
-      return false;
-    }
-  };
-  const stableSelector = (element: Element): string | undefined => {
-    const id = element.getAttribute('id');
-    if (id) {
-      const selector = `#${CSS.escape(id)}`;
-      if (unique(selector)) return selector;
-    }
-    for (const attribute of ['data-testid', 'data-test', 'name', 'aria-label']) {
-      const value = element.getAttribute(attribute);
-      if (!value) continue;
-      const selector = `${element.tagName.toLowerCase()}[${attribute}=${CSS.escape(value)}]`;
-      if (unique(selector)) return selector;
-    }
-    const path: string[] = [];
-    let current: Element | null = element;
-    while (current && current !== document.documentElement) {
-      const tag = current.tagName.toLowerCase();
-      const parent: Element | null = current.parentElement;
-      if (!parent) {
-        path.unshift(tag);
-        break;
-      }
-      const siblings = Array.from(parent.children).filter((item) => item.tagName === current!.tagName);
-      const suffix = siblings.length > 1 ? `:nth-of-type(${siblings.indexOf(current) + 1})` : '';
-      path.unshift(`${tag}${suffix}`);
-      current = parent;
-    }
-    const selector = path.join(' > ');
-    return selector && unique(selector) ? selector : undefined;
-  };
-  const onClick = (event: MouseEvent): void => {
-    if (!event.isTrusted || !(event.target instanceof Element)) return;
-    const target = event.target;
-    if (target instanceof HTMLTextAreaElement) return;
-    if (target instanceof HTMLInputElement &&
-      !['button', 'submit', 'reset', 'checkbox', 'radio', 'file'].includes(target.type)) return;
-    const selector = stableSelector(target);
-    if (selector) emit({ kind: 'click', selector });
-  };
-  const onChange = (event: Event): void => {
-    if (!event.isTrusted || !(event.target instanceof Element)) return;
-    const target = event.target;
-    if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement)) return;
-    const selector = stableSelector(target);
-    if (!selector) return;
-    if ((target instanceof HTMLInputElement && target.type === 'password') ||
-      ['current-password', 'new-password'].includes(target.getAttribute('autocomplete') ?? '')) {
-      emit({ kind: 'password', selector });
-      return;
-    }
-    if (target instanceof HTMLInputElement &&
-      ['hidden', 'checkbox', 'radio', 'file', 'button', 'submit', 'reset'].includes(target.type)) return;
-    emit({ kind: 'type', selector, value: target.value });
-  };
-  document.addEventListener('click', onClick, true);
-  document.addEventListener('change', onChange, true);
-  Reflect.set(window, options.cleanupKey, () => {
-    document.removeEventListener('click', onClick, true);
-    document.removeEventListener('change', onChange, true);
-  });
+function validText(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= MAX_TEXT_LENGTH;
+}
+
+function validSelectValues(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length <= MAX_SELECT_VALUES && value.every(validText);
+}
+
+function randomKey(prefix: string): string {
+  return `__shadowedge_rpa_${prefix}_${randomUUID().replaceAll('-', '')}`;
+}
+
+function sameFrames(left: string[] | undefined, right: string[] | undefined): boolean {
+  return left === right || (left?.length === right?.length &&
+    (left === undefined || left.every((value, index) => value === right?.[index])));
 }
 
 export class RpaRecorder {
@@ -146,71 +99,45 @@ export class RpaRecorder {
       startUrl: parseStartUrl(startUrl),
       startedAt: new Date().toISOString(),
     };
-    const bindingName = `__shadowedge_rpa_record_${randomUUID().replaceAll('-', '')}`;
-    const cleanupKey = `__shadowedge_rpa_cleanup_${randomUUID().replaceAll('-', '')}`;
     const session: RecordingSession = {
-      page,
-      state,
+      context,
+      bindingName: randomKey('record'),
+      cleanupKey: randomKey('cleanup'),
+      frameTokenKey: randomKey('frame'),
+      currentPage: page,
+      pages: new Map(),
+      pageOrder: context.pages(),
       actions: [{ kind: 'navigate', url: state.startUrl }],
       ignoredPasswordSelectors: new Set(),
       droppedActions: 0,
       active: false,
-      cleanupKey,
-      onFrameNavigated: () => undefined,
-      onPageClose: () => undefined,
+      queue: Promise.resolve(),
+      onContextPage: () => undefined,
     };
-    const append = (action: RpaRecordedAction): void => {
-      if (!session.active) return;
-      if (session.actions.length >= MAX_ACTIONS) {
-        session.droppedActions += 1;
-        return;
-      }
-      const previous = session.actions.at(-1);
-      if (action.kind === 'type' && previous?.kind === 'type' && previous.selector === action.selector) {
-        previous.text = action.text;
-        return;
-      }
-      session.actions.push(action);
-    };
-    const receive = (payload: unknown): void => {
-      if (!session.active || !isRecord(payload) || !validSelector(payload.selector)) return;
-      if (payload.kind === 'password') {
-        session.ignoredPasswordSelectors.add(payload.selector);
-      } else if (payload.kind === 'click') {
-        append({ kind: 'click', selector: payload.selector });
-      } else if (payload.kind === 'type' && typeof payload.value === 'string' &&
-        payload.value.length <= MAX_TEXT_LENGTH) {
-        append({ kind: 'type', selector: payload.selector, text: payload.value });
-      }
-    };
-    session.onFrameNavigated = (frame) => {
-      if (!session.active || frame !== page.mainFrame()) return;
-      const url = frame.url();
-      if (!/^https?:\/\//.test(url)) return;
-      const previous = session.actions.at(-1);
-      if (previous?.kind === 'navigate' && previous.url === url) return;
-      append({ kind: 'navigate', url });
-    };
-    session.onPageClose = () => {
-      session.active = false;
-      if (this.sessions.get(profileId) === session) this.sessions.delete(profileId);
+    session.onContextPage = (created) => {
+      if (!session.active || session.pages.has(created)) return;
+      session.queue = session.queue.then(() => this.adoptPage(session, created));
     };
     // 先占用环境再执行异步浏览器调用，rpa:run 会在同一事件循环中看到录制状态。
     this.sessions.set(profileId, session);
-    page.on('close', session.onPageClose);
-    page.on('framenavigated', session.onFrameNavigated);
+    context.on('page', session.onContextPage);
     try {
-      await page.exposeFunction(bindingName, receive);
-      session.initScript = await page.addInitScript(recordingScript, { bindingName, cleanupKey });
+      // Context 级绑定先于所有录制脚本安装，新页面及其首个文档无需等待 page 级绑定。
+      session.binding = await context.exposeBinding(session.bindingName,
+        (source: { page: Page }, payload: unknown) => this.receiveFromContext(session, source.page, payload));
+      session.initScript = await context.addInitScript(recordingScript, {
+        bindingName: session.bindingName,
+        cleanupKey: session.cleanupKey,
+        frameTokenKey: session.frameTokenKey,
+      });
+      // 录制前已经存在的标签页也纳入索引，否则关闭或切回这些页面无法准确回放。
+      for (const existing of session.pageOrder) await this.attachPage(session, existing, true);
       await page.goto(state.startUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
       session.active = true;
       return state;
     } catch (error) {
-      session.active = false;
+      await this.cleanup(session);
       this.sessions.delete(profileId);
-      page.off('close', session.onPageClose);
-      page.off('framenavigated', session.onFrameNavigated);
-      await session.initScript?.dispose().catch(() => undefined);
       throw error;
     }
   }
@@ -222,19 +149,216 @@ export class RpaRecorder {
     }
     session.active = false;
     this.sessions.delete(profileId);
-    session.page.off('close', session.onPageClose);
-    session.page.off('framenavigated', session.onFrameNavigated);
-    await session.initScript?.dispose().catch(() => undefined);
-    if (!session.page.isClosed()) {
-      await session.page.evaluate((key) => {
-        const cleanup: unknown = Reflect.get(window, key);
-        if (typeof cleanup === 'function') cleanup();
-      }, session.cleanupKey).catch(() => undefined);
+    try {
+      await session.queue;
+      return {
+        graph: buildRecordedGraph(session.actions),
+        ignoredPasswordFields: session.ignoredPasswordSelectors.size,
+        droppedActions: session.droppedActions,
+      };
+    } finally {
+      await this.cleanup(session);
     }
-    return {
-      graph: buildRecordedGraph(session.actions),
-      ignoredPasswordFields: session.ignoredPasswordSelectors.size,
-      droppedActions: session.droppedActions,
+  }
+
+  private append(session: RecordingSession, action: RpaRecordedAction): void {
+    if (session.actions.length >= MAX_ACTIONS) {
+      session.droppedActions += 1;
+      return;
+    }
+    const previous = session.actions.at(-1);
+    if (action.kind === 'type' && previous?.kind === 'type' &&
+      previous.selector === action.selector && previous.frameSelector === action.frameSelector &&
+      sameFrames(previous.frameSelectors, action.frameSelectors)) {
+      previous.text = action.text;
+      return;
+    }
+    if (action.kind === 'select' && previous?.kind === 'select' &&
+      previous.selector === action.selector && previous.frameSelector === action.frameSelector &&
+      sameFrames(previous.frameSelectors, action.frameSelectors)) {
+      if ('values' in action && 'values' in previous) {
+        previous.values = [...action.values];
+        return;
+      }
+      if ('value' in action && 'value' in previous) {
+        previous.value = action.value;
+        return;
+      }
+    }
+    session.actions.push(action);
+  }
+
+  private ensureCurrentPage(session: RecordingSession, page: Page): void {
+    if (session.currentPage === page) return;
+    const index = session.pageOrder.indexOf(page);
+    if (index < 0) return;
+    this.append(session, { kind: 'switchTab', index });
+    session.currentPage = page;
+  }
+
+  private async attachPage(
+    session: RecordingSession,
+    page: Page,
+    installCurrentDocument = false,
+  ): Promise<void> {
+    const record: RecordingPage = {
+      page,
+      onFrameNavigated: () => undefined,
+      onClose: () => undefined,
     };
+    record.onFrameNavigated = (frame) => {
+      if (!session.active || frame !== page.mainFrame() || session.currentPage !== page) return;
+      const url = frame.url();
+      if (!/^https?:\/\//.test(url)) return;
+      const previous = session.actions.at(-1);
+      if (previous?.kind === 'navigate' && previous.url === url) return;
+      this.append(session, { kind: 'navigate', url });
+    };
+    record.onClose = () => {
+      if (!session.active) return;
+      session.queue = session.queue.then(() => this.closePage(session, record));
+    };
+    session.pages.set(page, record);
+    page.on('close', record.onClose);
+    page.on('framenavigated', record.onFrameNavigated);
+    try {
+      // Context init script 已覆盖新页面的首个文档；只有录制前存在的页面需要补装。
+      if (installCurrentDocument) {
+        await page.evaluate(recordingScript, {
+          bindingName: session.bindingName,
+          cleanupKey: session.cleanupKey,
+          frameTokenKey: session.frameTokenKey,
+        });
+      }
+    } catch (error) {
+      page.off('close', record.onClose);
+      page.off('framenavigated', record.onFrameNavigated);
+      session.pages.delete(page);
+      throw error;
+    }
+  }
+
+  private async adoptPage(session: RecordingSession, page: Page): Promise<void> {
+    if (!session.active || page.isClosed() || session.pages.has(page)) return;
+    session.pageOrder.push(page);
+    const index = session.pageOrder.length - 1;
+    const opener = await page.opener().catch(() => null);
+    this.append(session, opener ? { kind: 'switchTab', index } : { kind: 'newTab' });
+    session.currentPage = page;
+    await this.attachPage(session, page);
+    const url = page.url();
+    const previous = session.actions.at(-1);
+    if (/^https?:\/\//.test(url) && !(previous?.kind === 'navigate' && previous.url === url)) {
+      this.append(session, { kind: 'navigate', url });
+    }
+  }
+
+  private closePage(session: RecordingSession, record: RecordingPage): void {
+    if (!session.pages.has(record.page)) return;
+    const index = session.pageOrder.indexOf(record.page);
+    if (index < 0) return;
+    this.append(session, { kind: 'closeTab', index });
+    session.pages.delete(record.page);
+    session.pageOrder.splice(index, 1);
+    if (session.currentPage === record.page && session.pageOrder.length > 0) {
+      // 与 closeTab 执行器一致：优先同索引，否则使用最后一个剩余页面。
+      session.currentPage = session.pageOrder[Math.min(index, session.pageOrder.length - 1)]!;
+    }
+  }
+
+  private async framePath(
+    session: RecordingSession,
+    record: RecordingPage,
+    token: unknown,
+  ): Promise<string[] | undefined> {
+    if (typeof token !== 'string' || token.length !== 32) return undefined;
+    for (const frame of record.page.frames()) {
+      const actual = await frame.evaluate((key) =>
+        document.documentElement?.getAttribute(key), session.frameTokenKey).catch(() => undefined);
+      if (actual !== token) continue;
+      const selectors: string[] = [];
+      let current: Frame | null = frame;
+      while (current && current !== record.page.mainFrame()) {
+        const element = await current.frameElement().catch(() => null);
+        if (!element) return undefined;
+        try {
+          const selector = await element.evaluate(stableElementSelector);
+          if (!validSelector(selector)) return undefined;
+          selectors.unshift(selector);
+        } finally {
+          await element.dispose();
+        }
+        current = current.parentFrame();
+      }
+      return selectors;
+    }
+    return undefined;
+  }
+
+  private receiveFromContext(session: RecordingSession, page: Page, payload: unknown): void {
+    // close 事件可能先于 binding 回调到达；已纳管页面的关闭前事件仍需进入同一队列。
+    if (!session.active || !isRecord(payload)) return;
+    session.queue = session.queue.then(async () => {
+      if (!session.pages.has(page)) await this.adoptPage(session, page);
+      const record = session.pages.get(page);
+      if (record) await this.receive(session, record, payload);
+    });
+  }
+
+  private async receive(session: RecordingSession, record: RecordingPage, payload: unknown): Promise<void> {
+    if (!isRecord(payload)) return;
+    if (payload.kind === 'activate') {
+      this.ensureCurrentPage(session, record.page);
+      return;
+    }
+    if (!validSelector(payload.selector)) return;
+    const frames = payload.topFrame === true ? [] : await this.framePath(session, record, payload.frameToken);
+    if (!frames) {
+      session.droppedActions += 1;
+      return;
+    }
+    const frameKey = frames.join('\0');
+    const target = {
+      selector: payload.selector,
+      frameSelectors: frames.length > 0 ? frames : undefined,
+    };
+    if (payload.kind === 'password') {
+      session.ignoredPasswordSelectors.add(`${frameKey}\0${payload.selector}`);
+      return;
+    }
+    if (payload.kind === 'unsupported') {
+      session.droppedActions += 1;
+      return;
+    }
+    this.ensureCurrentPage(session, record.page);
+    if (payload.kind === 'click') {
+      this.append(session, { kind: 'click', ...target });
+    } else if (payload.kind === 'type' && validText(payload.value)) {
+      this.append(session, { kind: 'type', ...target, text: payload.value });
+    } else if (payload.kind === 'select' && validText(payload.value)) {
+      this.append(session, { kind: 'select', ...target, value: payload.value });
+    } else if (payload.kind === 'select' && validSelectValues(payload.values)) {
+      this.append(session, { kind: 'select', ...target, values: [...payload.values] });
+    } else if (payload.kind === 'check' && typeof payload.checked === 'boolean') {
+      this.append(session, { kind: 'check', ...target, checked: payload.checked });
+    }
+  }
+
+  private async cleanup(session: RecordingSession): Promise<void> {
+    session.context.off('page', session.onContextPage);
+    for (const record of session.pages.values()) {
+      record.page.off('close', record.onClose);
+      record.page.off('framenavigated', record.onFrameNavigated);
+      if (!record.page.isClosed()) {
+        await record.page.evaluate((key) => {
+          const cleanup: unknown = Reflect.get(window, key);
+          if (typeof cleanup === 'function') cleanup();
+        }, session.cleanupKey).catch(() => undefined);
+      }
+    }
+    session.pages.clear();
+    session.pageOrder = [];
+    await session.initScript?.dispose().catch(() => undefined);
+    await session.binding?.dispose().catch(() => undefined);
   }
 }
