@@ -1,3 +1,4 @@
+import type { ErrorCode } from './errors.js';
 /** ShadowEdge 核心领域契约。所有跨包数据结构以此为唯一事实来源。 */
 
 export type Uuid = string;
@@ -150,8 +151,21 @@ export interface ProxyHealth {
     latitude?: number;
     longitude?: number;
   };
-  /** IP 质量画像：是否被标记为数据中心、代理或高风险。 */
-  risk?: { score: number; isDatacenter: boolean; isProxy: boolean; blacklisted: boolean };
+  /** IP 质量画像；未完成的检测必须显式为 unknown，不能用 false 冒充安全。 */
+  risk?: {
+    status: 'clear' | 'caution' | 'high' | 'unknown';
+    score?: number;
+    isDatacenter?: boolean;
+    isProxy?: boolean;
+    blacklistStatus: 'clear' | 'listed' | 'unknown';
+    sources: Array<{
+      id: 'spamhaus-zen' | 'spamcop';
+      status: 'clear' | 'listed' | 'unknown';
+      detail?: string;
+    }>;
+  };
+  /** 仅表示读取缓存的方式；过期缓存不会返回，也不会用于启动闸门。 */
+  cache?: { hit: boolean; cachedAt: IsoDateTime; expiresAt: IsoDateTime };
   error?: string;
 }
 
@@ -496,6 +510,8 @@ export interface RpaRecordedTarget {
   frameSelector?: string;
   /** 从主文档到目标框架的完整路径；与 frameSelector 互斥。 */
   frameSelectors?: string[];
+  /** 首选 selector 失效后的有序候选，不包含首选本身，最多 5 个。 */
+  selectors?: string[];
 }
 
 export type RpaRecordedAction =
@@ -547,6 +563,15 @@ export interface RpaRun {
   startedAt?: IsoDateTime;
   finishedAt?: IsoDateTime;
   error?: string;
+  /** 最终失败节点的安全诊断；不包含工作流输入值。 */
+  failure?: {
+    nodeId: string;
+    nodeKind: RpaNodeKind;
+    errorCode: ErrorCode;
+    attempt: number;
+    pageUrl?: string;
+    screenshotUri?: string;
+  };
   /** extract 节点按 key 产生的文本结果。 */
   outputs?: Record<string, string | null>;
   artifacts: Array<{ kind: 'screenshot' | 'log' | 'json' | 'video' | 'download'; uri: string }>;

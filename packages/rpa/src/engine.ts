@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isShadowEdgeError, ShadowEdgeError } from '@shadowedge/core';
 import type { IpcEvents, RpaRun, RpaWorkflow, Uuid } from '@shadowedge/core';
@@ -7,6 +7,17 @@ import { loopCount, nextForCondition } from './control.js';
 import { withHardCancellation } from './cancellation.js';
 import { nodeExecutors, throwIfCancelled } from './executors.js';
 import type { RpaBrowserContext, RpaNodeExecution, RpaNodeExecutor } from './session.js';
+
+function diagnosticPageUrl(rawUrl: string): string | undefined {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+    // query/hash 可能包含会话令牌；排障只需要 origin 和路径。
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return undefined;
+  }
+}
 
 export interface RpaEngineDeps {
   resolveContext: (profileId: Uuid) => RpaBrowserContext | Promise<RpaBrowserContext>;
@@ -122,6 +133,7 @@ export class RpaEngine {
       controller.abort();
     }, timeoutMs);
     timeout.unref();
+    let currentExecution: RpaNodeExecution | undefined;
 
     try {
       this.progress(run.id, 'started', 0);
@@ -161,6 +173,7 @@ export class RpaEngine {
           loopIndices,
           artifactPath: (fileName) => join(runDir, fileName),
         };
+        currentExecution = execution;
         if (node.kind !== 'condition' && node.kind !== 'loop') await this.executeNode(node, execution);
         page = execution.page;
         if (node.kind === 'condition') {
@@ -205,6 +218,7 @@ export class RpaEngine {
         run.status = 'cancelled';
         this.progress(run.id, 'cancelled', 100);
       } else {
+        if (currentExecution && !run.failure) await this.captureFailure(currentExecution, error, 1);
         run.status = 'failed';
         run.error = error instanceof Error ? error.message : String(error);
         this.progress(run.id, 'failed', 100);
@@ -252,6 +266,7 @@ export class RpaEngine {
           this.progress(execution.run.id, `${node.id}:continued`, execution.percent);
           return;
         }
+        await this.captureFailure(execution, error, attempt);
         if (isShadowEdgeError(error)) throw error;
         throw new ShadowEdgeError(
           'E_RPA_NODE_FAILED',
@@ -259,6 +274,43 @@ export class RpaEngine {
           { details: { nodeId: node.id, kind: node.kind }, cause: error },
         );
       }
+    }
+  }
+
+  private async captureFailure(
+    execution: RpaNodeExecution,
+    error: unknown,
+    attempt: number,
+  ): Promise<void> {
+    if (execution.run.failure) return;
+    const diagnostic: NonNullable<RpaRun['failure']> = {
+      nodeId: execution.node.id,
+      nodeKind: execution.node.kind,
+      errorCode: isShadowEdgeError(error) ? error.code : 'E_RPA_NODE_FAILED',
+      attempt,
+    };
+    try {
+      const pageUrl = diagnosticPageUrl(execution.page.url());
+      if (pageUrl) diagnostic.pageUrl = pageUrl;
+    } catch {
+      // 页面已经关闭时仍保留节点诊断。
+    }
+    try {
+      const screenshotUri = execution.artifactPath('failure.png');
+      await execution.page.screenshot({ path: screenshotUri, fullPage: true, type: 'png' });
+      chmodSync(screenshotUri, 0o600);
+      diagnostic.screenshotUri = screenshotUri;
+      execution.run.artifacts.push({ kind: 'screenshot', uri: screenshotUri });
+    } catch {
+      // 诊断失败不能覆盖原始节点错误。
+    }
+    execution.run.failure = diagnostic;
+    try {
+      const path = execution.artifactPath('failure.json');
+      writeFileSync(path, `${JSON.stringify(diagnostic, null, 2)}\n`, { mode: 0o600 });
+      execution.run.artifacts.push({ kind: 'json', uri: path });
+    } catch {
+      // 磁盘诊断失败仍保留内存中的结构化结果。
     }
   }
 

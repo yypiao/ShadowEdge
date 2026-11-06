@@ -314,6 +314,12 @@ export function RpaPage() {
                 </div>
                 {active && <progress aria-label={`运行进度 ${item.id}`} max={100} value={currentProgress?.percent ?? 0} style={{ width: '100%', marginTop: 8 }} />}
                 {item.error && <div style={{ color: '#d32f2f', fontSize: 11, marginTop: 6 }}>{item.error}</div>}
+                {item.failure && (
+                  <div style={{ color: '#7c2d12', fontSize: 11, marginTop: 4 }}>
+                    失败节点：{item.failure.nodeId}（{item.failure.nodeKind}） · 第 {item.failure.attempt} 次尝试
+                    {item.failure.pageUrl && ` · ${item.failure.pageUrl}`}
+                  </div>
+                )}
                 {item.outputs && Object.keys(item.outputs).length > 0 && (
                   <pre style={{ background: '#f6f8fa', padding: 8, fontSize: 11, overflow: 'auto' }}>{JSON.stringify(item.outputs, null, 2)}</pre>
                 )}

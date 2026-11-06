@@ -24,6 +24,7 @@ interface RunRow {
   error: string | null;
   outputs: string;
   artifacts: string;
+  failure: string | null;
 }
 
 interface ScheduleRow {
@@ -64,6 +65,7 @@ function toRun(row: RunRow): RpaRun {
     error: row.error ?? undefined,
     outputs: JSON.parse(row.outputs) as RpaRun['outputs'],
     artifacts: JSON.parse(row.artifacts) as RpaRun['artifacts'],
+    failure: row.failure ? JSON.parse(row.failure) as RpaRun['failure'] : undefined,
   };
 }
 
@@ -209,12 +211,12 @@ export class RpaRepository {
     this.handle.db.prepare(
       `INSERT INTO rpa_runs
         (id, workflow_id, profile_id, status, started_at, finished_at, error,
-         outputs, artifacts, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         outputs, artifacts, failure, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
         status=excluded.status, started_at=excluded.started_at,
         finished_at=excluded.finished_at, error=excluded.error,
-        outputs=excluded.outputs, artifacts=excluded.artifacts,
+        outputs=excluded.outputs, artifacts=excluded.artifacts, failure=excluded.failure,
         updated_at=excluded.updated_at`,
     ).run(
       run.id,
@@ -226,6 +228,7 @@ export class RpaRepository {
       run.error ?? null,
       JSON.stringify(run.outputs ?? {}),
       JSON.stringify(run.artifacts),
+      run.failure ? JSON.stringify(run.failure) : null,
       now,
       now,
     );

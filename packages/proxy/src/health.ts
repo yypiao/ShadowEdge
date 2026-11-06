@@ -1,6 +1,7 @@
 import type { ProxyCredential, ProxyHealth } from '@shadowedge/core';
 import { ShadowEdgeError } from '@shadowedge/core';
 import { httpGetOverSocket, openTunnel, type TunnelTarget, type UpstreamHop } from './tunnel.js';
+import { inspectIpBlacklist } from './risk.js';
 
 /**
  * 代理健康检查真实化（T3）：经代理隧道拉取出口 IP 与地理/风险画像。
@@ -13,6 +14,9 @@ export interface HealthCheckOptions {
   upstream?: UpstreamHop;
   /** 测试注入点：替换隧道请求实现，单测用。 */
   fetchJson?: (credential: ProxyCredential, password: string | undefined, target: Endpoint) => Promise<{ status: number; body: string }>;
+  /** 测试注入风险来源；生产逐个查询 DNSBL，失败来源只标记 unknown。 */
+  riskInspector?: (exitIp: string) => Promise<NonNullable<ProxyHealth['risk']>['sources']>;
+  riskTimeoutMs?: number;
 }
 
 interface Endpoint {
@@ -20,7 +24,9 @@ interface Endpoint {
   port: number;
   tls: boolean;
   path: string;
-  parse: (body: string) => Partial<Pick<ProxyHealth, 'exitIp' | 'geo' | 'risk'>>;
+  parse: (body: string) => Partial<Pick<ProxyHealth, 'exitIp' | 'geo'>> & {
+    classification?: { isDatacenter: boolean; isProxy: boolean };
+  };
 }
 
 interface IpApiGeo {
@@ -60,11 +66,9 @@ const ENDPOINTS: Endpoint[] = [
           latitude: data.lat,
           longitude: data.lon,
         },
-        risk: {
-          score: data.hosting ? 0.7 : data.proxy ? 0.4 : 0.05,
+        classification: {
           isDatacenter: data.hosting ?? false,
           isProxy: data.proxy ?? false,
-          blacklisted: false,
         },
       };
     },
@@ -123,14 +127,39 @@ export async function checkProxyHealth(
         if (status < 200 || status >= 300) throw new Error(`HTTP ${status}`);
         const parsed = endpoint.parse(body);
         if (!parsed.exitIp) throw new Error('响应中无出口 IP');
+        const exitIp = parsed.exitIp;
+        const inspect = options.riskInspector ?? ((ip: string) =>
+          inspectIpBlacklist(ip, { timeoutMs: options.riskTimeoutMs }));
+        const sources = await inspect(exitIp).catch((): NonNullable<ProxyHealth['risk']>['sources'] => [
+          { id: 'spamhaus-zen', status: 'unknown', detail: '风险检测不可用' },
+          { id: 'spamcop', status: 'unknown', detail: '风险检测不可用' },
+        ]);
+        const blacklistStatus = sources.some((source) => source.status === 'listed')
+          ? 'listed'
+          : sources.every((source) => source.status === 'clear') ? 'clear' : 'unknown';
+        const classification = parsed.classification;
+        const riskStatus = blacklistStatus === 'listed' || classification?.isDatacenter
+          ? 'high'
+          : classification?.isProxy ? 'caution'
+            : !classification || blacklistStatus === 'unknown' ? 'unknown' : 'clear';
+        const score = blacklistStatus === 'listed' ? 0.95
+          : classification?.isDatacenter ? 0.7
+            : classification?.isProxy ? 0.4 : riskStatus === 'clear' ? 0.05 : undefined;
         return {
           proxyId: credential.id,
           checkedAt: new Date().toISOString(),
           reachable: true,
           latencyMs: Date.now() - started,
-          exitIp: parsed.exitIp,
+          exitIp,
           geo: parsed.geo,
-          risk: parsed.risk,
+          risk: {
+            status: riskStatus,
+            score,
+            isDatacenter: classification?.isDatacenter,
+            isProxy: classification?.isProxy,
+            blacklistStatus,
+            sources,
+          },
         };
       } catch (error) {
         errors.push(`${endpoint.host}#${attempt + 1}: ${(error as Error).message}`);

@@ -2,6 +2,10 @@ import type { ProxyCredential, ProxyHealth, ProxyProtocol } from '@shadowedge/co
 import { checkProxyHealth, type HealthCheckOptions } from './health.js';
 
 export { checkProxyHealth } from './health.js';
+export type { HealthCheckOptions } from './health.js';
+export { inspectIpBlacklist } from './risk.js';
+export type { BlacklistCheckOptions } from './risk.js';
+export { ProxyHealthCache } from './health-cache.js';
 export { connectViaSocks5, connectViaHttp, connectViaUpstream, httpGetOverSocket, openTunnel } from './tunnel.js';
 export type { UpstreamHop } from './tunnel.js';
 export { startRelay } from './relay.js';

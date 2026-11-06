@@ -6,7 +6,7 @@ describe('RPA 录制图生成', () => {
   it('按操作顺序生成可执行线性图', () => {
     const graph = buildRecordedGraph([
       { kind: 'navigate', url: 'https://example.com' },
-      { kind: 'type', selector: '#name', text: 'Ada' },
+      { kind: 'type', selector: '#name', selectors: ['role=textbox[name="Name"]'], text: 'Ada' },
       { kind: 'click', selector: '#submit' },
     ]);
     expect(graph.entry).toBe('recorded-1');
@@ -14,7 +14,9 @@ describe('RPA 录制图生成', () => {
     expect(graph.nodes['recorded-2']?.next).toBe('recorded-3');
     expect(graph.nodes['recorded-3']?.next).toBeUndefined();
     expect(graph.nodes['recorded-2']).toMatchObject({
-      kind: 'type', params: { selector: '#name', text: 'Ada', clear: true },
+      kind: 'type', params: {
+        selector: '#name', selectors: ['role=textbox[name="Name"]'], text: 'Ada', clear: true,
+      },
     });
     expect(validateGraph(graph).valid).toBe(true);
   });

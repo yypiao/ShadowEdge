@@ -1092,6 +1092,42 @@ symbol_level=0 dcheck_always_on=false`。组件构建把单一巨型链接拆成
 > 最终门禁：198 passed / 31 skipped，typecheck、lint、Electron 生产构建和 `git diff --check` 全绿；21 个真实
 > Chromium/Electron 套件串行通过，汇总：`experiments/probes/results/full-smoke/summary.json`。
 
+
+---
+
+## T48 — 代理风险真实化、来源状态与健康缓存（2026-11-06）
+
+> 删除固定 `blacklisted=false` 的误导语义。代理健康结果现在分别表达总体 `clear/caution/high/unknown`、
+> DNSBL `clear/listed/unknown`、可选地理分类与风险分；任一 Spamhaus ZEN 或 SpamCop 有效名单记录命中直接判高风险，
+> 单来源超时或服务失败只将该来源标为 `unknown`，不会冒充安全，也不会把可达代理误判为不可达。DNSBL 只表示
+> 垃圾邮件/滥用名单状态，不宣称等同电商平台风控结论。
+>
+> 健康检查增加按代理隔离的 5 分钟 TTL 缓存与在途请求去重；手动检查强制刷新，代理编辑主动失效，
+> 过期或失败结果不会作为新鲜结果返回。桌面 UI 分来源展示名单状态、地理分类、实时/缓存与到期时间。
+> `os1,t1` 真实代理专项通过，日志：`experiments/probes/results/t48-proxy-risk-real.log`。
+
+---
+
+## T49 — RPA 定位韧性、动作等待与持久化失败诊断（2026-11-06）
+
+> 录制目标在保留原首选 CSS 的同时，最多追加 5 个唯一属性、ARIA role 和语义文本候选，旧工作流无需迁移。
+> 回放时在节点总超时内轮询全部候选，不再让失效首选独占超时；点击、输入、选择和勾选要求元素可见、启用且
+> 位置稳定，上传允许 attached/hidden。真实 Chromium 已验证录制后删除元素 ID、延迟重建、暂时禁用和移动元素，
+> 仍能依靠候选恢复执行。
+>
+> 最终失败新增结构化节点诊断：节点 ID/类型、错误码、实际尝试次数、去 query/hash 的页面 URL，以及可选截图。
+> 截图与 `failure.json` 权限均为 0600，JSON 不保存工作流输入值；retry 只在最终失败采集一次，continue 不生成
+> 最终失败诊断。SQLite migration 12 持久化诊断，旧数据库升级和关闭重开恢复均有测试。真实专项与六个 RPA
+> 录制/并行隔离套件已通过，日志：`experiments/probes/results/t49-rpa-resilience.log`、
+> `experiments/probes/results/t49-rpa-resilience-regression.log`。
+>
+> Canvas C++ 按 ADR 0005 的触发条件重新复评：当前 Chromium `156.0.8078.91` 原生/JS 对照仍为 20/20，
+> 未发现必须下沉的新证据，继续维持 JS 注入，不创建 C++ Canvas 补丁。该结论不扩展到未测的 OffscreenCanvas、
+> 所有格式或所有 OS/GPU；后续必须先提供失败样本与原生对照再重开决策。
+>
+> 最终门禁：209 passed / 33 skipped，typecheck、lint、Electron 生产构建和 `git diff --check` 全绿；22 个真实
+> Chromium/Electron 套件串行通过，真实代理风险专项通过，汇总：`experiments/probes/results/full-smoke/summary.json`。
+
 ---
 
 ## 后续 P1/P2

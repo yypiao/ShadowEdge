@@ -2,10 +2,10 @@
   "date": "2026-11-06",
   "kernel": "156.0.8078.91",
   "unit": {
-    "filesPassed": 39,
-    "filesSkipped": 27,
-    "testsPassed": 198,
-    "testsSkipped": 31
+    "filesPassed": 41,
+    "filesSkipped": 29,
+    "testsPassed": 209,
+    "testsSkipped": 33
   },
   "realSuites": [
     {
@@ -84,6 +84,11 @@
       "log": "experiments/probes/results/full-smoke/multi-instance-rpa-isolation-smoke.log"
     },
     {
+      "suite": "rpa-resilience-smoke",
+      "status": "passed",
+      "log": "experiments/probes/results/full-smoke/rpa-resilience-smoke.log"
+    },
+    {
       "suite": "rpa-scheduler-smoke",
       "status": "passed",
       "log": "experiments/probes/results/full-smoke/rpa-scheduler-smoke.log"
@@ -140,5 +145,24 @@
     "proxyExitIsolation": "passed",
     "rpaLog": "experiments/probes/results/t47-multi-instance-stress.log",
     "proxyLog": "experiments/probes/results/t47-parallel-proxy-isolation.log"
+  },
+  "proxyRisk": {
+    "proxies": [
+      "os1",
+      "t1"
+    ],
+    "status": "passed",
+    "log": "experiments/probes/results/t48-proxy-risk-real.log"
+  },
+  "rpaResilience": {
+    "status": "passed",
+    "diagnosticPersistence": "migration 12 passed",
+    "log": "experiments/probes/results/full-smoke/rpa-resilience-smoke.log"
+  },
+  "canvasReevaluation": {
+    "result": "20/20",
+    "decision": "stay-js-no-cpp-patch",
+    "report": "experiments/probes/results/canvas-js-evidence-1793936430559.json",
+    "log": "experiments/probes/results/t49-canvas-reevaluation.log"
   }
 }

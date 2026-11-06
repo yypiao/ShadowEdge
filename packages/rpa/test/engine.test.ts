@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -13,7 +13,8 @@ class FakeLocator implements RpaLocator {
   files = '';
   constructor(private readonly text: string | null = 'extracted') {}
 
-  async waitFor(_options: { state: 'visible'; timeout: number }): Promise<void> {}
+  async waitFor(_options: { state: 'attached' | 'visible'; timeout: number }): Promise<void> {}
+  async isEnabled(): Promise<boolean> { return true; }
   async boundingBox(): Promise<{ x: number; y: number; width: number; height: number }> {
     return { x: 100, y: 100, width: 40, height: 20 };
   }
@@ -41,6 +42,18 @@ class FakeLocator implements RpaLocator {
   }
 }
 
+class UnavailableLocator extends FakeLocator {
+  async waitFor(): Promise<void> { throw new Error('not found'); }
+}
+
+class MovingLocator extends FakeLocator {
+  private reads = 0;
+  async boundingBox(): Promise<{ x: number; y: number; width: number; height: number }> {
+    this.reads += 1;
+    return { x: this.reads <= 2 ? this.reads * 20 : 100, y: 100, width: 40, height: 20 };
+  }
+}
+
 class FakeFrameLocator implements RpaFrameLocator {
   constructor(private readonly page: FakePage) {}
   locator(selector: string): RpaLocator {
@@ -64,12 +77,14 @@ class FakeMouse implements RpaMouse {
 
 class FakePage implements RpaPage {
   readonly mouse = new FakeMouse();
+  url(): string { return 'https://example.com/path?token=secret#fragment'; }
   readonly input = new FakeLocator();
   readonly urls: string[] = [];
   gotoFailures = 0;
   blockGoto = false;
   closed = false;
   private rejectBlockedGoto?: (error: Error) => void;
+  readonly locators = new Map<string, RpaLocator>();
 
   async goto(url: string): Promise<null> {
     if (this.blockGoto) {
@@ -83,7 +98,7 @@ class FakePage implements RpaPage {
     return null;
   }
   locator(selector: string): RpaLocator {
-    return selector === '#input' ? this.input : new FakeLocator();
+    return this.locators.get(selector) ?? (selector === '#input' ? this.input : new FakeLocator());
   }
   frameLocator(_selector: string): RpaFrameLocator {
     return new FakeFrameLocator(this);
@@ -199,6 +214,56 @@ describe('RpaEngine 真实节点执行语义', () => {
     expect(page.input.selected).toBe('GB');
     expect(page.input.checked).toBe(true);
     expect(page.input.files).toBe('/tmp/upload.txt');
+  });
+
+  it('首选定位器失效后使用候选，并等待移动元素稳定', async () => {
+    const page = new FakePage();
+    page.locators.set('#stale', new UnavailableLocator());
+    page.locators.set('input[aria-label=Name]', page.input);
+    const moving = new MovingLocator();
+    page.locators.set('#moving', moving);
+    const { engine } = setup(page);
+    const result = await finish(engine, await engine.run(workflow({
+      entry: 'type',
+      nodes: {
+        type: {
+          id: 'type', kind: 'type', next: 'click',
+          params: { selector: '#stale', selectors: ['input[aria-label=Name]'], text: 'Ada' },
+        },
+        click: { id: 'click', kind: 'click', params: { selector: '#moving' } },
+      },
+    }), ['profile-a']));
+    expect(result.status).toBe('succeeded');
+    expect(page.input.value).toBe('Ada');
+    expect(page.mouse.clicks).toHaveLength(1);
+  });
+
+  it('最终失败生成安全诊断、0600 截图和 JSON，不泄漏输入或 URL 令牌', async () => {
+    const page = new FakePage();
+    page.locators.set('#missing', new UnavailableLocator());
+    const { engine } = setup(page);
+    const result = await finish(engine, await engine.run(workflow({
+      entry: 'type',
+      nodes: {
+        type: {
+          id: 'type', kind: 'type',
+          params: { selector: '#missing', text: 'never-write-this', timeout: 5 },
+        },
+      },
+    }), ['profile-a']));
+    expect(result.status).toBe('failed');
+    expect(result.failure).toMatchObject({
+      nodeId: 'type', nodeKind: 'type', errorCode: 'E_RPA_NODE_FAILED', attempt: 1,
+      pageUrl: 'https://example.com/path',
+    });
+    expect(result.failure?.screenshotUri).toBeDefined();
+    expect(statSync(result.failure!.screenshotUri!).mode & 0o777).toBe(0o600);
+    const jsonArtifact = result.artifacts.find((artifact) => artifact.uri.endsWith('failure.json'));
+    expect(jsonArtifact).toBeDefined();
+    const contents = readFileSync(jsonArtifact!.uri, 'utf8');
+    expect(contents).not.toContain('never-write-this');
+    expect(contents).not.toContain('token=secret');
+    expect(JSON.parse(contents)).toEqual(result.failure);
   });
 
   it('retry 按次数重试并成功', async () => {

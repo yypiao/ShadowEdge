@@ -274,6 +274,18 @@ export function WorkflowEditor({ workflow, persisted, onSaved, onDeleted }: Prop
                   <input value={String(node.params.selector ?? '')} onChange={(e) => updateParams(node.id, { selector: e.target.value })} style={{ ...inputStyle, marginTop: 4 }} />
                 </label>
               )}
+              {(['click', 'type', 'extract', 'select', 'check', 'upload', 'download'] as RpaNodeKind[]).includes(node.kind) &&
+                Array.isArray(node.params.selectors) && (
+                <label style={{ gridColumn: '1 / -1', fontSize: 11 }}>回退定位器（每行一个，首选失效后按序尝试）
+                  <textarea
+                    value={(node.params.selectors as string[]).join('\n')}
+                    onChange={(event) => updateParams(node.id, {
+                      selectors: event.target.value.split('\n').filter(Boolean).slice(0, 5),
+                    })}
+                    style={{ ...inputStyle, marginTop: 4, minHeight: 48, resize: 'vertical' }}
+                  />
+                </label>
+              )}
               {(['click', 'type', 'extract', 'select', 'check', 'upload', 'download'] as RpaNodeKind[]).includes(node.kind) && (
                 <label style={{ fontSize: 11 }}>Iframe 选择器（单层，可选）
                   <input value={String(node.params.frameSelector ?? '')} onChange={(e) => updateParams(node.id, { frameSelector: e.target.value || undefined })} placeholder="留空则主框架；Shadow DOM 无需填写" style={{ ...inputStyle, marginTop: 4 }} />

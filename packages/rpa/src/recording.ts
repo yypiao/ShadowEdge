@@ -5,6 +5,7 @@ function targetParams(target: RpaRecordedTarget): Record<string, unknown> {
     selector: target.selector,
     frameSelector: target.frameSelector,
     frameSelectors: target.frameSelectors ? [...target.frameSelectors] : undefined,
+    selectors: target.selectors ? [...target.selectors] : undefined,
     timeout: 10000,
   };
 }

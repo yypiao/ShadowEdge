@@ -2,7 +2,8 @@ import type { RpaNode, RpaRun } from '@shadowedge/core';
 
 /** 最小结构接口：Patchright Page/Locator 天然满足，也便于无浏览器单元测试。 */
 export interface RpaLocator {
-  waitFor(options: { state: 'visible'; timeout: number }): Promise<void>;
+  waitFor(options: { state: 'attached' | 'visible'; timeout: number }): Promise<void>;
+  isEnabled(): Promise<boolean>;
   boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null>;
   fill(value: string): Promise<void>;
   pressSequentially(value: string, options: { delay: number }): Promise<void>;
@@ -30,6 +31,7 @@ export interface RpaDownload {
 
 export interface RpaPage {
   mouse: RpaMouse;
+  url(): string;
   goto(
     url: string,
     options: { waitUntil: 'load' | 'domcontentloaded' | 'networkidle'; timeout: number },

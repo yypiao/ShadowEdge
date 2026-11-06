@@ -124,6 +124,39 @@ export function recordingScript(options: RecordingScriptOptions): void {
     const host = stableSelector(root.host);
     return host ? `${host} >> css=${selector}` : undefined;
   };
+  const selectorTarget = (element: Element): Record<string, unknown> | undefined => {
+    const selector = stableSelector(element);
+    if (!selector) return undefined;
+    const root = element.getRootNode();
+    if (!(root instanceof Document) && !(root instanceof ShadowRoot)) return undefined;
+    const candidates: string[] = [];
+    const add = (candidate: string): void => {
+      if (candidate !== selector && !candidates.includes(candidate) && candidates.length < 5) {
+        candidates.push(candidate);
+      }
+    };
+    for (const attribute of ['data-testid', 'data-test', 'aria-label', 'name']) {
+      const value = element.getAttribute(attribute);
+      if (value) add(`${element.tagName.toLowerCase()}[${attribute}=${CSS.escape(value)}]`);
+    }
+    const explicitRole = element.getAttribute('role');
+    const implicitRole = element instanceof HTMLButtonElement ? 'button'
+      : element instanceof HTMLAnchorElement && element.hasAttribute('href') ? 'link'
+        : element instanceof HTMLSelectElement ? element.multiple ? 'listbox' : 'combobox'
+          : element instanceof HTMLTextAreaElement ? 'textbox'
+            : element instanceof HTMLInputElement
+              ? ['checkbox', 'radio', 'button', 'submit', 'reset'].includes(element.type)
+                ? ({ checkbox: 'checkbox', radio: 'radio', button: 'button', submit: 'button', reset: 'button' })[element.type]
+                : 'textbox'
+              : undefined;
+    const role = explicitRole || implicitRole;
+    const text = (element.getAttribute('aria-label') ?? element.textContent ?? '').replace(/\s+/g, ' ').trim();
+    if (role && text && text.length <= 120) add(`role=${role}[name=${JSON.stringify(text)}]`);
+    if ((role === 'button' || role === 'link') && text && text.length <= 120) {
+      add(`text=${JSON.stringify(text)}`);
+    }
+    return { selector, selectors: candidates };
+  };
   const isPassword = (target: Element): boolean =>
     (target instanceof HTMLInputElement && target.type === 'password') ||
     ['current-password', 'new-password'].includes(target.getAttribute('autocomplete') ?? '');
@@ -142,8 +175,8 @@ export function recordingScript(options: RecordingScriptOptions): void {
       target.closest('select') || (target instanceof HTMLElement && target.isContentEditable)) return;
     if (target instanceof HTMLInputElement &&
       !['button', 'submit', 'reset'].includes(target.type)) return;
-    const selector = stableSelector(target);
-    if (selector) emit({ kind: 'click', selector });
+    const recordedTarget = selectorTarget(target);
+    if (recordedTarget) emit({ kind: 'click', ...recordedTarget });
   };
   const onChange = (event: Event): void => {
     if (isRetargetedShadowEvent(event)) return;
@@ -153,30 +186,30 @@ export function recordingScript(options: RecordingScriptOptions): void {
     const target = event.target;
     if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement) &&
       !(target instanceof HTMLSelectElement)) return;
-    const selector = stableSelector(target);
-    if (!selector) return;
+    const recordedTarget = selectorTarget(target);
+    if (!recordedTarget) return;
     if (isPassword(target)) {
-      emit({ kind: 'password', selector });
+      emit({ kind: 'password', ...recordedTarget });
       return;
     }
     if (target instanceof HTMLSelectElement) {
       if (target.multiple) {
         emit({
           kind: 'select',
-          selector,
+          ...recordedTarget,
           values: Array.from(target.selectedOptions).map((option) => option.value),
         });
       } else {
-        emit({ kind: 'select', selector, value: target.value });
+        emit({ kind: 'select', ...recordedTarget, value: target.value });
       }
       return;
     }
     if (target instanceof HTMLInputElement && ['checkbox', 'radio'].includes(target.type)) {
-      emit({ kind: 'check', selector, checked: target.checked });
+      emit({ kind: 'check', ...recordedTarget, checked: target.checked });
       return;
     }
     if (target instanceof HTMLInputElement && target.type === 'file') {
-      emit({ kind: 'unsupported', selector });
+      emit({ kind: 'unsupported', ...recordedTarget });
       return;
     }
     // 文本已在 input 时增量记录；这里只保留下拉、勾选和文件等 change 语义。
@@ -188,22 +221,22 @@ export function recordingScript(options: RecordingScriptOptions): void {
     if (!event.isTrusted || !(event.target instanceof Element)) return;
     const target = event.target;
     if (target instanceof HTMLElement && target.isContentEditable) {
-      const selector = stableSelector(target);
-      if (!selector) return;
-      if (isPassword(target)) emit({ kind: 'password', selector });
-      else emit({ kind: 'type', selector, value: target.textContent ?? '' });
+      const recordedTarget = selectorTarget(target);
+      if (!recordedTarget) return;
+      if (isPassword(target)) emit({ kind: 'password', ...recordedTarget });
+      else emit({ kind: 'type', ...recordedTarget, value: target.textContent ?? '' });
       return;
     }
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-      const selector = stableSelector(target);
-      if (!selector) return;
+      const recordedTarget = selectorTarget(target);
+      if (!recordedTarget) return;
       if (isPassword(target)) {
-        emit({ kind: 'password', selector });
+        emit({ kind: 'password', ...recordedTarget });
         return;
       }
       if (target instanceof HTMLInputElement &&
         ['hidden', 'checkbox', 'radio', 'file', 'button', 'submit', 'reset'].includes(target.type)) return;
-      emit({ kind: 'type', selector, value: target.value });
+      emit({ kind: 'type', ...recordedTarget, value: target.value });
     }
   };
   const roots = new Set<Document | ShadowRoot>();

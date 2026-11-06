@@ -278,6 +278,11 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    id: 12,
+    name: 'rpa_run_failure_diagnostic',
+    sql: 'ALTER TABLE rpa_runs ADD COLUMN failure TEXT',
+  },
 ];
 
 function tx(db: DatabaseSync, fn: () => void): void {

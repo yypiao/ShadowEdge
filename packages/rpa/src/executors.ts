@@ -83,8 +83,7 @@ function nodeTimeout(execution: RpaNodeExecution, requested: number): number {
   return Math.max(1, Math.min(requested, remaining));
 }
 
-function targetLocator(execution: RpaNodeExecution) {
-  const selector = requiredString(execution, 'selector');
+function targetLocator(execution: RpaNodeExecution, selector: string) {
   const frameSelector = execution.node.params.frameSelector;
   const frameSelectors = execution.node.params.frameSelectors;
   if (frameSelector !== undefined && frameSelectors !== undefined) {
@@ -107,6 +106,71 @@ function targetLocator(execution: RpaNodeExecution) {
   return execution.page.frameLocator(frameSelector).locator(selector);
 }
 
+function selectorCandidates(execution: RpaNodeExecution): string[] {
+  const primary = requiredString(execution, 'selector');
+  const additional = execution.node.params.selectors;
+  if (additional === undefined) return [primary];
+  if (!Array.isArray(additional) || additional.length > 5 || !additional.every((value) =>
+    typeof value === 'string' && value.length > 0 && value.length <= 2048)) {
+    throw nodeError(execution.node, 'selectors 必须是最多 5 个非空候选定位器');
+  }
+  return [primary, ...additional.filter((value) => value !== primary)];
+}
+
+interface TargetReadiness {
+  visible?: boolean;
+  enabled?: boolean;
+  stable?: boolean;
+}
+
+async function resolveTargetLocator(
+  execution: RpaNodeExecution,
+  readiness: TargetReadiness = {},
+): Promise<ReturnType<typeof targetLocator>> {
+  const candidates = selectorCandidates(execution);
+  const visible = readiness.visible ?? true;
+  const enabled = readiness.enabled ?? true;
+  const stable = readiness.stable ?? true;
+  const timeout = nodeTimeout(execution, optionalNumber(execution, 'timeout', 10000));
+  const deadline = Date.now() + timeout;
+  while (true) {
+    for (const selector of candidates) {
+      throwIfCancelled(execution.signal);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      const locator = targetLocator(execution, selector);
+      try {
+        await locator.waitFor({
+          state: visible ? 'visible' : 'attached',
+          timeout: Math.max(1, Math.min(500, remaining)),
+        });
+        if (enabled && !await locator.isEnabled()) continue;
+        if (stable) {
+          const first = await locator.boundingBox();
+          if (!first) continue;
+          await abortableDelay(Math.min(32, Math.max(1, deadline - Date.now())), execution.signal);
+          const second = await locator.boundingBox();
+          if (!second || first.x !== second.x || first.y !== second.y ||
+            first.width !== second.width || first.height !== second.height) continue;
+        }
+        return locator;
+      } catch (error) {
+        if (isCancellation(error)) throw error;
+        // 单个候选失败后立即尝试下一个，不让陈旧首选消耗整个节点超时。
+      }
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw nodeError(execution.node, `${candidates.length} 个候选定位器均未找到可用且稳定的元素`);
+    }
+    await abortableDelay(Math.min(25, remaining), execution.signal);
+  }
+}
+
+function isCancellation(error: unknown): boolean {
+  return error instanceof ShadowEdgeError && error.code === 'E_RPA_CANCELLED';
+}
+
 async function navigateCurrentPage(execution: RpaNodeExecution, url: string): Promise<void> {
   const parsed = new URL(url);
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
@@ -127,10 +191,6 @@ const navigate: RpaNodeExecutor = async (execution) => {
 };
 
 async function clickTarget(execution: RpaNodeExecution, locator: ReturnType<typeof targetLocator>): Promise<void> {
-  await locator.waitFor({
-    state: 'visible',
-    timeout: nodeTimeout(execution, optionalNumber(execution, 'timeout', 10000)),
-  });
   const box = await locator.boundingBox();
   if (!box) throw nodeError(execution.node, '元素没有可点击区域');
   const target = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -154,11 +214,11 @@ async function clickTarget(execution: RpaNodeExecution, locator: ReturnType<type
 }
 
 const click: RpaNodeExecutor = async (execution) => {
-  await clickTarget(execution, targetLocator(execution));
+  await clickTarget(execution, await resolveTargetLocator(execution));
 };
 
 const type: RpaNodeExecutor = async (execution) => {
-  const locator = targetLocator(execution);
+  const locator = await resolveTargetLocator(execution);
   const text = requiredString(execution, 'text');
   if (optionalBoolean(execution, 'clear', true)) await locator.fill('');
   for (const character of text) {
@@ -175,7 +235,7 @@ const wait: RpaNodeExecutor = async (execution) => {
 };
 
 const extract: RpaNodeExecutor = async (execution) => {
-  const locator = targetLocator(execution);
+  const locator = await resolveTargetLocator(execution, { enabled: false, stable: false });
   const attribute = execution.node.params.attribute;
   if (attribute !== undefined && typeof attribute !== 'string') {
     throw nodeError(execution.node, 'attribute 必须是字符串');
@@ -197,9 +257,8 @@ const screenshot: RpaNodeExecutor = async (execution) => {
 };
 
 const select: RpaNodeExecutor = async (execution) => {
-  const locator = targetLocator(execution);
+  const locator = await resolveTargetLocator(execution);
   const timeout = nodeTimeout(execution, optionalNumber(execution, 'timeout', 10000));
-  await locator.waitFor({ state: 'visible', timeout });
   const values = execution.node.params.values;
   if (values !== undefined) {
     if (execution.node.params.value !== undefined || !Array.isArray(values) || values.length > 100 ||
@@ -213,14 +272,14 @@ const select: RpaNodeExecutor = async (execution) => {
 };
 
 const check: RpaNodeExecutor = async (execution) => {
-  const locator = targetLocator(execution);
+  const locator = await resolveTargetLocator(execution);
   const timeout = nodeTimeout(execution, optionalNumber(execution, 'timeout', 10000));
-  await locator.waitFor({ state: 'visible', timeout });
   await locator.setChecked(optionalBoolean(execution, 'checked', true), { timeout });
 };
 
 const upload: RpaNodeExecutor = async (execution) => {
-  await targetLocator(execution).setInputFiles(requiredString(execution, 'path'), {
+  const locator = await resolveTargetLocator(execution, { visible: false, enabled: false, stable: false });
+  await locator.setInputFiles(requiredString(execution, 'path'), {
     timeout: nodeTimeout(execution, optionalNumber(execution, 'timeout', 10000)),
   });
 };
@@ -235,7 +294,7 @@ const download: RpaNodeExecutor = async (execution) => {
   const timeout = nodeTimeout(execution, optionalNumber(execution, 'timeout', 30000));
   const [file] = await Promise.all([
     execution.page.waitForEvent('download', { timeout }),
-    clickTarget(execution, targetLocator(execution)),
+    clickTarget(execution, await resolveTargetLocator(execution)),
   ]);
   const key = artifactKey(execution);
   const suggested = file.suggestedFilename();

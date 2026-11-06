@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -83,10 +84,18 @@ describe('RPA 工作流与运行历史持久化', () => {
       id: runId,
       workflowId: 'workflow-1',
       profileId: 'profile-1',
-      status: 'succeeded',
+      status: 'failed',
       startedAt: new Date().toISOString(),
       finishedAt: new Date().toISOString(),
       outputs: { greeting: 'Hello Ada' },
+      failure: {
+        nodeId: 'submit',
+        nodeKind: 'click',
+        errorCode: 'E_RPA_EXECUTION',
+        attempt: 3,
+        pageUrl: 'https://example.com/checkout',
+        screenshotUri: screenshot,
+      },
       artifacts: [
         { kind: 'screenshot', uri: screenshot },
         { kind: 'log', uri: join(dir, 'outside.log') },
@@ -104,8 +113,52 @@ describe('RPA 工作流与运行历史持久化', () => {
     expect(opened).toEqual([screenshot]);
   });
 
+  it('migration 12 保留历史运行，并在重启后恢复失败诊断', () => {
+    const path = join(dir, 'legacy.db');
+    const legacy = openDatabase(path);
+    const legacyRun: RpaRun = {
+      id: 'legacy-run',
+      workflowId: 'workflow-1',
+      profileId: 'profile-1',
+      status: 'failed',
+      artifacts: [],
+    };
+    new RpaRepository(legacy).saveRun(legacyRun);
+    legacy.close();
+
+    // 模拟 T49 前的数据库：已有运行历史，但没有 failure 列和 migration 12。
+    const raw = new DatabaseSync(path);
+    raw.exec('ALTER TABLE rpa_runs DROP COLUMN failure');
+    raw.prepare('DELETE FROM schema_migrations WHERE id = 12').run();
+    raw.close();
+
+    const migrated = openDatabase(path);
+    expect(migrated.db.prepare('SELECT name FROM schema_migrations WHERE id = 12').get()).toEqual({
+      name: 'rpa_run_failure_diagnostic',
+    });
+    expect(new RpaRepository(migrated).getRun(legacyRun.id)).toMatchObject(legacyRun);
+    expect(new RpaRepository(migrated).getRun(legacyRun.id)?.failure).toBeUndefined();
+
+    const failure: NonNullable<RpaRun['failure']> = {
+      nodeId: 'wait-for-result',
+      nodeKind: 'waitFor',
+      errorCode: 'E_RPA_TIMEOUT',
+      attempt: 2,
+      pageUrl: 'https://example.com/result',
+    };
+    new RpaRepository(migrated).saveRun({ ...legacyRun, failure });
+    migrated.close();
+
+    const reopened = openDatabase(path);
+    expect(new RpaRepository(reopened).getRun(legacyRun.id)?.failure).toEqual(failure);
+    reopened.close();
+  });
+
   it('定时配置通过 IPC 持久化，并随工作流删除级联清理', async () => {
-    const profile = await handlers['profile:create']({ name: 'scheduled-profile', fingerprintSeed: 'scheduled-profile' });
+    const profile = await handlers['profile:create']({
+      name: 'scheduled-profile',
+      fingerprintSeed: 'scheduled-profile',
+    });
     const workflow = await handlers['rpa:save']({
       name: '定时工作流',
       graph: { entry: 'wait', nodes: { wait: { id: 'wait', kind: 'wait', params: { ms: 0 } } } },

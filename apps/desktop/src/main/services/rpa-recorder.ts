@@ -66,6 +66,10 @@ function validText(value: unknown): value is string {
   return typeof value === 'string' && value.length <= MAX_TEXT_LENGTH;
 }
 
+function validSelectors(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length <= 5 && value.every(validSelector);
+}
+
 function validSelectValues(value: unknown): value is string[] {
   return Array.isArray(value) && value.length <= MAX_SELECT_VALUES && value.every(validText);
 }
@@ -169,13 +173,15 @@ export class RpaRecorder {
     const previous = session.actions.at(-1);
     if (action.kind === 'type' && previous?.kind === 'type' &&
       previous.selector === action.selector && previous.frameSelector === action.frameSelector &&
-      sameFrames(previous.frameSelectors, action.frameSelectors)) {
+      sameFrames(previous.frameSelectors, action.frameSelectors) &&
+      sameFrames(previous.selectors, action.selectors)) {
       previous.text = action.text;
       return;
     }
     if (action.kind === 'select' && previous?.kind === 'select' &&
       previous.selector === action.selector && previous.frameSelector === action.frameSelector &&
-      sameFrames(previous.frameSelectors, action.frameSelectors)) {
+      sameFrames(previous.frameSelectors, action.frameSelectors) &&
+      sameFrames(previous.selectors, action.selectors)) {
       if ('values' in action && 'values' in previous) {
         previous.values = [...action.values];
         return;
@@ -317,10 +323,13 @@ export class RpaRecorder {
       session.droppedActions += 1;
       return;
     }
+    if (payload.selectors !== undefined && !validSelectors(payload.selectors)) return;
     const frameKey = frames.join('\0');
     const target = {
       selector: payload.selector,
       frameSelectors: frames.length > 0 ? frames : undefined,
+      selectors: Array.isArray(payload.selectors) && payload.selectors.length > 0
+        ? [...payload.selectors] : undefined,
     };
     if (payload.kind === 'password') {
       session.ignoredPasswordSelectors.add(`${frameKey}\0${payload.selector}`);

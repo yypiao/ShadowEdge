@@ -9,7 +9,6 @@ import type {
   IpcEventName,
   IpcEvents,
   Logger,
-  ProxyHealth,
   Result,
   Uuid,
 } from '@shadowedge/core';
@@ -27,7 +26,7 @@ import {
   generateFingerprint,
 } from '@shadowedge/fingerprint';
 import { BrowserKernel, ChromiumCdpDriver } from '@shadowedge/kernel';
-import { ProxyManager } from '@shadowedge/proxy';
+import { ProxyHealthCache, ProxyManager } from '@shadowedge/proxy';
 import { RpaEngine, validateGraph } from '@shadowedge/rpa';
 import type { ProfileRepository } from './services/profile-repository.js';
 import type { ProxyRepository } from './services/proxy-repository.js';
@@ -199,7 +198,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   });
   // 健康检查缓存：住宅/双跳代理探测可达 30s+，建环境与预览不应每次重探
   const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
-  const healthCache = new Map<Uuid, { health: ProxyHealth; at: number }>();
+  const healthCache = new ProxyHealthCache(HEALTH_CACHE_TTL_MS);
 
   const resolveUpstream = (upstreamId: Uuid | undefined) => {
     if (!upstreamId) return undefined;
@@ -215,16 +214,14 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     };
   };
 
-  const getProxyHealth = async (proxyId: Uuid) => {
-    const cached = healthCache.get(proxyId);
-    if (cached && Date.now() - cached.at < HEALTH_CACHE_TTL_MS) return cached.health;
+  const getProxyHealth = async (proxyId: Uuid, forceRefresh = false) => {
     const credential = deps.proxyRepo.get(proxyId);
     if (!credential) throw new ShadowEdgeError('E_PROXY_NOT_FOUND', `代理 ${proxyId} 不存在`);
-    const health = await proxyManager.check(credential, deps.proxyRepo.reveal(proxyId), {
-      upstream: resolveUpstream(credential.upstreamId),
-    });
-    healthCache.set(proxyId, { health, at: Date.now() });
-    return health;
+    return healthCache.get(proxyId, () => proxyManager.check(
+      credential,
+      deps.proxyRepo.reveal(proxyId),
+      { upstream: resolveUpstream(credential.upstreamId) },
+    ), forceRefresh);
   };
 
   /** T9：显式 overrides 优先，缺省时由代理出口地理补齐时区/语言/坐标。 */
@@ -661,13 +658,13 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     'proxy:list': async () => deps.proxyRepo.list(),
     'proxy:upsert': async (input) => {
       const saved = await deps.proxyRepo.upsert(input);
+      healthCache.invalidate(saved.id);
       deps.audit.record('proxy:upsert', 'proxy', input.id, { label: input.label });
       return saved;
     },
     'proxy:check': async (id) => {
-      // 手动点检查视为强制刷新：清缓存重探
-      healthCache.delete(id);
-      const health = await getProxyHealth(id);
+      // 手动点检查强制重探；同代理的并发调用仍共享一个在途请求。
+      const health = await getProxyHealth(id, true);
       deps.emit('proxy:health', health);
       return health;
     },
